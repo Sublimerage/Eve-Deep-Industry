@@ -1941,7 +1941,7 @@ function recalculate() {
   const structureRoleBonus = structureType.costBonus / 100;
 
   const contractTaxPercent = parseFloat(document.getElementById('contract-tax')?.value) || 0.5;
-  const contractBrokerPercent = parseFloat(document.getElementById('contract-broker')?.value) || 0.5;
+  const contractBrokerPercent = parseFloat(document.getElementById('contract-broker')?.value) || 1.65;
   const contractTaxRate = contractTaxPercent / 100;
   const contractBrokerRate = contractBrokerPercent / 100;
 

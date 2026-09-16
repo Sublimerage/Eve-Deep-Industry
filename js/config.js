@@ -1175,96 +1175,95 @@ function parseThukkerRigName(rawName) {
 }
 window.parseThukkerRigName = parseThukkerRigName;
 
-// Classifies a ship's hull size (small/medium/large) from its real item group name, so "Small Ship"
-// rigs only match frigates/destroyers, "Medium Ship" only cruisers/battlecruisers/industrials/barges,
-// and "Large Ship" only battleships/freighters/industrial command ships - matching real EVE rig scope.
-// Checked as specific multi-word phrases first to avoid collisions (e.g. "Logistics Frigate" is small,
-// not the generic "Logistics" cruiser-sized bucket). Uncommon/specialty hull groups not covered here
-// simply won't match a size-specific rig (they'll still match a sizeless "Ship (Any)" XL-tier rig).
-const SHIP_SIZE_SPECIFIC = [
-  ['logistics frigate', 'small'], ['command destroyer', 'small'], ['tactical destroyer', 'small'],
-  ['covert ops', 'small'], ['electronic attack', 'small'], ['stealth bomber', 'small'],
-  ['interdictor', 'small'], ['interceptor', 'small'], ['assault frigate', 'small'],
-  ['industrial command ship', 'large'], ['force auxiliary', 'large'], ['lancer dreadnought', 'large'],
-  ['heavy assault', 'medium'], ['heavy interdiction', 'medium'], ['combat recon', 'medium'],
-  ['force recon', 'medium'], ['strategic cruiser', 'medium'], ['attack battlecruiser', 'medium'],
-  ['mining barge', 'medium'], ['exhumer', 'medium']
-];
-const SHIP_SIZE_GENERIC = [
-  ['battleship', 'large'], ['freighter', 'large'], ['command ship', 'large'], ['black ops', 'large'],
-  ['marauder', 'large'], ['dreadnought', 'large'], ['carrier', 'large'], ['supercarrier', 'large'], ['titan', 'large'],
-  ['cruiser', 'medium'], ['battlecruiser', 'medium'], ['industrial', 'medium'], ['logistics', 'medium'],
-  ['frigate', 'small'], ['destroyer', 'small'], ['corvette', 'small'], ['shuttle', 'small']
-];
-function classifyShipSize(groupName) {
-  if (!groupName) return null;
-  const g = groupName.toLowerCase();
-  for (const [kw, size] of SHIP_SIZE_SPECIFIC) if (g.includes(kw)) return size;
-  for (const [kw, size] of SHIP_SIZE_GENERIC) if (g.includes(kw)) return size;
-  return null;
-}
-window.classifyShipSize = classifyShipSize;
+// Real affected-groups lists per ship-tier rig (small/medium/large x basic/advanced), confirmed via
+// EVE Ref dogma attributes on one M/L-tier typeId per tier. This REPLACES an earlier heuristic
+// (guessing size/tech-class from keywords in the group name) that a full audit found genuinely wrong
+// in several real, buildable cases: it classified "Command Ship" (Eos, Vulture, Sleipnir) as large
+// when the real rig for it is Advanced MEDIUM Ship; it classified "Industrial Command Ship" (Orca,
+// Porpoise) as Advanced tech class when the real rig for it is BASIC Large Ship; and it matched
+// Titan/Supercarrier hulls (Erebus, Avatar, Hel, Revenant) against "Large Ship (Advanced)" even
+// though neither appears in ANY Standup ship rig's real affected-groups list - supercapitals simply
+// aren't covered by rig bonuses the same way smaller capitals are. "Expedition Command Ship" (the
+// Odysseus) genuinely appears in both the Basic and Advanced Medium Ship lists on EVE Ref, so it's
+// included in both here rather than picked arbitrarily.
+const SHIP_RIG_GROUPS = {
+  'small|basic': new Set(['Frigate', 'Shuttle', 'Destroyer']),
+  'small|advanced': new Set(['Assault Frigate', 'Interdictor', 'Covert Ops', 'Interceptor', 'Stealth Bomber', 'Electronic Attack Ship', 'Expedition Frigate', 'Tactical Destroyer', 'Logistics Frigate', 'Command Destroyer']),
+  'medium|basic': new Set(['Cruiser', 'Hauler', 'Combat Battlecruiser', 'Mining Barge', 'Attack Battlecruiser', 'Expedition Command Ship', 'Special Edition Yachts']),
+  'medium|advanced': new Set(['Heavy Assault Cruiser', 'Deep Space Transport', 'Command Ship', 'Exhumer', 'Logistics', 'Force Recon Ship', 'Heavy Interdiction Cruiser', 'Combat Recon Ship', 'Strategic Cruiser', 'Blockade Runner', 'Flag Cruiser', 'Expedition Command Ship']),
+  'large|basic': new Set(['Battleship', 'Freighter', 'Industrial Command Ship']),
+  'large|advanced': new Set(['Black Ops', 'Marauder', 'Jump Freighter'])
+};
 
-// Classifies whether a ship is "Basic" (Tech 1, including most faction/pirate hulls which typically
-// share a T1 group) or "Advanced" (Tech 2/Tech 3), from its real item group name. T1 hulls sit in a
-// small, fixed set of generic group names; T2/T3 hulls almost always get their own distinct group
-// (e.g. "Assault Frigate", "Heavy Assault Cruiser", "Strategic Cruiser") - this avoids needing
-// per-item tech-level data, which ESI doesn't expose in bulk (only one-call-per-item, impractical for
-// 35,000+ items). Confirmed via in-game rig description: "Advanced" rigs affect "Tech 2 frigates,
-// Tech 2 and Tech 3 destroyers" etc.
-const T1_GENERIC_SHIP_GROUPS = new Set([
-  'frigate', 'destroyer', 'cruiser', 'battlecruiser', 'battleship', 'industrial',
-  'mining barge', 'freighter', 'shuttle', 'corvette', 'capsule'
-]);
-function classifyShipTechClass(groupName) {
-  if (!groupName) return null;
-  const g = groupName.toLowerCase().trim();
-  if (T1_GENERIC_SHIP_GROUPS.has(g)) return 'basic';
-  return 'advanced'; // specialized/named group - T2, T3, or similar
-}
-window.classifyShipTechClass = classifyShipTechClass;
-
-// Real affected-groups lists for the "Component" and "Structure" rig families, confirmed via EVE
-// Ref dogma attributes (checked both M and L tier for each - identical group list at every size,
-// only the base % differs by I/II tier). The old check here was catId === 65 || 4 || 17 (Structure/
-// Material/Commodity) - those 3 EVE categories are far broader than what these rigs really affect
-// (e.g. catId 4 "Material" also contains every raw mineral, ice product, and fuel block), so it was
-// silently applying a bonus to totally unrelated jobs like Fuel Block manufacturing.
-// "Component" (Advanced Component M/L-tier rigs, e.g. typeId 43866/37175): notably does NOT include
-// the plain "Capital Construction Components" group (Capital Armor Plates, Capital Construction
-// Parts, etc.) - only "Advanced Capital Construction Components" (Capital Fusion Thruster, Capital
-// Nanoelectrical Microprocessor, etc.), a distinct, earlier tier in the real capital build chain.
+// Real affected-groups lists for every manufacturing rig family, confirmed via EVE Ref dogma
+// attributes on at least one M/L-tier item per family (identical group list at every size for a
+// given family - only the base % differs by I/II tier). A full audit (every distinct categoryLabel
+// parseRigName can produce, cross-checked against real game data) found several families beyond
+// Component/Structure that were also wrong - some silently matching NOTHING at all.
+// "Component" (plain Advanced Component M/L-tier rigs, e.g. typeId 43866/37175): notably does NOT
+// include the plain "Capital Construction Components" group (Capital Armor Plates, Capital
+// Construction Parts, etc.) - only "Advanced Capital Construction Components" (Capital Fusion
+// Thruster, Capital Nanoelectrical Microprocessor, etc.), a distinct, earlier tier in the real
+// capital build chain. That other, plain capital tier belongs to the SEPARATE "Capital Component"
+// (Basic-only) rig family below instead - they are not interchangeable despite the similar names.
 const COMPONENT_RIG_GROUPS = new Set(['Tool', 'Construction Components', 'Data Interfaces', 'Advanced Capital Construction Components', 'Hybrid Tech Components']);
+// "Capital Component" (Basic-only, L-tier, e.g. typeId 43719/43721 - no plain/Advanced M-tier
+// variant exists for this one). Previously fell into the same bucket as plain "Component" above via
+// a loose `label.includes('component')` check, which was wrong - this family has its own, much
+// narrower single-group scope confirmed via EVE Ref.
+const CAPITAL_COMPONENT_RIG_GROUPS = new Set(['Capital Construction Components']);
 // "Structure" (M/L-tier rigs, e.g. typeId 43874/43721): also affects the Upwell structure-hull and
 // structure-module categories themselves (catId 65/66). EVE Ref also lists Starbase/Infrastructure
 // Upgrades/Sovereignty Structures as affected categories, but nothing in this app's recipe data is
 // buildable under those (legacy POS/sov mechanics) - left out rather than guessing their category
 // IDs, matching this app's rule against guessing unverified EVE numbers.
 const STRUCTURE_RIG_GROUPS = new Set(['Structure Components', 'Fuel Block', 'Skyhook']);
+// "Capital Ship" (L-tier only, e.g. typeId 37172) - previously matched NOTHING: it falls into the
+// general ship branch via `label.includes('ship')`, but has no Basic/Advanced spec and isn't
+// small/medium/large, so it fell through every check there to a bare `return false`. Confirmed via
+// EVE Ref: matches these specific ship groups, not a size/tech-class heuristic like the other tiers.
+const CAPITAL_SHIP_RIG_GROUPS = new Set(['Dreadnought', 'Carrier', 'Capital Industrial Ship', 'Force Auxiliary', 'Lancer Dreadnought', 'Command Carrier']);
+// "Equipment" (plain, M/L-tier) and "Equipment and Consumable" (XL-tier, broader) both also cover
+// these 4 real container groups (catId 2, not 7/20/22) - previously missed entirely since the old
+// check was catId-only.
+const EQUIPMENT_RIG_CONTAINER_GROUPS = new Set(['Cargo Container', 'Secure Cargo Container', 'Audit Log Secure Container', 'Freight Container']);
 
 // Checks whether a parsed rig actually affects a given product, based on real category/group data.
 function doesRigMatchProduct(parsed, typeId) {
   const catId = window.EVE_CATEGORIES ? window.EVE_CATEGORIES[typeId] : undefined;
   const label = parsed.categoryLabel.toLowerCase();
   if (label === 'ship' || label.includes('ship')) {
-    if (catId !== 6) return false;
-    const groupName = window.EVE_GROUP_NAMES ? window.EVE_GROUP_NAMES[typeId] : null;
-    // "Basic" rigs affect Tech 1 hulls, "Advanced" rigs affect Tech 2/3 hulls - confirmed via the
-    // in-game rig description. A sizeless XL-tier "Ship" rig has no spec and matches any tech class.
-    if (parsed.spec) {
-      const techClass = classifyShipTechClass(groupName);
-      if (techClass !== parsed.spec.toLowerCase()) return false;
+    // The bare XL-tier "Ship" rig alone also covers Subsystem (catId 32) manufacturing - T3
+    // Strategic Cruiser subsystems - confirmed via EVE Ref ("Affected Categories: Ship, Subsystem").
+    // Every other ship-family rig (Capital/Small/Medium/Large, Basic or Advanced) is Ship-only.
+    if (label === 'ship' && catId === 32) return true;
+    if (label === 'capital ship') {
+      if (catId !== 6) return false;
+      return CAPITAL_SHIP_RIG_GROUPS.has(window.EVE_GROUP_NAMES ? window.EVE_GROUP_NAMES[typeId] : null);
     }
-    if (label === 'ship') return true; // sizeless XL-tier rig - any ship, tech class already checked above
-    const sizeClass = classifyShipSize(groupName);
-    if (label.includes('small')) return sizeClass === 'small';
-    if (label.includes('medium')) return sizeClass === 'medium';
-    if (label.includes('large')) return sizeClass === 'large';
-    return false;
+    if (catId !== 6) return false;
+    if (label === 'ship') return true; // sizeless XL-tier rig - any ship, no size/tier split
+    const groupName = window.EVE_GROUP_NAMES ? window.EVE_GROUP_NAMES[typeId] : null;
+    const sizeKey = label.includes('small') ? 'small' : label.includes('medium') ? 'medium' : label.includes('large') ? 'large' : null;
+    if (!sizeKey || !parsed.spec) return false;
+    const groups = SHIP_RIG_GROUPS[`${sizeKey}|${parsed.spec.toLowerCase()}`];
+    return groups ? groups.has(groupName) : false;
   }
   if (label === 'ammunition') return catId === 8;
   if (label.includes('drone') || label.includes('fighter')) return catId === 18 || catId === 87;
-  if (label === 'equipment') return catId === 7 || catId === 66;
+  if (label === 'equipment' || label === 'equipment and consumable') {
+    const groupName = window.EVE_GROUP_NAMES ? window.EVE_GROUP_NAMES[typeId] : null;
+    if (EQUIPMENT_RIG_CONTAINER_GROUPS.has(groupName)) return true;
+    // Module(7)/Implant(20)/Deployable(22) for the plain rig - the old catId===66 here was simply
+    // wrong (66 is Structure Module, unrelated to this family) and real Implant/Deployable coverage
+    // was missing entirely. The XL "...and Consumable" rig adds Charge(8)/Drone(18)/Fighter(87) on
+    // top, confirmed via its own, broader EVE Ref affected-categories list.
+    if (label === 'equipment') return catId === 7 || catId === 20 || catId === 22;
+    return catId === 7 || catId === 8 || catId === 18 || catId === 20 || catId === 22 || catId === 87;
+  }
+  if (label === 'capital component') {
+    return CAPITAL_COMPONENT_RIG_GROUPS.has(window.EVE_GROUP_NAMES ? window.EVE_GROUP_NAMES[typeId] : null);
+  }
   if (label.includes('component') || label.includes('structure')) {
     const groupName = window.EVE_GROUP_NAMES ? window.EVE_GROUP_NAMES[typeId] : null;
     const matchesComponent = label.includes('component') && COMPONENT_RIG_GROUPS.has(groupName);
