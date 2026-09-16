@@ -777,7 +777,7 @@ function logSkillDiagnosticOnce(typeId, message) {
 const REACTIONS_SKILL_ID = 45746;
 window.REACTIONS_SKILL_ID = REACTIONS_SKILL_ID;
 
-function calculateAdjustedJobSeconds(baseTimeSeconds, customTE, runsNeeded, isReaction, productTypeId, requiredSkills) {
+function calculateAdjustedJobSeconds(baseTimeSeconds, customTE, runsNeeded, isReaction, productTypeId, requiredSkills, isInvention) {
   if (!baseTimeSeconds || baseTimeSeconds <= 0) return 0;
   const skills = window.safeParseJSON(localStorage.getItem('eve_char_skills'), { industry: 5, advIndustry: 5, allSkills: { [REACTIONS_SKILL_ID]: 5 } });
 
@@ -821,7 +821,17 @@ function calculateAdjustedJobSeconds(baseTimeSeconds, customTE, runsNeeded, isRe
   const teFactor = 1 - (te / 100);
   const structureType = window.getActiveStructureType ? window.getActiveStructureType() : { teBonus: 30.0 };
   const facilityFactor = 1 - (structureType.teBonus / 100);
-  const rigTEBonus = window.getEffectiveRigBonusForTypeId ? window.getEffectiveRigBonusForTypeId(productTypeId, 'TE') : 0;
+  // Invention isn't manufacturing, so a "Advanced Small Ship Manufacturing Time Efficiency" rig
+  // matching the invented item's own category has no business speeding it up - only a real
+  // Invention Accelerator/Optimization/Laboratory Optimization rig should (see
+  // getEffectiveInventionRigBonus, above). Before isInvention existed, this unconditionally called
+  // the manufacturing lookup for every isReaction=true call including invention.js's own, which
+  // silently applied whatever manufacturing rig happened to match the T2 product's category instead
+  // of the real invention rig bonus - wrong bonus, and the real one was never searchable at all
+  // (parseRigName excluded it) to even be wrong in a way anyone could fix by refitting.
+  const rigTEBonus = isInvention
+    ? (window.getEffectiveInventionRigBonus ? window.getEffectiveInventionRigBonus('time') : 0)
+    : (window.getEffectiveRigBonusForTypeId ? window.getEffectiveRigBonusForTypeId(productTypeId, 'TE') : 0);
   const rigFactor = 1 - (rigTEBonus / 100);
   const implantFactor = isReaction ? 1 : (1 - (getManufacturingImplantBonusPercent() / 100));
   return baseTimeSeconds * teFactor * skillTimeFactor * facilityFactor * rigFactor * implantFactor * (runsNeeded || 1);
@@ -990,13 +1000,18 @@ window.ensureDefaultTrackedMarkets = ensureDefaultTrackedMarkets;
 // see getEffectiveRigBonusForTypeId). Their TE/cost progression mirrors the EC line one tier down
 // (Refineries only come in M/L, there's no XL refinery): Athanor 20% TE / 3% cost like Raitaru,
 // Tatara 30% TE / 5% cost like Sotiyo.
+// rigSize is the real in-game rig slot size for each structure (null for NPC stations, which have
+// no rig slots at all) - a structure can only physically fit rigs of its own exact size class, no
+// cross-compatibility, which is what lets the rig search (searchRigSlot, app.js) and the effective-
+// bonus calculators (getEffectiveRigBonusForTypeId/getEffectiveInventionRigBonus, below) both filter
+// out rigs that could never actually be fitted to whatever's currently selected.
 const STRUCTURE_TYPES = {
-  npc:     { label: 'NPC Station',        shortLabel: 'NPC Station', meBonus: 0.0, teBonus: 0.0,  costBonus: 0.0 },
-  raitaru: { label: 'Raitaru (M Engineering Complex)', shortLabel: 'Raitaru', meBonus: 1.0, teBonus: 15.0, costBonus: 3.0 },
-  azbel:   { label: 'Azbel (L Engineering Complex)',   shortLabel: 'Azbel',   meBonus: 1.0, teBonus: 20.0, costBonus: 4.0 },
-  sotiyo:  { label: 'Sotiyo (XL Engineering Complex)', shortLabel: 'Sotiyo',  meBonus: 1.0, teBonus: 30.0, costBonus: 5.0 },
-  athanor: { label: 'Athanor (M Refinery)',  shortLabel: 'Athanor', meBonus: 0.0, teBonus: 20.0, costBonus: 3.0 },
-  tatara:  { label: 'Tatara (L Refinery)',   shortLabel: 'Tatara',  meBonus: 0.0, teBonus: 30.0, costBonus: 5.0 }
+  npc:     { label: 'NPC Station',        shortLabel: 'NPC Station', meBonus: 0.0, teBonus: 0.0,  costBonus: 0.0, rigSize: null },
+  raitaru: { label: 'Raitaru (M Engineering Complex)', shortLabel: 'Raitaru', meBonus: 1.0, teBonus: 15.0, costBonus: 3.0, rigSize: 'M' },
+  azbel:   { label: 'Azbel (L Engineering Complex)',   shortLabel: 'Azbel',   meBonus: 1.0, teBonus: 20.0, costBonus: 4.0, rigSize: 'L' },
+  sotiyo:  { label: 'Sotiyo (XL Engineering Complex)', shortLabel: 'Sotiyo',  meBonus: 1.0, teBonus: 30.0, costBonus: 5.0, rigSize: 'XL' },
+  athanor: { label: 'Athanor (M Refinery)',  shortLabel: 'Athanor', meBonus: 0.0, teBonus: 20.0, costBonus: 3.0, rigSize: 'M' },
+  tatara:  { label: 'Tatara (L Refinery)',   shortLabel: 'Tatara',  meBonus: 0.0, teBonus: 30.0, costBonus: 5.0, rigSize: 'L' }
 };
 window.STRUCTURE_TYPES = STRUCTURE_TYPES;
 
@@ -1050,9 +1065,10 @@ window.getSecurityMultiplier = getSecurityMultiplier;
 
 // Parses a real Standup rig item name into structured data. Rig names follow a very consistent EVE
 // naming convention: "Standup {M|L|XL}-Set [Basic|Advanced ]{category} [Manufacturing ][Material|Time ]Efficiency {I|II}".
-// Returns null for anything that isn't a manufacturing/reaction efficiency rig (e.g. Invention or Copy
-// rigs, which end in "Optimization" rather than "Efficiency", and reprocessing rigs) - these correctly
-// fall out of this app's build-cost/time calculations since they don't affect them.
+// Returns null for anything that isn't a manufacturing/reaction efficiency rig - Invention/Research/
+// Blueprint Copy rigs end in "Optimization"/"Accelerator" rather than "Efficiency" and follow a
+// completely different naming grammar, so they're parsed separately by parseResearchRigName below
+// (getRigItemCatalog tries both and merges the results into one searchable list).
 function parseRigName(rawName) {
   if (!rawName) return null;
   const sizeMatch = rawName.match(/^Standup (M|L|XL)-Set (.+)$/);
@@ -1083,6 +1099,81 @@ function parseRigName(rawName) {
   return { size, tier, bonusType, spec, categoryLabel };
 }
 window.parseRigName = parseRigName;
+
+// The OTHER real rig naming grammar - R&D-job rigs (Invention, Blueprint ME/TE Research, Blueprint
+// Copy), which reduce a job's TIME and/or ISK COST rather than a manufacturing job's material/time
+// need. Confirmed via EVE Ref dogma attributes (Standup M-Set Invention Accelerator I/II: Time
+// Reduction Bonus -20%/-24%; Standup M-Set Invention Cost Optimization I/II: Cost Reduction Bonus
+// -10%/-12%; same security multipliers as manufacturing rigs). Grammar:
+//   M-tier: "Standup M-Set {category} {Accelerator|Cost Optimization} {I|II}" - time and cost split
+//     into separate items, same as M-tier Manufacturing Efficiency rigs split Material/Time.
+//   L-tier: "Standup L-Set {category} Optimization {I|II}" - one item combining both time AND cost
+//     for its own single category (confirmed via EVE Ref: L-Set Invention Optimization I carries
+//     BOTH a -20% Time Reduction Bonus and a -10% Cost Reduction Bonus).
+//   XL-tier: "Standup XL-Set Laboratory Optimization {I|II}" - one item combining both time and cost
+//     across EVERY research category at once (confirmed via EVE Ref: same -24%/-12% as the L-tier
+//     rigs' own T2 values) - there's no per-category split at this tier, mirroring how XL-tier
+//     Manufacturing Efficiency rigs also stop splitting by ship size.
+// No success-chance bonus exists on any of these (confirmed absent from every dogma attribute page
+// checked) - only skills and decryptors affect invention's success chance in real EVE.
+function parseResearchRigName(rawName) {
+  if (!rawName) return null;
+  const sizeMatch = rawName.match(/^Standup (M|L|XL)-Set (.+)$/);
+  if (!sizeMatch) return null;
+  const size = sizeMatch[1];
+  let rest = sizeMatch[2];
+
+  const tierMatch = rest.match(/ (I{1,2})$/);
+  if (!tierMatch) return null;
+  const tier = tierMatch[1] === 'II' ? 'T2' : 'T1';
+  rest = rest.slice(0, -tierMatch[0].length);
+
+  if (rest === 'Laboratory Optimization') {
+    return { size, tier, effect: 'BOTH', categories: ['invention', 'meResearch', 'teResearch', 'copy'] };
+  }
+
+  let category = null;
+  if (/^Invention /.test(rest)) { category = 'invention'; rest = rest.slice('Invention '.length); }
+  else if (/^ME Research /.test(rest)) { category = 'meResearch'; rest = rest.slice('ME Research '.length); }
+  else if (/^TE Research /.test(rest)) { category = 'teResearch'; rest = rest.slice('TE Research '.length); }
+  else if (/^Blueprint Copy /.test(rest)) { category = 'copy'; rest = rest.slice('Blueprint Copy '.length); }
+  else return null;
+
+  let effect;
+  if (rest === 'Accelerator') effect = 'time';
+  else if (rest === 'Cost Optimization') effect = 'cost';
+  else if (rest === 'Optimization') effect = 'BOTH';
+  else return null;
+
+  return { size, tier, effect, categories: [category] };
+}
+window.parseResearchRigName = parseResearchRigName;
+
+// A THIRD, irregular rig family - 5 limited "Thukker" edition component/structure rigs, found via a
+// full audit of every "Structure Engineering Rig"/"Reactor Rig" item against both parsers above. They
+// don't follow either naming grammar (no I/II tier suffix at all - single-tier items), so they're
+// listed explicitly rather than pattern-matched. Confirmed via EVE Ref dogma attributes: each carries
+// its normal ME/TE bonus PLUS a separate, larger "Thukker Enhanced Capital Component Material
+// Reduction Bonus" (always -3.7%) that only applies to capital construction components specifically,
+// and - unlike every other rig here - a security-space curve that FAVORS lowsec (0.1x high, 1.9x low,
+// 0.1x null/WH) instead of the usual high/low/null-WH progression. That inverted curve and the split
+// base/capital bonus don't fit this app's existing bonus-application model (doesFitRigMatchProduct's
+// category matching assumes the standard curve), so these are made searchable/selectable with an
+// accurate tooltip but deliberately NOT wired into any bonus calculation - same precedent as the
+// research-rig categories this app has no job calculator for yet.
+const THUKKER_RIG_DATA = {
+  'Standup M-Set Thukker Basic Capital Component Manufacturing Material Efficiency': { size: 'M', me: 0, te: 0, capME: 3.7, scope: 'Basic Capital Construction Components' },
+  'Standup L-Set Thukker Basic Capital Component Manufacturing Efficiency': { size: 'L', me: 0, te: 20, capME: 3.7, scope: 'Basic Capital Construction Components' },
+  'Standup M-Set Thukker Advanced Component Manufacturing Material Efficiency': { size: 'M', me: 2, te: 0, capME: 3.7, scope: 'Advanced Components (and Capital Construction Components)' },
+  'Standup L-Set Thukker Advanced Component Manufacturing Efficiency': { size: 'L', me: 2, te: 20, capME: 3.7, scope: 'Advanced Components (and Capital Construction Components)' },
+  'Standup XL-Set Thukker Structure and Component Manufacturing Efficiency': { size: 'XL', me: 2, te: 20, capME: 3.7, scope: 'Structures and Components' }
+};
+function parseThukkerRigName(rawName) {
+  const data = THUKKER_RIG_DATA[rawName];
+  if (!data) return null;
+  return { size: data.size, tier: 'T1', me: data.me, te: data.te, capME: data.capME, scope: data.scope };
+}
+window.parseThukkerRigName = parseThukkerRigName;
 
 // Classifies a ship's hull size (small/medium/large) from its real item group name, so "Small Ship"
 // rigs only match frigates/destroyers, "Medium Ship" only cruisers/battlecruisers/industrials/barges,
@@ -1179,11 +1270,13 @@ window.doesRigMatchProduct = doesRigMatchProduct;
 
 let _rigItemCatalogCache = null;
 // Scans the actual generated database for every real Structure Engineering Rig OR Reactor Rig item
-// (identified by its real in-game group name), parses each one, and returns the list - this is what
-// populates the rig search dropdowns, so the list always reflects what's really in the game data.
-// Reactor Rig is a separate group family from Engineering Rig (Athanor/Tatara's reaction ME/TE rigs
-// vs Raitaru/Azbel/Sotiyo's manufacturing ones) - omitting it here previously made every reaction rig,
-// including the real Tatara "Standup L-Set Reactor Efficiency" rig, unsearchable and unselectable.
+// (identified by its real in-game group name), parses each one (as either a manufacturing/reaction
+// Efficiency rig or a research/invention rig - see parseRigName/parseResearchRigName above), and
+// returns the merged list - this is what populates the rig search dropdowns, so the list always
+// reflects what's really in the game data. Reactor Rig is a separate group family from Engineering
+// Rig (Athanor/Tatara's reaction ME/TE rigs vs Raitaru/Azbel/Sotiyo's manufacturing ones) - omitting
+// it here previously made every reaction rig, including the real Tatara "Standup L-Set Reactor
+// Efficiency" rig, unsearchable and unselectable.
 function getRigItemCatalog() {
   if (_rigItemCatalogCache) return _rigItemCatalogCache;
   const rigs = [];
@@ -1192,9 +1285,13 @@ function getRigItemCatalog() {
       const groupName = window.EVE_GROUP_NAMES[typeIdStr];
       if (!groupName || (!groupName.includes('Structure Engineering Rig') && !groupName.includes('Reactor Rig'))) continue;
       const name = window.EVE_ITEMS[typeIdStr];
-      const parsed = parseRigName(name);
-      if (!parsed) continue; // not a manufacturing/reaction efficiency rig (e.g. Invention/Copy/Reprocessing)
-      rigs.push({ typeId: parseInt(typeIdStr), name, ...parsed });
+      const parsedMfg = parseRigName(name);
+      const parsedResearch = parsedMfg ? null : parseResearchRigName(name);
+      const parsedThukker = (parsedMfg || parsedResearch) ? null : parseThukkerRigName(name);
+      const parsed = parsedMfg || parsedResearch || parsedThukker;
+      if (!parsed) continue; // still not recognized - a combat/defense rig, reprocessing, etc.
+      const kind = parsedMfg ? 'manufacturing' : (parsedResearch ? 'research' : 'thukker');
+      rigs.push({ typeId: parseInt(typeIdStr), name, kind, ...parsed });
     }
     rigs.sort((a, b) => a.name.localeCompare(b.name));
   }
@@ -1202,6 +1299,17 @@ function getRigItemCatalog() {
   return rigs;
 }
 window.getRigItemCatalog = getRigItemCatalog;
+
+// A rig can only ever be physically fitted to a structure whose rig-slot size matches its own exact
+// size class (no cross-compatibility, unlike ship rig calibration) - shared by the search filter
+// (searchRigSlot, app.js) and both effective-bonus calculators below, so a rig that could never
+// really be fitted to whatever's currently selected never silently contributes a bonus either.
+function isRigSizeFittable(rigSize) {
+  const activeRigSize = (window.getActiveStructureType ? window.getActiveStructureType() : {}).rigSize;
+  if (!activeRigSize) return false; // NPC station - no rig slots at all
+  return rigSize === activeRigSize;
+}
+window.isRigSizeFittable = isRigSizeFittable;
 
 // Reads the 3 rig slot selections (stored as the rig's own typeId) and returns the effective % bonus
 // (already including the security multiplier) for the given product typeId and bonus type ('ME'/'TE').
@@ -1216,6 +1324,7 @@ function getEffectiveRigBonusForTypeId(typeId, bonusType) {
     if (!rigName) continue;
     const parsed = parseRigName(rigName);
     if (!parsed) continue;
+    if (!isRigSizeFittable(parsed.size)) continue;
     if (parsed.bonusType !== 'BOTH' && parsed.bonusType !== bonusType) continue;
     if (!doesRigMatchProduct(parsed, typeId)) continue;
     const base = bonusType === 'ME' ? RIG_ME_BASE[parsed.tier] : RIG_TE_BASE[parsed.tier];
@@ -1224,6 +1333,81 @@ function getEffectiveRigBonusForTypeId(typeId, bonusType) {
   return best;
 }
 window.getEffectiveRigBonusForTypeId = getEffectiveRigBonusForTypeId;
+
+// Time/cost base %: confirmed via EVE Ref dogma attributes - see parseResearchRigName's own comment
+// for the exact items checked and values found.
+const RESEARCH_RIG_TIME_BASE = { T1: 20.0, T2: 24.0 };
+const RESEARCH_RIG_COST_BASE = { T1: 10.0, T2: 12.0 };
+// Same pattern as getEffectiveRigBonusForTypeId, but for the research-rig family and scoped to a
+// single category ('invention', for now - this app only has an actual Invention job cost/time
+// calculation to apply the result to; ME/TE Research and Blueprint Copy rigs are searchable and
+// selectable via the same catalog, but this app has no research/copy job calculator yet for their
+// own bonus to plug into). kind is 'time' or 'cost'.
+function getEffectiveInventionRigBonus(kind) {
+  const secMult = getSecurityMultiplier();
+  let best = 0;
+  for (let slot = 1; slot <= 3; slot++) {
+    const rigTypeId = parseInt(localStorage.getItem(`eve_rig_slot_${slot}`));
+    if (!rigTypeId) continue;
+    const rigName = window.EVE_ITEMS ? window.EVE_ITEMS[rigTypeId] : null;
+    if (!rigName) continue;
+    const parsed = parseResearchRigName(rigName);
+    if (!parsed) continue;
+    if (!isRigSizeFittable(parsed.size)) continue;
+    if (parsed.effect !== 'BOTH' && parsed.effect !== kind) continue;
+    if (!parsed.categories.includes('invention')) continue;
+    const base = kind === 'time' ? RESEARCH_RIG_TIME_BASE[parsed.tier] : RESEARCH_RIG_COST_BASE[parsed.tier];
+    best = Math.max(best, base * secMult);
+  }
+  return best;
+}
+window.getEffectiveInventionRigBonus = getEffectiveInventionRigBonus;
+
+// Human-readable description of what a specific fitted rig actually does, for the rig slot's own
+// hover tooltip (selectRigForSlot/restoreRigSlotInputs, app.js) - the real calculated bonus with the
+// current system's security multiplier already folded in, not just the bare item name, plus a clear
+// warning if it's the wrong size to ever actually fit the currently selected structure at all.
+function describeRigBonus(typeId) {
+  const rigName = window.EVE_ITEMS ? window.EVE_ITEMS[typeId] : null;
+  if (!rigName) return '';
+  const secMult = getSecurityMultiplier();
+  const parsedMfg = parseRigName(rigName);
+  const parsedResearch = parsedMfg ? null : parseResearchRigName(rigName);
+  const parsed = parsedMfg || parsedResearch || parseThukkerRigName(rigName);
+  if (!parsed) return rigName;
+
+  const activeStructure = window.getActiveStructureType ? window.getActiveStructureType() : {};
+  const mismatchNote = isRigSizeFittable(parsed.size) ? '' : `\n⚠ Wrong size for the selected structure (needs a ${activeStructure.rigSize || 'no'}-sized rig) - this bonus is NOT being applied.`;
+
+  if (parsedMfg) {
+    const specLabel = parsed.spec ? `${parsed.spec} ` : '';
+    const lines = [];
+    if (parsed.bonusType === 'ME' || parsed.bonusType === 'BOTH') lines.push(`ME: -${(RIG_ME_BASE[parsed.tier] * secMult).toFixed(1)}% material need for ${specLabel}${parsed.categoryLabel}`);
+    if (parsed.bonusType === 'TE' || parsed.bonusType === 'BOTH') lines.push(`TE: -${(RIG_TE_BASE[parsed.tier] * secMult).toFixed(1)}% build time for ${specLabel}${parsed.categoryLabel}`);
+    return `${rigName}\n${lines.join('\n')}${mismatchNote}`;
+  }
+
+  if (!parsedResearch) {
+    // Thukker-family rig - fixed, verified numbers (no I/II tier, no security multiplier applied here
+    // since its curve is inverted from every other rig - see parseThukkerRigName's own comment).
+    const lines = [];
+    if (parsed.me > 0) lines.push(`ME: -${parsed.me}% material need for ${parsed.scope}`);
+    lines.push(`ME: -${parsed.capME}% material need specifically for Capital Construction Components`);
+    if (parsed.te > 0) lines.push(`TE: -${parsed.te}% build time for ${parsed.scope}`);
+    const secNote = '\n⚠ Unusual scaling: only 0.1x effective in highsec/null/WH, but 1.9x in lowsec (opposite of every other rig).';
+    const notModeledNote = '\n(Not yet used in any calculation on this app - this special Thukker-line bonus curve isn\'t modeled here yet.)';
+    return `${rigName}\n${lines.join('\n')}${secNote}${notModeledNote}${mismatchNote}`;
+  }
+
+  const categoryLabels = { invention: 'Invention', meResearch: 'ME Research', teResearch: 'TE Research', copy: 'Blueprint Copying' };
+  const catText = parsed.categories.map(c => categoryLabels[c] || c).join(' + ');
+  const lines = [];
+  if (parsed.effect === 'time' || parsed.effect === 'BOTH') lines.push(`Time: -${(RESEARCH_RIG_TIME_BASE[parsed.tier] * secMult).toFixed(1)}% for ${catText}`);
+  if (parsed.effect === 'cost' || parsed.effect === 'BOTH') lines.push(`Cost: -${(RESEARCH_RIG_COST_BASE[parsed.tier] * secMult).toFixed(1)}% for ${catText}`);
+  const notUsedNote = parsed.categories.includes('invention') ? '' : '\n(Not yet used in any calculation on this app - only Invention job cost/time factors in rig bonuses right now.)';
+  return `${rigName}\n${lines.join('\n')}${notUsedNote}${mismatchNote}`;
+}
+window.describeRigBonus = describeRigBonus;
 
 const POPULAR_SYSTEMS = [
   { id: 30000142, name: "JITA" }, { id: 30000144, name: "PERIMETER" },

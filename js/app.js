@@ -84,6 +84,13 @@ function onStructureTypeChange() {
   const facilityKey = document.getElementById('facility-select')?.value || 'sotiyo';
   localStorage.setItem('eve_active_facility_key', facilityKey);
   renderStructureBonusChips();
+  // A rig fitted for the OLD structure's size may no longer fit the new one at all - re-run the
+  // tooltips (restoreRigSlotInputs, not just the search filter) so any now-mismatched rig picks up
+  // describeRigBonus's "wrong size, not applied" warning immediately instead of only on next hover
+  // after a search. The stored selection itself is left alone (not auto-cleared) - same reasoning
+  // as leaving a stale collapse/expand override in place elsewhere: silently discarding a choice the
+  // user made on a mere structure switch would be more surprising than a clearly-labeled mismatch.
+  if (typeof window.restoreRigSlotInputs === 'function') window.restoreRigSlotInputs();
 }
 window.onStructureTypeChange = onStructureTypeChange;
 
@@ -122,13 +129,22 @@ function loadTaxSettings() {
 }
 
 // Filters the real rig item catalog (pulled from the generated database) as the user types, and
-// renders matching results in the dropdown below the search box.
+// renders matching results in the dropdown below the search box. Narrowed to whatever rig size the
+// currently selected structure can actually fit (isRigSizeFittable, config.js) first - a Raitaru (M)
+// can never fit an L or XL rig in real EVE, so there's no point offering one here either.
 function searchRigSlot(slotNum, query) {
   const resultsEl = document.getElementById(`rig-slot-${slotNum}-results`);
   if (!resultsEl) return;
-  const catalog = typeof window.getRigItemCatalog === 'function' ? window.getRigItemCatalog() : [];
-  if (catalog.length === 0) {
+  const fullCatalog = typeof window.getRigItemCatalog === 'function' ? window.getRigItemCatalog() : [];
+  if (fullCatalog.length === 0) {
     resultsEl.innerHTML = `<div class="p-1.5 text-slate-500">No rig data found - regenerate your database (generate_db.py) to enable rig search.</div>`;
+    resultsEl.classList.remove('hidden');
+    return;
+  }
+  const activeStructure = window.getActiveStructureType ? window.getActiveStructureType() : {};
+  const catalog = activeStructure.rigSize ? fullCatalog.filter(r => r.size === activeStructure.rigSize) : [];
+  if (catalog.length === 0) {
+    resultsEl.innerHTML = `<div class="p-1.5 text-slate-500">${activeStructure.rigSize ? `No ${activeStructure.rigSize}-sized rigs found` : `${window.esc(activeStructure.shortLabel || 'This structure')} has no rig slots`} - pick an Engineering Complex or Refinery above to fit rigs.</div>`;
     resultsEl.classList.remove('hidden');
     return;
   }
@@ -136,8 +152,8 @@ function searchRigSlot(slotNum, query) {
   const matches = (q ? catalog.filter(r => r.name.toLowerCase().includes(q)) : catalog).slice(0, 25);
   const noneRow = `<div class="px-1.5 py-1 hover:bg-orange-500/15 cursor-pointer text-slate-400 border-b border-orange-500/15" onmousedown="selectRigForSlot(${slotNum}, 0, '')">— None —</div>`;
   const matchRows = matches.length > 0
-    ? matches.map(r => `<div class="px-1.5 py-1 hover:bg-orange-500/15 cursor-pointer border-b border-orange-500/15" onmousedown="selectRigForSlot(${slotNum}, ${r.typeId}, '${window.esc(r.name)}')">${window.esc(r.name)}</div>`).join('')
-    : `<div class="p-1.5 text-slate-500">No matching rigs found.</div>`;
+    ? matches.map(r => `<div class="px-1.5 py-1 hover:bg-orange-500/15 cursor-pointer border-b border-orange-500/15" onmousedown="selectRigForSlot(${slotNum}, ${r.typeId}, '${window.esc(r.name)}')" title="${window.esc((typeof window.describeRigBonus === 'function' ? window.describeRigBonus(r.typeId) : r.name))}">${window.esc(r.name)}</div>`).join('')
+    : `<div class="p-1.5 text-slate-500">No matching ${activeStructure.rigSize}-sized rigs found.</div>`;
   resultsEl.innerHTML = noneRow + matchRows;
   resultsEl.classList.remove('hidden');
 }
@@ -149,7 +165,12 @@ window.searchRigSlot = searchRigSlot;
 function selectRigForSlot(slotNum, typeId, name) {
   const inputEl = document.getElementById(`rig-slot-${slotNum}-input`);
   const resultsEl = document.getElementById(`rig-slot-${slotNum}-results`);
-  if (inputEl) inputEl.value = typeId ? name : '';
+  if (inputEl) {
+    inputEl.value = typeId ? name : '';
+    // Hovering the filled slot shows exactly what it's giving (real calculated %, security
+    // multiplier already applied) instead of just the bare item name - see describeRigBonus.
+    inputEl.title = typeId && typeof window.describeRigBonus === 'function' ? window.describeRigBonus(typeId) : '';
+  }
   if (resultsEl) resultsEl.classList.add('hidden');
   setRigSlotFilledState(slotNum, !!typeId);
   localStorage.setItem(`eve_rig_slot_${slotNum}`, typeId ? String(typeId) : '');
@@ -1114,7 +1135,10 @@ function restoreRigSlotInputs() {
     const rigTypeId = parseInt(localStorage.getItem(`eve_rig_slot_${slot}`));
     const inputEl = document.getElementById(`rig-slot-${slot}-input`);
     const name = (rigTypeId && window.EVE_ITEMS && window.EVE_ITEMS[rigTypeId]) ? window.EVE_ITEMS[rigTypeId] : '';
-    if (inputEl) inputEl.value = name;
+    if (inputEl) {
+      inputEl.value = name;
+      inputEl.title = name && typeof window.describeRigBonus === 'function' ? window.describeRigBonus(rigTypeId) : '';
+    }
     setRigSlotFilledState(slot, !!name);
   }
 }

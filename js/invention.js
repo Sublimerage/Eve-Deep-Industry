@@ -400,9 +400,14 @@ async function recalculateInventionImpl() {
   // same reason: the per-item manufacturing time-reduction skills (e.g. Caldari Starship
   // Engineering) don't apply to invention either. Only Industry/Advanced Industry + facility/rig TE
   // bonuses (already baked into calculateAdjustedJobSeconds unconditionally) actually reduce it.
+  // isInvention=true (the final argument) is what actually picks the CORRECT rig bonus source for
+  // that last part - a real "Standup ...Invention Accelerator" rig, not whatever manufacturing
+  // Efficiency rig happens to match the T2 product's own category (see calculateAdjustedJobSeconds'
+  // own comment on this - before isInvention existed, this call silently used the wrong rig family
+  // entirely, and the right one wasn't even searchable).
   const baseInventionTime = _inventionCurrentBlueprint.inventionTime;
   const perAttemptInventionSeconds = (baseInventionTime && typeof window.calculateAdjustedJobSeconds === 'function')
-    ? window.calculateAdjustedJobSeconds(baseInventionTime, 0, 1, true, _inventionCurrentBlueprint.productTypeID, [])
+    ? window.calculateAdjustedJobSeconds(baseInventionTime, 0, 1, true, _inventionCurrentBlueprint.productTypeID, [], true)
     : 0;
 
   // Read once, outside the per-decryptor loop below - none of these 4 values depend on which
@@ -455,11 +460,15 @@ async function recalculateInventionImpl() {
       // The invention job's own installation fee - same EIV-based formula as manufacturing jobs
       // (facility tax + SCC surcharge + system cost index), but using invention's own SCI and EIV
       // based on the datacores actually consumed per attempt (invention has no ME to reduce this).
+      // A real Invention Cost Optimization/Optimization/Laboratory Optimization rig reduces this
+      // SAME system-cost-index component further, same multiplicative pattern as the structure's
+      // own costBonus right next to it (see getEffectiveInventionRigBonus's own comment, config.js).
       const structureTypeForInv = window.getActiveStructureType ? window.getActiveStructureType() : { costBonus: 5.0 };
       const structureRoleBonusForInv = structureTypeForInv.costBonus / 100;
+      const inventionRigCostBonus = window.getEffectiveInventionRigBonus ? window.getEffectiveInventionRigBonus('cost') : 0;
       const inventionSCI = window.activeInventionSCI !== undefined ? window.activeInventionSCI : 0.02;
       const attemptEIV = datacores.reduce((sum, m) => sum + (window.eivCache && window.eivCache[m.typeId] ? window.eivCache[m.typeId] * m.qty : 0), 0);
-      const inventionJobFeePerAttempt = attemptEIV * (inventionSCI * (1 - structureRoleBonusForInv) + facilityTax + sccSurcharge);
+      const inventionJobFeePerAttempt = attemptEIV * (inventionSCI * (1 - structureRoleBonusForInv) * (1 - inventionRigCostBonus / 100) + facilityTax + sccSurcharge);
       totalInventionCost += inventionJobFeePerAttempt * requiredRuns;
     } else {
       totalInventionCost = Infinity;
