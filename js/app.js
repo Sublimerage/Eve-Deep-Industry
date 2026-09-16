@@ -1016,7 +1016,7 @@ function renderCardStationSelectorHTML() {
         ${optionsHTML}
       </select>
       <button id="find-best-station-btn" onclick="findBestProductionStation()" class="icon-btn flex-shrink-0" style="width:22px;height:22px;" ${findBestDisabled ? 'disabled' : ''} title="${findBestDisabled ? 'Save at least 2 production station presets to compare' : 'Check every saved station preset against this build and switch to whichever is cheapest'}">
-        <span style="width:13px;display:inline-block;">${window.svgIcon('zap')}</span>
+        ${window.svgIcon('zap', { style: 'width:12px;height:12px;' })}
       </button>
     </div>
   `;
