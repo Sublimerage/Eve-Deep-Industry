@@ -2955,7 +2955,14 @@ function applyNodeHighlightClasses() {
   }
 
   const selectedNode = findNodeByInstanceId(window.recipeTreeRoot, window.selectedInstanceId);
-  const childInstanceIds = new Set(selectedNode ? selectedNode.children.map(c => c.instanceId) : []);
+  // A same-tier duplicate material merged into a shared card (renderTreeDiagram's merge pass) no
+  // longer has a card of its own under its original instanceId - resolve through the same
+  // __mergeRedirect map drawConnectingLinesForTree already uses to position the line, or a merged
+  // child's real (surviving) card never picks up node-child-highlight even though its connecting
+  // line does, leaving it looking unrelated to the selection it's actually feeding into.
+  const childInstanceIds = new Set((selectedNode ? selectedNode.children : []).map(c =>
+    (window.__mergeRedirect && window.__mergeRedirect[c.instanceId]) || c.instanceId
+  ));
   const parentInstanceId = selectedNode ? selectedNode.parentInstanceId : null;
 
   allCards.forEach(card => {
