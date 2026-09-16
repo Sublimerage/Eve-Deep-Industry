@@ -166,7 +166,28 @@ async function toggleBuildSelf(e, typeId) {
   // selectItem() in the first place), so it's untouched by this guard and keeps working exactly as
   // before.
   if (root && root.isLPIsolatedRoot && !root.recipe) {
+    // Same pan-compensation selectItem does below for the normal rebuild path (see its own
+    // anchorInstanceId comment) - this branch never calls selectItem at all, so without this the
+    // camera visibly jumped on every Build/Buy toggle for an LP offer's synthetic root, unlike the
+    // Calculator page (which never takes this branch, since its root is never isLPIsolatedRoot).
+    const anchorEl = e && e.target ? e.target.closest('.diagram-node') : null;
+    const anchorInstanceIdLP = anchorEl ? parseInt(anchorEl.getAttribute('data-instance-id')) : null;
+    const anchorNodeLP = anchorInstanceIdLP != null ? findNodeByInstanceId(root, anchorInstanceIdLP) : null;
+    const anchorPathKeyLP = anchorNodeLP ? anchorNodeLP.pathKey : null;
+    const anchorRectBeforeLP = anchorEl ? anchorEl.getBoundingClientRect() : null;
+
     if (typeof window.recalculate === 'function') await window.recalculate();
+
+    if (anchorPathKeyLP && anchorRectBeforeLP && window.recipeTreeRoot) {
+      const anchorNodeAfterLP = findNodeByPathKey(window.recipeTreeRoot, anchorPathKeyLP);
+      const anchorElAfterLP = anchorNodeAfterLP ? document.getElementById(`node-card-${anchorNodeAfterLP.instanceId}`) : null;
+      if (anchorElAfterLP) {
+        const rectAfterLP = anchorElAfterLP.getBoundingClientRect();
+        window.panX -= (rectAfterLP.left - anchorRectBeforeLP.left);
+        window.panY -= (rectAfterLP.top - anchorRectBeforeLP.top);
+        updateTransform();
+      }
+    }
     return;
   }
 

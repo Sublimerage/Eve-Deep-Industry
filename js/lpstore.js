@@ -896,7 +896,7 @@ window.onLPRedemptionCountChange = onLPRedemptionCountChange;
 // there. Reset per-offer in isolateOffer.
 window.__lpRequiredItemBuildOverrides = window.__lpRequiredItemBuildOverrides || {};
 
-function toggleLPRequiredItemBuild(e, typeId) {
+async function toggleLPRequiredItemBuild(e, typeId) {
   if (e) e.stopPropagation();
   const next = !window.__lpRequiredItemBuildOverrides[typeId];
   window.__lpRequiredItemBuildOverrides[typeId] = next;
@@ -910,7 +910,43 @@ function toggleLPRequiredItemBuild(e, typeId) {
   if (recipe && recipe.blueprintTypeID) {
     window.buildSelfOverrides[parseInt(recipe.blueprintTypeID)] = next;
   }
-  if (typeof window.recalculate === 'function') window.recalculate();
+
+  // Same pan-compensation optimizers.js's toggleBuildSelf does for every other Build/Buy toggle
+  // (see its own comment on why this matters) - this required-item toggle calls recalculate()
+  // directly rather than going through toggleBuildSelf at all, so it never inherited that fix.
+  // Building a required item for the first time replaces its flat stub (node.typeId === the
+  // product id) with a real recursive sub-tree (node.typeId === the BLUEPRINT id instead) - a
+  // brand new instanceId AND a changed typeId, so pathKey (which is built from each node's own
+  // typeId) changes too and can't re-find it the way every other rebuild-surviving lookup in this
+  // app does. _lpRequiredItemProductTypeId is the one identity injectLPRedemptionNodes deliberately
+  // keeps stable across that flat-stub/real-subtree transition (see its own comment) - anchor on
+  // that here instead.
+  const anchorEl = e && e.target ? e.target.closest('.diagram-node') : null;
+  const anchorRectBefore = anchorEl ? anchorEl.getBoundingClientRect() : null;
+
+  if (typeof window.recalculate === 'function') await window.recalculate();
+
+  if (anchorRectBefore && window.recipeTreeRoot) {
+    function findByRequiredItemProductTypeId(node) {
+      if (!node) return null;
+      if (node._lpRequiredItemProductTypeId === typeId) return node;
+      if (node.children) {
+        for (const c of node.children) {
+          const found = findByRequiredItemProductTypeId(c);
+          if (found) return found;
+        }
+      }
+      return null;
+    }
+    const anchorNodeAfter = findByRequiredItemProductTypeId(window.recipeTreeRoot);
+    const anchorElAfter = anchorNodeAfter ? document.getElementById(`node-card-${anchorNodeAfter.instanceId}`) : null;
+    if (anchorElAfter) {
+      const rectAfter = anchorElAfter.getBoundingClientRect();
+      window.panX -= (rectAfter.left - anchorRectBefore.left);
+      window.panY -= (rectAfter.top - anchorRectBefore.top);
+      updateTransform();
+    }
+  }
 }
 window.toggleLPRequiredItemBuild = toggleLPRequiredItemBuild;
 
@@ -1018,10 +1054,28 @@ async function ensureLPRedemptionNodesPresent() {
 // buildRecursiveRecipeTree for any required item toggled to Build) - every existing caller on this
 // page already treats recalculate() as fire-and-forget (onclick="recalculate()" etc.), so returning
 // a Promise instead of undefined changes nothing observable for them.
+//
+// Coalesced (never run two passes concurrently): a REAL reported bug traced back here - toggling a
+// required item's Build/Buy state fires this async wrapper without awaiting it (same as every other
+// trigger above), and each pass itself awaits real async work (buildRecursiveRecipeTree for a newly-
+// built required item, fetchMarketPrices). Two overlapping passes (a quick second toggle, or any
+// other recalculate-triggering edit landing while the first was still mid-flight) could finish OUT OF
+// ORDER, leaving the LP Economics card - and window.recipeTreeRoot itself - reflecting whichever pass
+// happened to write last, not necessarily the one matching the CURRENT override state. That's exactly
+// "toggle Build, ISK/LP drops hard; toggle back to Buy, it's still wrong" - a stale second pass
+// finishing after the revert and clobbering the correct result, only ever fixed by some later,
+// solo (non-overlapping) recalculate() - reported as fixed by switching the Sell/Buy strategy, but any
+// recalculate that happens to run alone would have "fixed" it the same way. A call that arrives while
+// one's already running no longer starts a second one - it marks that another pass is wanted once the
+// current one finishes (picking up whatever's the LATEST state by then, not stale data from when it
+// was queued) and shares that first pass's own promise, so every caller's await still resolves once
+// the override state it cared about has actually been accounted for.
+let _lpRecalcInFlight = null;
+let _lpRecalcQueued = false;
 function installLPRecalculateHook() {
   if (typeof window.recalculate !== 'function' || window.recalculate.__lpWrapped) return;
   const original = window.recalculate;
-  const wrapped = async function (...args) {
+  const runOnce = async function (...args) {
     window.__lpSpentThisRecalc = 0; // calculateTreeNodeCost (js/optimizers.js) accumulates into this
     await ensureLPRedemptionNodesPresent();
     const result = original.apply(this, args);
@@ -1029,6 +1083,22 @@ function installLPRecalculateHook() {
     renderLPExtraStats();
     renderLPStoreActiveStationLabel(); // picks up a structure/preset change made via the sidebar
     return result;
+  };
+  const wrapped = function (...args) {
+    if (_lpRecalcInFlight) {
+      _lpRecalcQueued = true;
+      return _lpRecalcInFlight;
+    }
+    _lpRecalcInFlight = (async () => {
+      let result;
+      do {
+        _lpRecalcQueued = false;
+        result = await runOnce.apply(this, args);
+      } while (_lpRecalcQueued);
+      _lpRecalcInFlight = null;
+      return result;
+    })();
+    return _lpRecalcInFlight;
   };
   wrapped.__lpWrapped = true;
   window.recalculate = wrapped;
