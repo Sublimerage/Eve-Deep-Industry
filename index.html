@@ -482,17 +482,17 @@
 
             <div class="fo-card">
               <div class="fo-card-title">Contracts</div>
-              <div class="fo-row" title="Sales tax applied when the output is moved via contract instead of a market sell order.">
+              <div class="fo-row" title="Sales tax applied when the output is moved via contract instead of a market sell order. Reduced by the Accounting skill, same as regular market sales tax - default assumes Accounting V. Edit to match your own trained level.">
                 <span class="fo-row-label">Contract sales tax</span>
                 <div class="fo-row-ctl">
                   <input type="text" inputmode="decimal" id="contract-tax" value="0.5" oninput="sanitizeDecimalInput(event); saveTaxSettings(); recalculate();" class="fo-num">
                   <span class="fo-num-suffix">%</span>
                 </div>
               </div>
-              <div class="fo-row" title="Broker fee applied when the output is moved via contract.">
+              <div class="fo-row" title="Broker fee applied when the output is moved via contract. Reduced by the Broker Relations skill, same as a regular market broker fee - default assumes Broker Relations V. Edit to match your own trained level.">
                 <span class="fo-row-label">Contract broker fee</span>
                 <div class="fo-row-ctl">
-                  <input type="text" inputmode="decimal" id="contract-broker" value="0.5" oninput="sanitizeDecimalInput(event); saveTaxSettings(); recalculate();" class="fo-num">
+                  <input type="text" inputmode="decimal" id="contract-broker" value="1.65" oninput="sanitizeDecimalInput(event); saveTaxSettings(); recalculate();" class="fo-num">
                   <span class="fo-num-suffix">%</span>
                 </div>
               </div>
@@ -815,11 +815,11 @@
        serially blocking each download on the previous script finishing, while still guaranteeing
        they execute in this exact order once parsing completes - same behavior, faster to get there. -->
   <script src="eve_db.js?v=16.4.0" defer></script>
-  <script src="js/config.js?v=15.8.33" defer></script>
+  <script src="js/config.js?v=15.8.35" defer></script>
   <script src="js/esi.js?v=15.8.25" defer></script>
   <script src="js/tree.js?v=15.1.5" defer></script>
   <script src="js/optimizers.js?v=15.4.9" defer></script>
-  <script src="js/app.js?v=15.83.1" defer></script>
+  <script src="js/app.js?v=15.83.2" defer></script>
   <script src="js/custom-select.js?v=1.5.0" defer></script>
 </body>
 </html>
