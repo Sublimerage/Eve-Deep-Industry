@@ -1007,6 +1007,7 @@ function renderCardStationSelectorHTML() {
   const presetNames = Object.keys(presets).sort();
   const currentOptionHTML = `<option value="" selected>${window.esc(label)}</option>`;
   const optionsHTML = presetNames.map(name => `<option value="${window.esc(name)}">${window.esc(name)}</option>`).join('');
+  const findBestDisabled = presetNames.length < 2;
   return `
     <div class="flex items-center gap-1.5 min-w-0" onclick="event.stopPropagation()" title="Current production station - pick a saved preset to switch instantly. Manage (save/rename/delete) presets from the Structure panel on the left.">
       <span class="text-slate-400 flex-shrink-0" style="width:13px;">${window.svgIcon('factory')}</span>
@@ -1014,10 +1015,102 @@ function renderCardStationSelectorHTML() {
         ${currentOptionHTML}
         ${optionsHTML}
       </select>
+      <button id="find-best-station-btn" onclick="findBestProductionStation()" class="icon-btn flex-shrink-0" style="width:22px;height:22px;" ${findBestDisabled ? 'disabled' : ''} title="${findBestDisabled ? 'Save at least 2 production station presets to compare' : 'Check every saved station preset against this build and switch to whichever is cheapest'}">
+        <span style="width:13px;display:inline-block;">${window.svgIcon('zap')}</span>
+      </button>
     </div>
   `;
 }
 window.renderCardStationSelectorHTML = renderCardStationSelectorHTML;
+
+// Re-applies a plain system/structure/rig/tax snapshot (not necessarily a saved preset - e.g. the
+// live setup findBestProductionStation started from) - the same steps loadProductionPreset itself
+// runs, minus the preset-dropdown bookkeeping that only makes sense for an actual named preset.
+async function applyProductionSnapshot(snapshot) {
+  if (!snapshot) return;
+  if (snapshot.systemId && typeof window.selectSolarSystem === 'function') {
+    await window.selectSolarSystem(snapshot.systemId, snapshot.systemName);
+  }
+  const facilitySelect = document.getElementById('facility-select');
+  if (facilitySelect && snapshot.facilityKey) {
+    facilitySelect.value = snapshot.facilityKey;
+    onStructureTypeChange();
+  }
+  const facilityTaxInput = document.getElementById('facility-tax');
+  if (facilityTaxInput && snapshot.facilityTax !== undefined) facilityTaxInput.value = snapshot.facilityTax;
+  saveTaxSettings();
+  [1, 2, 3].forEach(slot => localStorage.setItem(`eve_rig_slot_${slot}`, snapshot[`rig${slot}`] || ''));
+  restoreRigSlotInputs();
+  if (typeof window.recalculate === 'function') window.recalculate();
+}
+window.applyProductionSnapshot = applyProductionSnapshot;
+
+// Tries every saved production station preset against the CURRENTLY loaded build (real system SCI +
+// structure bonuses + rig bonuses + facility tax, via the exact same loadProductionPreset path a
+// manual pick uses - not a separate/duplicated cost formula) and switches to whichever comes out
+// cheapest. Only ever switches AWAY from what's live if a saved preset actually beats it - the live
+// setup itself might not even be a saved preset, and "best" shouldn't mean "downgrade to one that
+// was merely checked." Card re-renders (via each loadProductionPreset's own recalculate() call)
+// replace this button's DOM element every step, so its own progress label is re-queried fresh each
+// time rather than cached - a stale reference from before the first render would silently stop
+// updating on screen after that.
+async function findBestProductionStation() {
+  if (!window.recipeTreeRoot) return;
+  const presetNames = Object.keys(getProductionPresets()).sort();
+  if (presetNames.length < 2) {
+    if (typeof window.showToast === 'function') window.showToast('Save at least 2 production station presets first, so there is something to compare.', 'info');
+    return;
+  }
+
+  const originalSnapshot = { ...getCurrentLiveProductionSnapshot(), facilityTax: document.getElementById('facility-tax')?.value };
+  const originalLabel = resolveProductionPresetLabel(getCurrentLiveProductionSnapshot());
+  const originalCost = window.recipeTreeRoot.calculatedCost || 0;
+  let bestCost = originalCost;
+  let bestName = null;
+
+  const setBtnProgress = (text) => {
+    const btn = document.getElementById('find-best-station-btn');
+    if (btn) {
+      btn.disabled = true;
+      btn.style.width = 'auto';
+      btn.style.padding = '0 8px';
+      btn.innerHTML = `<span class="text-xs font-bold" style="white-space:nowrap;">${window.esc(text)}</span>`;
+    }
+  };
+
+  try {
+    for (let i = 0; i < presetNames.length; i++) {
+      const name = presetNames[i];
+      setBtnProgress(`${i + 1}/${presetNames.length}`);
+      try {
+        await loadProductionPreset(name);
+        const cost = window.recipeTreeRoot.calculatedCost;
+        if (typeof cost === 'number' && cost > 0 && cost < bestCost) {
+          bestCost = cost;
+          bestName = name;
+        }
+      } catch (e) {
+        console.warn(`[App] Skipped "${name}" while finding the best station - it failed to load:`, e);
+      }
+    }
+
+    if (bestName) {
+      await loadProductionPreset(bestName);
+      const savings = originalCost - bestCost;
+      const savingsLabel = originalCost > 0 ? ` - saves ${window.formatISKCompact(savings)} vs "${originalLabel}"` : '';
+      if (typeof window.showToast === 'function') window.showToast(`Best station: "${bestName}"${savingsLabel} (checked ${presetNames.length}).`, 'success');
+    } else {
+      await applyProductionSnapshot(originalSnapshot);
+      if (typeof window.showToast === 'function') window.showToast(`"${originalLabel}" is already your cheapest option - checked ${presetNames.length} saved presets.`, 'info');
+    }
+  } finally {
+    // Whichever branch ran above always ends in a recalculate() that redraws this button fresh in
+    // its normal (non-loading) state - this is only a safety net for the unexpected case where
+    // something threw before either branch's own final load/apply call ran.
+    if (typeof window.recalculate === 'function') window.recalculate();
+  }
+}
+window.findBestProductionStation = findBestProductionStation;
 
 function renderProductionPresetDropdown() {
   const select = document.getElementById('production-preset-select');

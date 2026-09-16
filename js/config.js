@@ -1224,6 +1224,24 @@ function classifyShipTechClass(groupName) {
 }
 window.classifyShipTechClass = classifyShipTechClass;
 
+// Real affected-groups lists for the "Component" and "Structure" rig families, confirmed via EVE
+// Ref dogma attributes (checked both M and L tier for each - identical group list at every size,
+// only the base % differs by I/II tier). The old check here was catId === 65 || 4 || 17 (Structure/
+// Material/Commodity) - those 3 EVE categories are far broader than what these rigs really affect
+// (e.g. catId 4 "Material" also contains every raw mineral, ice product, and fuel block), so it was
+// silently applying a bonus to totally unrelated jobs like Fuel Block manufacturing.
+// "Component" (Advanced Component M/L-tier rigs, e.g. typeId 43866/37175): notably does NOT include
+// the plain "Capital Construction Components" group (Capital Armor Plates, Capital Construction
+// Parts, etc.) - only "Advanced Capital Construction Components" (Capital Fusion Thruster, Capital
+// Nanoelectrical Microprocessor, etc.), a distinct, earlier tier in the real capital build chain.
+const COMPONENT_RIG_GROUPS = new Set(['Tool', 'Construction Components', 'Data Interfaces', 'Advanced Capital Construction Components', 'Hybrid Tech Components']);
+// "Structure" (M/L-tier rigs, e.g. typeId 43874/43721): also affects the Upwell structure-hull and
+// structure-module categories themselves (catId 65/66). EVE Ref also lists Starbase/Infrastructure
+// Upgrades/Sovereignty Structures as affected categories, but nothing in this app's recipe data is
+// buildable under those (legacy POS/sov mechanics) - left out rather than guessing their category
+// IDs, matching this app's rule against guessing unverified EVE numbers.
+const STRUCTURE_RIG_GROUPS = new Set(['Structure Components', 'Fuel Block', 'Skyhook']);
+
 // Checks whether a parsed rig actually affects a given product, based on real category/group data.
 function doesRigMatchProduct(parsed, typeId) {
   const catId = window.EVE_CATEGORIES ? window.EVE_CATEGORIES[typeId] : undefined;
@@ -1247,7 +1265,16 @@ function doesRigMatchProduct(parsed, typeId) {
   if (label === 'ammunition') return catId === 8;
   if (label.includes('drone') || label.includes('fighter')) return catId === 18 || catId === 87;
   if (label === 'equipment') return catId === 7 || catId === 66;
-  if (label.includes('component') || label.includes('structure')) return catId === 65 || catId === 4 || catId === 17;
+  if (label.includes('component') || label.includes('structure')) {
+    const groupName = window.EVE_GROUP_NAMES ? window.EVE_GROUP_NAMES[typeId] : null;
+    const matchesComponent = label.includes('component') && COMPONENT_RIG_GROUPS.has(groupName);
+    const matchesStructure = label.includes('structure') && (STRUCTURE_RIG_GROUPS.has(groupName) || catId === 65 || catId === 66);
+    // The XL-tier "Structure and Component" rig alone also covers the plain (non-Advanced) capital
+    // tier - Capital Armor Plates, Capital Construction Parts, etc. - which the M/L "Component" rig
+    // does not (confirmed via EVE Ref: its own affected-groups list omits this group entirely).
+    const matchesXLCapitalTier = label === 'structure and component' && groupName === 'Capital Construction Components';
+    return matchesComponent || matchesStructure || matchesXLCapitalTier;
+  }
   // Reaction rigs (Athanor/Tatara) match by the reaction PRODUCT's own item group, not category - the
   // 3 named reaction material lines (Biochemical/Composite/Hybrid Polymer) are real SDE group names.
   if (label.includes('reactor')) {
