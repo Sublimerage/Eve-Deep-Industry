@@ -2863,11 +2863,32 @@ function addCurrentJobToLedger(e) {
   // job's tree fresh (run count changes, preset changes) using window.buildRecursiveRecipeTree, which
   // reads these same maps - without carrying a copy along, that recompute would start from all-empty
   // and silently price every sub-component as "buy at market" regardless of what was chosen here.
+  //
+  // customMEOverrides/customTEOverrides specifically get backfilled (into this LOCAL copy only, not
+  // the live global maps) with every node's actual RESOLVED node.customME/customTE before snapshotting
+  // - a node you never manually edited still shows a real ME/TE on its card via tree.js's own
+  // owned-BPO auto-fill default (getDefaultMeTeForBlueprint), but that default is never written back
+  // into these maps. Without this backfill, queuing a job straight off that auto-fill (without ever
+  // touching the ME/TE fields by hand) silently snapshotted an EMPTY override, and the Ledger showed
+  // 0%/0% for it despite the Calculator correctly showing the real researched BPO level. Backfilling
+  // only the local copy (not window.customMEOverrides itself) keeps the Calculator's own "always
+  // follow my current best-owned BPO" default live and un-frozen for every item added afterward.
+  const snapshotMEOverrides = { ...(window.customMEOverrides || {}) };
+  const snapshotTEOverrides = { ...(window.customTEOverrides || {}) };
+  (function backfillResolvedMeTe(node) {
+    if (!node) return;
+    if (node.typeId !== undefined) {
+      if (snapshotMEOverrides[node.typeId] === undefined) snapshotMEOverrides[node.typeId] = node.customME || 0;
+      if (snapshotTEOverrides[node.typeId] === undefined) snapshotTEOverrides[node.typeId] = node.customTE || 0;
+    }
+    if (node.children) node.children.forEach(backfillResolvedMeTe);
+  })(window.recipeTreeRoot);
+
   const buildConfigSnapshot = {
     buildSelfOverrides: { ...(window.buildSelfOverrides || {}) },
     customBuyModes: { ...(window.customBuyModes || {}) },
-    customMEOverrides: { ...(window.customMEOverrides || {}) },
-    customTEOverrides: { ...(window.customTEOverrides || {}) }
+    customMEOverrides: snapshotMEOverrides,
+    customTEOverrides: snapshotTEOverrides
   };
 
   // Generated up front (not inline in the job object below) so subBuildJobs can link to it - a
