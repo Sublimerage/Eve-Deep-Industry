@@ -779,7 +779,19 @@ async function fetchUserAndCorpAssets(charId, accessToken) {
           .catch(e => console.warn('[ESI] Corp info fetch failed:', e));
       }
     }
-    if (corpId && accessToken) {
+    // Corp divisions, skills, and loyalty points are three independent ESI calls - none of them
+    // reads anything the other two write - but used to run one after another regardless, each
+    // paying its own full round-trip latency in sequence before the asset pagination below could
+    // even start. On a real connection that's easily 1-2+ seconds of pure waiting with nothing
+    // else happening, and since this whole function fires automatically on every page load for a
+    // logged-in character (handleEsiSSOCallback), that delay could still be running in the
+    // background the first time you interact with the page - reported directly as "the first
+    // click after a refresh lags 2-3 seconds, every click after that is instant" (this function
+    // only ever runs once per load; every later call today, per-toggle recalculates, isn't waiting
+    // on it). Running them together cuts this to whichever single one is slowest, not the sum of
+    // all three.
+    const divisionsPromise = (async () => {
+      if (!(corpId && accessToken)) return;
       try {
         const divRes = await fetchWithAuth(`https://esi.evetech.net/latest/corporations/${corpId}/divisions/?datasource=tranquility`, {}, accessToken, true);
         if (divRes && divRes.ok) {
@@ -793,98 +805,120 @@ async function fetchUserAndCorpAssets(charId, accessToken) {
           }
         }
       } catch (e) { console.warn('[ESI] Corp division names fetch failed - hangar divisions will show as generic names:', e); }
-    }
-    try {
-      const skillsRes = await fetchWithAuth(`https://esi.evetech.net/latest/characters/${charId}/skills/?datasource=tranquility`, {}, accessToken, true);
-      if (skillsRes && skillsRes.ok) {
-        const skillsData = await skillsRes.json();
-        if (skillsData && Array.isArray(skillsData.skills)) {
-          let indLevel = 0;
-          let advIndLevel = 0;
-          const allSkills = {};
-          skillsData.skills.forEach(sk => {
-            const level = sk.active_skill_level !== undefined ? sk.active_skill_level : (sk.trained_skill_level || 0);
-            allSkills[sk.skill_id] = level;
-            if (sk.skill_id === 3380) indLevel = level;
-            if (sk.skill_id === 3388) advIndLevel = level;
-          });
-          // Store the FULL skill sheet too, not just Industry/Advanced Industry - many blueprints
-          // (T2, T3, faction, Triglavian) require specific science/engineering skills that ALSO grant
-          // their own 1%/level manufacturing time reduction for items requiring that skill, on top of
-          // the generic Industry/Advanced Industry bonuses. Matching those needs the player's actual
-          // trained level in every such skill, not just the two generic ones.
-          localStorage.setItem('eve_char_skills', JSON.stringify({ industry: indLevel, advIndustry: advIndLevel, allSkills: allSkills }));
+    })();
+
+    const skillsPromise = (async () => {
+      try {
+        const skillsRes = await fetchWithAuth(`https://esi.evetech.net/latest/characters/${charId}/skills/?datasource=tranquility`, {}, accessToken, true);
+        if (skillsRes && skillsRes.ok) {
+          const skillsData = await skillsRes.json();
+          if (skillsData && Array.isArray(skillsData.skills)) {
+            let indLevel = 0;
+            let advIndLevel = 0;
+            const allSkills = {};
+            skillsData.skills.forEach(sk => {
+              const level = sk.active_skill_level !== undefined ? sk.active_skill_level : (sk.trained_skill_level || 0);
+              allSkills[sk.skill_id] = level;
+              if (sk.skill_id === 3380) indLevel = level;
+              if (sk.skill_id === 3388) advIndLevel = level;
+            });
+            // Store the FULL skill sheet too, not just Industry/Advanced Industry - many blueprints
+            // (T2, T3, faction, Triglavian) require specific science/engineering skills that ALSO grant
+            // their own 1%/level manufacturing time reduction for items requiring that skill, on top of
+            // the generic Industry/Advanced Industry bonuses. Matching those needs the player's actual
+            // trained level in every such skill, not just the two generic ones.
+            localStorage.setItem('eve_char_skills', JSON.stringify({ industry: indLevel, advIndustry: advIndLevel, allSkills: allSkills }));
+          }
         }
+      } catch (e) {
+        console.warn('ESI Skills fetch failed:', e);
       }
-    } catch (e) {
-      console.warn('ESI Skills fetch failed:', e);
-    }
+    })();
+
     // suppressLogout:true - most characters logged in before esi-characters.read_loyalty.v1 was
     // added won't have it on their existing token yet (a 401/403 here is the normal, expected
     // outcome for them, not a broken session) until they log in again once to grant it.
-    try {
-      const lpRes = await fetchWithAuth(`https://esi.evetech.net/latest/characters/${charId}/loyalty/points/?datasource=tranquility`, { cache: 'no-store' }, accessToken, true);
-      if (lpRes && lpRes.ok) {
-        const lpData = await lpRes.json();
-        if (Array.isArray(lpData)) {
-          const byCorpId = {};
-          lpData.forEach(entry => { byCorpId[entry.corporation_id] = entry.loyalty_points; });
-          localStorage.setItem('eve_char_lp_balances', JSON.stringify({ fetchedAt: Date.now(), byCorpId }));
+    const loyaltyPromise = (async () => {
+      try {
+        const lpRes = await fetchWithAuth(`https://esi.evetech.net/latest/characters/${charId}/loyalty/points/?datasource=tranquility`, { cache: 'no-store' }, accessToken, true);
+        if (lpRes && lpRes.ok) {
+          const lpData = await lpRes.json();
+          if (Array.isArray(lpData)) {
+            const byCorpId = {};
+            lpData.forEach(entry => { byCorpId[entry.corporation_id] = entry.loyalty_points; });
+            localStorage.setItem('eve_char_lp_balances', JSON.stringify({ fetchedAt: Date.now(), byCorpId }));
+          }
+        } else if (lpRes) {
+          // A real response, just not ok (401/403 = missing scope on an older token) - record that
+          // explicitly rather than leaving a stale/absent value, so the LP Store's "LP Owned" panel
+          // can tell "we asked and were refused" apart from "never asked yet" and prompt a re-login.
+          localStorage.setItem('eve_char_lp_balances', JSON.stringify({ fetchedAt: Date.now(), missingScope: true }));
         }
-      } else if (lpRes) {
-        // A real response, just not ok (401/403 = missing scope on an older token) - record that
-        // explicitly rather than leaving a stale/absent value, so the LP Store's "LP Owned" panel
-        // can tell "we asked and were refused" apart from "never asked yet" and prompt a re-login.
-        localStorage.setItem('eve_char_lp_balances', JSON.stringify({ fetchedAt: Date.now(), missingScope: true }));
+      } catch (e) {
+        console.warn('ESI Loyalty points fetch failed:', e);
       }
-    } catch (e) {
-      console.warn('ESI Loyalty points fetch failed:', e);
-    }
-    let page = 1;
-    let hasMore = true;
-    while (hasMore) {
-      // no-store - same reasoning as the industry-jobs fetch below: without it, clicking "Refresh
-      // Assets" again within the browser's own HTTP cache window for this exact URL+page can be
-      // answered straight from that cache with zero network request, silently replaying the same
-      // stale item locations/quantities instead of even asking ESI again - exactly what makes newly
-      // hauled cargo (or anything else that moved) look like it never arrived. This can't do anything
-      // about ESI's OWN server-side cache on this endpoint (CCP's, not this app's, and unavoidable by
-      // any client - typically on the order of an hour) - a fresh haul can still take a while to show
-      // up no matter what - but it guarantees a manual refresh always at least ASKS ESI fresh.
-      const res = await fetchWithAuth(`https://esi.evetech.net/latest/characters/${charId}/assets/?datasource=tranquility&page=${page}`, { cache: 'no-store' }, accessToken);
-      if (res && res.ok) {
-        assetsFetchOk = true;
-        recordEsiAssetsExpiry(res);
-        const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
-          data.forEach(ast => {
-            // is_blueprint_copy is present (true OR false) only on blueprint-type assets, absent
-            // on everything else - excluding it here stops a BPO/BPC from ever being counted as
-            // stock of the item it produces (they're always distinct type_ids, but a blueprint
-            // sitting in a hangar is never "stock" of the manufactured item either way).
-            if (ast.type_id && ast.quantity && ast.is_blueprint_copy === undefined) {
-              window.rawAssetItems.push({
-                item_id: ast.item_id,
-                type_id: ast.type_id,
-                quantity: ast.quantity,
-                location_id: ast.location_id,
-                location_flag: ast.location_flag,
-                owner_type: 'char'
-              });
-            }
-          });
-          page++;
+    })();
+
+    await Promise.all([divisionsPromise, skillsPromise, loyaltyPromise]);
+
+    // Character assets and corp assets are two completely independent paginated walks - different
+    // endpoint, different data, neither reads what the other writes (each only ever pushes its own
+    // owner_type-tagged entries into the shared window.rawAssetItems array, which is safe to do
+    // concurrently in JS's single-threaded model). These used to run one fully to completion before
+    // the other even started; for an active character/corp with several pages of assets each, that
+    // doubled the total pagination wait for no reason. Running them together overlaps that wait
+    // instead of stacking it - see the divisions/skills/loyalty comment above for the fuller "why"
+    // this whole function's total latency matters (it's what was making the first click after a
+    // page load feel laggy).
+    const charAssetsPromise = (async () => {
+      let page = 1;
+      let hasMore = true;
+      while (hasMore) {
+        // no-store - same reasoning as the industry-jobs fetch below: without it, clicking "Refresh
+        // Assets" again within the browser's own HTTP cache window for this exact URL+page can be
+        // answered straight from that cache with zero network request, silently replaying the same
+        // stale item locations/quantities instead of even asking ESI again - exactly what makes newly
+        // hauled cargo (or anything else that moved) look like it never arrived. This can't do anything
+        // about ESI's OWN server-side cache on this endpoint (CCP's, not this app's, and unavoidable by
+        // any client - typically on the order of an hour) - a fresh haul can still take a while to show
+        // up no matter what - but it guarantees a manual refresh always at least ASKS ESI fresh.
+        const res = await fetchWithAuth(`https://esi.evetech.net/latest/characters/${charId}/assets/?datasource=tranquility&page=${page}`, { cache: 'no-store' }, accessToken);
+        if (res && res.ok) {
+          assetsFetchOk = true;
+          recordEsiAssetsExpiry(res);
+          const data = await res.json();
+          if (Array.isArray(data) && data.length > 0) {
+            data.forEach(ast => {
+              // is_blueprint_copy is present (true OR false) only on blueprint-type assets, absent
+              // on everything else - excluding it here stops a BPO/BPC from ever being counted as
+              // stock of the item it produces (they're always distinct type_ids, but a blueprint
+              // sitting in a hangar is never "stock" of the manufactured item either way).
+              if (ast.type_id && ast.quantity && ast.is_blueprint_copy === undefined) {
+                window.rawAssetItems.push({
+                  item_id: ast.item_id,
+                  type_id: ast.type_id,
+                  quantity: ast.quantity,
+                  location_id: ast.location_id,
+                  location_flag: ast.location_flag,
+                  owner_type: 'char'
+                });
+              }
+            });
+            page++;
+          } else {
+            hasMore = false;
+          }
         } else {
           hasMore = false;
+          assetsPaginationFailed = true;
         }
-      } else {
-        hasMore = false;
-        assetsPaginationFailed = true;
       }
-    }
-    if (corpId && accessToken) {
-      page = 1;
-      hasMore = true;
+    })();
+
+    const corpAssetsPromise = (async () => {
+      if (!(corpId && accessToken)) return;
+      let page = 1;
+      let hasMore = true;
       while (hasMore) {
         // no-store - see the character assets fetch above for why.
         const res = await fetchWithAuth(`https://esi.evetech.net/latest/corporations/${corpId}/assets/?datasource=tranquility&page=${page}`, { cache: 'no-store' }, accessToken, true);
@@ -913,7 +947,10 @@ async function fetchUserAndCorpAssets(charId, accessToken) {
           assetsPaginationFailed = true;
         }
       }
-    }
+    })();
+
+    await Promise.all([charAssetsPromise, corpAssetsPromise]);
+
     const itemIdToAssetMap = {};
     window.rawAssetItems.forEach(ast => {
       if (ast.item_id) itemIdToAssetMap[ast.item_id] = ast;
