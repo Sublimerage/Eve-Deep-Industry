@@ -907,8 +907,20 @@ async function fetchUserAndCorpAssets(charId, accessToken) {
           // is_blueprint_copy is present (true OR false) only on blueprint-type assets, absent on
           // everything else - excluding it here stops a BPO/BPC from ever being counted as stock of
           // the item it produces (they're always distinct type_ids, but a blueprint sitting in a
-          // hangar is never "stock" of the manufactured item either way).
-          if (ast.type_id && ast.quantity && ast.is_blueprint_copy === undefined) {
+          // hangar is never "stock" of the manufactured item either way). Reported directly, and
+          // confirmed against a real raw asset entry: a CORP-owned blueprint sitting in a corp hangar
+          // division came back from ESI with is_blueprint_copy genuinely absent from the response,
+          // the same as a real "not a blueprint" item - it slipped straight through this check and
+          // got counted as 1 unit of physical stock of the item it actually just builds, showing up
+          // as phantom stock nobody could ever find, for exactly one specific typeId, exactly as
+          // reported. Rather than chase why ESI's response was missing that field for this one asset,
+          // this app already has every real blueprint's own typeId from its own recipe data - a
+          // second, independent check that doesn't depend on that ESI field being present at all, so
+          // this class of asset can never slip through regardless of whatever else might cause the
+          // same field to go missing on some other item.
+          const looksLikeBlueprintViaRecipeData = !!(window.recipeMap && window.recipeMap[ast.type_id]
+            && parseInt(window.recipeMap[ast.type_id].blueprintTypeID) === ast.type_id);
+          if (ast.type_id && ast.quantity && ast.is_blueprint_copy === undefined && !looksLikeBlueprintViaRecipeData) {
             if (seenAssetItemIds.has(ast.item_id)) return; // already counted from another page - see seenAssetItemIds' own comment above
             seenAssetItemIds.add(ast.item_id);
             window.rawAssetItems.push({
