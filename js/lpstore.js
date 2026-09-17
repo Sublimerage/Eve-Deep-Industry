@@ -645,6 +645,42 @@ async function loadAndRankLPStore(corpId) {
       resolveMissingItemNames(Array.from(flatIds))
     ]);
 
+    // Second-stage pre-warm: a BPC offer's own BUILD materials aren't known until its recipe tree
+    // is actually built - the pass above only covers what's directly on the offer itself
+    // (required_items), not what building the blueprint out actually needs. Without this, every
+    // BPC offer below ends up discovering its own small set of new material ids only once
+    // evaluateBpcOffer builds ITS tree, and since every offer evaluates in parallel (the
+    // Promise.all right below), that meant dozens of individual fetchMarketPrices round trips
+    // firing back to back instead of a couple of batched ones - confirmed live: a single corp's
+    // store was measured firing 70+ separate market requests on one page load, almost entirely
+    // offer-sized (~3-8 ids) chunks rather than the 30-id batches fetchMarketPrices is built for.
+    // Building every tree here too is redundant CPU work (evaluateBpcOffer below builds its own
+    // copy right after, discarding this pass's copy) - but that's the exact same "fully local, safe
+    // and fast in parallel" operation this codebase already trusts (see the comment on the
+    // Promise.all below), just run once earlier. Fully best-effort: any offer that fails to
+    // pre-warm here simply falls back to today's per-offer fetch inside evaluateBpcOffer, same as
+    // if this pass didn't exist.
+    const bpcOffers = offers.filter(isBlueprintOffer);
+    if (bpcOffers.length) {
+      const preWarmIds = new Set();
+      await Promise.all(bpcOffers.map(async (offer) => {
+        try {
+          const recipe = window.recipeMap[offer.type_id];
+          if (!recipe) return;
+          const priorRootProduct = window.recipeTreeRootProductTypeId;
+          window.recipeTreeRootProductTypeId = parseInt(recipe.productTypeID);
+          let root;
+          try {
+            root = await window.buildRecursiveRecipeTree(parseInt(offer.type_id), getLPItemName(offer.type_id), offer.quantity, 0, 6, new Set(), null, 1);
+          } finally {
+            window.recipeTreeRootProductTypeId = priorRootProduct;
+          }
+          if (root && typeof window.collectAllTypeIds === 'function') window.collectAllTypeIds(root, preWarmIds);
+        } catch (e) { /* best-effort - evaluateBpcOffer's own pass below picks up anything missed */ }
+      }));
+      if (preWarmIds.size) await window.fetchMarketPrices(Array.from(preWarmIds));
+    }
+
     // buildRecursiveRecipeTree is fully local (recipeMap/EVE_RECIPES, already loaded from
     // eve_db.js - see js/tree.js fetchBlueprintData) - no network happens inside it, so building
     // every BPC offer's tree in parallel here is safe and fast.

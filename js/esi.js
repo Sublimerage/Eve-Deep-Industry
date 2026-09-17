@@ -910,7 +910,13 @@ async function fetchUserAndCorpAssets(charId, accessToken) {
           }
         } else {
           hasMore = false;
-          assetsPaginationFailed = true;
+          // ESI's asset endpoints signal "past the last page" with a 404 instead of an empty array
+          // (unlike most other paginated ESI endpoints) - a 404 on page 2+ just means page 1 was the
+          // last one, which is the normal, expected way this loop ends for anyone with a single page
+          // of assets. Treating that as a real failure meant "Last synced" below could never advance
+          // for exactly those characters, every single refresh, forever - only a 404 on page 1 itself
+          // (or any non-404 failure on any page) is an actual problem worth flagging.
+          if (!(res && res.status === 404 && page > 1)) assetsPaginationFailed = true;
         }
       }
     })();
@@ -944,7 +950,9 @@ async function fetchUserAndCorpAssets(charId, accessToken) {
           }
         } else {
           hasMore = false;
-          assetsPaginationFailed = true;
+          // See the character assets loop above for why a 404 on page 2+ is the normal end of
+          // pagination here, not a real failure.
+          if (!(res && res.status === 404 && page > 1)) assetsPaginationFailed = true;
         }
       }
     })();
