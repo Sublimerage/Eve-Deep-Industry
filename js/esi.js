@@ -870,91 +870,113 @@ async function fetchUserAndCorpAssets(charId, accessToken) {
     // instead of stacking it - see the divisions/skills/loyalty comment above for the fuller "why"
     // this whole function's total latency matters (it's what was making the first click after a
     // page load feel laggy).
-    const charAssetsPromise = (async () => {
-      let page = 1;
-      let hasMore = true;
-      while (hasMore) {
-        // no-store - same reasoning as the industry-jobs fetch below: without it, clicking "Refresh
-        // Assets" again within the browser's own HTTP cache window for this exact URL+page can be
-        // answered straight from that cache with zero network request, silently replaying the same
-        // stale item locations/quantities instead of even asking ESI again - exactly what makes newly
-        // hauled cargo (or anything else that moved) look like it never arrived. This can't do anything
-        // about ESI's OWN server-side cache on this endpoint (CCP's, not this app's, and unavoidable by
-        // any client - typically on the order of an hour) - a fresh haul can still take a while to show
-        // up no matter what - but it guarantees a manual refresh always at least ASKS ESI fresh.
-        const res = await fetchWithAuth(`https://esi.evetech.net/latest/characters/${charId}/assets/?datasource=tranquility&page=${page}`, { cache: 'no-store' }, accessToken);
-        if (res && res.ok) {
-          assetsFetchOk = true;
-          recordEsiAssetsExpiry(res);
-          const data = await res.json();
-          if (Array.isArray(data) && data.length > 0) {
-            data.forEach(ast => {
-              // is_blueprint_copy is present (true OR false) only on blueprint-type assets, absent
-              // on everything else - excluding it here stops a BPO/BPC from ever being counted as
-              // stock of the item it produces (they're always distinct type_ids, but a blueprint
-              // sitting in a hangar is never "stock" of the manufactured item either way).
-              if (ast.type_id && ast.quantity && ast.is_blueprint_copy === undefined) {
-                window.rawAssetItems.push({
-                  item_id: ast.item_id,
-                  type_id: ast.type_id,
-                  quantity: ast.quantity,
-                  location_id: ast.location_id,
-                  location_flag: ast.location_flag,
-                  owner_type: 'char'
-                });
-              }
+    // no-store below - same reasoning as the industry-jobs fetch further down: without it, clicking
+    // "Refresh Assets" again within the browser's own HTTP cache window for this exact URL+page can
+    // be answered straight from that cache with zero network request, silently replaying the same
+    // stale item locations/quantities instead of even asking ESI again - exactly what makes newly
+    // hauled cargo (or anything else that moved) look like it never arrived. This can't do anything
+    // about ESI's OWN server-side cache on this endpoint (CCP's, not this app's, and unavoidable by
+    // any client - typically on the order of an hour) - a fresh haul can still take a while to show
+    // up no matter what - but it guarantees a manual refresh always at least ASKS ESI fresh.
+    //
+    // Fetches page 1, then uses the X-Pages header ESI returns on every paginated response (confirmed
+    // live - a real fetch() against a public ESI endpoint exposes it as a readable header) to fetch
+    // every remaining page directly and in parallel - instead of walking one page at a time and only
+    // discovering the end by probing one page past it, which is what used to make this loop pay for
+    // BOTH a wasted request (that final page always comes back 404, since ESI's asset endpoints
+    // signal "past the last page" that way instead of an empty array - harmless, but still a real
+    // round trip) AND full sequential latency for anyone with several pages of assets (page 2 never
+    // even started until page 1 finished, and so on). Falls back to that exact old probe-until-empty-
+    // or-404 walk if X-Pages is ever missing for some reason, so a change here can only ever match or
+    // beat the old behavior, never regress it.
+    async function fetchAssetPages(urlBase, token, suppressLogout, ownerType, markFetchOk) {
+      const applyPage = (data) => {
+        if (!Array.isArray(data)) return;
+        data.forEach(ast => {
+          // is_blueprint_copy is present (true OR false) only on blueprint-type assets, absent on
+          // everything else - excluding it here stops a BPO/BPC from ever being counted as stock of
+          // the item it produces (they're always distinct type_ids, but a blueprint sitting in a
+          // hangar is never "stock" of the manufactured item either way).
+          if (ast.type_id && ast.quantity && ast.is_blueprint_copy === undefined) {
+            window.rawAssetItems.push({
+              item_id: ast.item_id,
+              type_id: ast.type_id,
+              quantity: ast.quantity,
+              location_id: ast.location_id,
+              location_flag: ast.location_flag,
+              owner_type: ownerType
             });
-            page++;
+          }
+        });
+      };
+
+      const firstRes = await fetchWithAuth(`${urlBase}&page=1`, { cache: 'no-store' }, token, suppressLogout);
+      if (!(firstRes && firstRes.ok)) {
+        // Page 1 itself failing is always a real problem - there's no "past the last page" reading
+        // of a 404 (or anything else) on the very first page, unlike page 2+ below.
+        assetsPaginationFailed = true;
+        return;
+      }
+      if (markFetchOk) assetsFetchOk = true;
+      recordEsiAssetsExpiry(firstRes);
+      applyPage(await firstRes.json());
+
+      const xPagesHeader = firstRes.headers && firstRes.headers.get ? firstRes.headers.get('X-Pages') : null;
+      const totalPages = xPagesHeader ? parseInt(xPagesHeader, 10) : NaN;
+
+      if (Number.isFinite(totalPages) && totalPages > 1) {
+        const remainingPages = [];
+        for (let p = 2; p <= totalPages; p++) remainingPages.push(p);
+        await Promise.all(remainingPages.map(async (p) => {
+          const res = await fetchWithAuth(`${urlBase}&page=${p}`, { cache: 'no-store' }, token, suppressLogout);
+          if (res && res.ok) {
+            recordEsiAssetsExpiry(res);
+            applyPage(await res.json());
+          } else {
+            // ESI itself just told us (via X-Pages) this page exists - failing to actually load it
+            // is a real problem, not the normal "probed past the end" case the fallback walk below
+            // has to account for.
+            assetsPaginationFailed = true;
+          }
+        }));
+      } else if (!xPagesHeader) {
+        let page = 2;
+        let hasMore = true;
+        while (hasMore) {
+          const res = await fetchWithAuth(`${urlBase}&page=${page}`, { cache: 'no-store' }, token, suppressLogout);
+          if (res && res.ok) {
+            recordEsiAssetsExpiry(res);
+            const data = await res.json();
+            if (Array.isArray(data) && data.length > 0) {
+              applyPage(data);
+              page++;
+            } else {
+              hasMore = false;
+            }
           } else {
             hasMore = false;
+            // ESI's asset endpoints signal "past the last page" with a 404 instead of an empty array
+            // (unlike most other paginated ESI endpoints) - a 404 here just means the previous page
+            // was the last one, the normal, expected way this fallback walk ends.
+            if (!(res && res.status === 404)) assetsPaginationFailed = true;
           }
-        } else {
-          hasMore = false;
-          // ESI's asset endpoints signal "past the last page" with a 404 instead of an empty array
-          // (unlike most other paginated ESI endpoints) - a 404 on page 2+ just means page 1 was the
-          // last one, which is the normal, expected way this loop ends for anyone with a single page
-          // of assets. Treating that as a real failure meant "Last synced" below could never advance
-          // for exactly those characters, every single refresh, forever - only a 404 on page 1 itself
-          // (or any non-404 failure on any page) is an actual problem worth flagging.
-          if (!(res && res.status === 404 && page > 1)) assetsPaginationFailed = true;
         }
       }
+    }
+
+    const charAssetsPromise = (async () => {
+      await fetchAssetPages(
+        `https://esi.evetech.net/latest/characters/${charId}/assets/?datasource=tranquility`,
+        accessToken, false, 'char', true
+      );
     })();
 
     const corpAssetsPromise = (async () => {
       if (!(corpId && accessToken)) return;
-      let page = 1;
-      let hasMore = true;
-      while (hasMore) {
-        // no-store - see the character assets fetch above for why.
-        const res = await fetchWithAuth(`https://esi.evetech.net/latest/corporations/${corpId}/assets/?datasource=tranquility&page=${page}`, { cache: 'no-store' }, accessToken, true);
-        if (res && res.ok) {
-          recordEsiAssetsExpiry(res);
-          const data = await res.json();
-          if (Array.isArray(data) && data.length > 0) {
-            data.forEach(ast => {
-              if (ast.type_id && ast.quantity && ast.is_blueprint_copy === undefined) {
-                window.rawAssetItems.push({
-                  item_id: ast.item_id,
-                  type_id: ast.type_id,
-                  quantity: ast.quantity,
-                  location_id: ast.location_id,
-                  location_flag: ast.location_flag,
-                  owner_type: 'corp'
-                });
-              }
-            });
-            page++;
-          } else {
-            hasMore = false;
-          }
-        } else {
-          hasMore = false;
-          // See the character assets loop above for why a 404 on page 2+ is the normal end of
-          // pagination here, not a real failure.
-          if (!(res && res.status === 404 && page > 1)) assetsPaginationFailed = true;
-        }
-      }
+      await fetchAssetPages(
+        `https://esi.evetech.net/latest/corporations/${corpId}/assets/?datasource=tranquility`,
+        accessToken, true, 'corp', false
+      );
     })();
 
     await Promise.all([charAssetsPromise, corpAssetsPromise]);
