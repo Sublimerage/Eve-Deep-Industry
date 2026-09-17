@@ -1801,13 +1801,26 @@ async function selectItem(typeId, name, preserveView = false, anchorInstanceId =
   // capturing its on-screen rect now and re-measuring it after the rebuild (below, once the new DOM
   // exists) gives the exact screen-pixel drift to cancel out of panX/panY, so that one card - and
   // everything else, since it's all rigidly laid out relative to it - stays visually still.
+  // Same root-anchoring exception recalculateWithPanAnchor uses (js/app.js) - building a component
+  // out for the first time inserts new columns BETWEEN it and the root, so pinning the clicked card
+  // itself can't stop root (and the LP Economics card right after it) from visibly sliding over. This
+  // is the OTHER call path that needed that fix: recalculateWithPanAnchor only ever runs for controls
+  // that call bare recalculate() (Hide/Compact, TE edit, Sell/Buy pill) - toggleBuildSelf's normal
+  // branch (any component WITH a real recipe) calls selectItem() directly instead, which had its own,
+  // older, separate anchor logic that never got the same LP-specific branch - so Build/Buy on a
+  // regular tree component, easily the single most common click on this page, kept drifting even
+  // after every other control was fixed.
+  const isLPStore = !!(window.recipeTreeRoot && window.recipeTreeRoot.isLPIsolatedRoot);
+  const effectiveAnchorInstanceId = isLPStore
+    ? (window.recipeTreeRoot ? window.recipeTreeRoot.instanceId : null)
+    : anchorInstanceId;
   let anchorPathKey = null;
   let anchorRectBefore = null;
-  if (preserveView && anchorInstanceId != null && window.recipeTreeRoot) {
-    const anchorNode = findNodeByInstanceId(window.recipeTreeRoot, anchorInstanceId);
+  if (preserveView && effectiveAnchorInstanceId != null && window.recipeTreeRoot) {
+    const anchorNode = findNodeByInstanceId(window.recipeTreeRoot, effectiveAnchorInstanceId);
     if (anchorNode) {
       anchorPathKey = anchorNode.pathKey;
-      const anchorEl = document.getElementById(`node-card-${anchorInstanceId}`);
+      const anchorEl = document.getElementById(`node-card-${effectiveAnchorInstanceId}`);
       if (anchorEl) anchorRectBefore = anchorEl.getBoundingClientRect();
     }
   }
