@@ -754,6 +754,17 @@ async function fetchUserAndCorpAssets(charId, accessToken) {
   let assetsPaginationFailed = false;
   try {
     window.rawAssetItems = [];
+    // Guards against the same physical item being counted twice - reported directly as a real,
+    // randomly-varying stock count (1, then 2, then 3, on repeated refreshes) for an item confirmed
+    // to genuinely be at 0. Most likely tied to fetching a character/corp's asset pages concurrently
+    // (see fetchAssetPages below) instead of one at a time in strict order: ESI's own pagination
+    // isn't guaranteed to hand back perfectly stable page boundaries across several near-simultaneous
+    // requests the way one strictly sequential walk naturally was, so the same item can land on more
+    // than one page. item_id is unique per physical item/stack across all of EVE (never shared
+    // between a character's and a corp's own assets either), so it's a safe, simple key to dedupe on
+    // regardless of the exact mechanism behind a duplicate - this protects against that whole class
+    // of bug rather than needing to prove the precise cause first.
+    const seenAssetItemIds = new Set();
     let corpId = null;
     // Fired in parallel, not awaited - blueprint ownership has nothing to do with the asset walk
     // below and shouldn't hold up "ASSETS REFRESHED" landing.
@@ -898,6 +909,8 @@ async function fetchUserAndCorpAssets(charId, accessToken) {
           // the item it produces (they're always distinct type_ids, but a blueprint sitting in a
           // hangar is never "stock" of the manufactured item either way).
           if (ast.type_id && ast.quantity && ast.is_blueprint_copy === undefined) {
+            if (seenAssetItemIds.has(ast.item_id)) return; // already counted from another page - see seenAssetItemIds' own comment above
+            seenAssetItemIds.add(ast.item_id);
             window.rawAssetItems.push({
               item_id: ast.item_id,
               type_id: ast.type_id,
