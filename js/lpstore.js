@@ -415,20 +415,45 @@ async function resolveMissingItemNames(typeIds) {
 }
 
 // --- Item categories (Ships / Modules / Ammo / Implants / Skillbooks / SKINs / Drones / ...) ----
-// eve_db.js's own EVE_GROUP_IDS/EVE_CATEGORIES tables turned out NOT to be item classification data
-// at all when checked against real ESI output (they're keyed the same way but hold universe/
-// location groupings - "Region", "Constellation", "Corporation" - a leftover from a different
-// feature) - confirmed by cross-checking a handful of known items (a ship, a module, a SKIN) and
-// finding the local table's answer didn't match ESI's. So this resolves categories live instead,
-// same live-fallback philosophy as resolveMissingItemNames above: /universe/types/{id}/ for a
-// type's group_id (no batch endpoint exists for this one, so these run individually but in
-// parallel), then /universe/groups/{id}/ for that group's category_id - cached at both levels so a
-// second store sharing common groups (most module/ammo groups repeat across corps) doesn't refetch.
+// generate_db.py already walks every /universe/groups/{id}/ once at DB-generation time and bakes
+// the result into eve_db.js as window.EVE_CATEGORIES (typeId -> category_id) and
+// window.EVE_GROUP_IDS/EVE_GROUP_NAME_TABLE - real, correct classification data, verified directly
+// against known items (Tritanium -> Material, Rifter -> Ship/Frigate) including the exact case an
+// older version of this comment claimed didn't work: 11,845 SKIN type_ids are present and correctly
+// categorized (91 = SKIN), despite SKIN NAMES being deliberately excluded from EVE_ITEMS elsewhere
+// (generate_db.py's own `fluff` filter) - that's a separate table built its own way, not filtered
+// the same way, so it isn't affected by that exclusion. So this reads the local table first, for
+// free, and only falls back to a live ESI walk (/universe/types/{id}/ for group_id, then
+// /universe/groups/{id}/ for category_id - no bulk endpoint exists for either) for whatever's
+// genuinely missing from it - a brand new item added to the game after the DB was last regenerated,
+// in practice. That fallback is what previously ran for EVERY item, every single load: a real HAR
+// capture from a live session showed 374 of these individual lookups firing at once on one page.
 const LP_CATEGORY_LABELS = { 6: 'Ships', 7: 'Modules', 8: 'Ammo & Charges', 16: 'Skillbooks', 18: 'Drones', 20: 'Implants', 91: 'SKINs' };
 let _lpGroupCategoryCache = {}; // groupId -> categoryId
 
 function getLPItemCategory(typeId) {
   return _lpItemCategoryCache[typeId]; // undefined until resolved - callers treat that as "unknown yet", not "other"
+}
+
+// Runs `worker` over every item in `items`, at most `limit` in flight at once, instead of firing
+// them all in one Promise.all - a corp store easily needs category lookups for several hundred
+// distinct items (see resolveLPItemCategories below, the only caller), and a real HAR capture from
+// a live session showed exactly that: 374 simultaneous /universe/types/ requests to the same host,
+// with individual requests stuck "blocked" (queued for a free connection) for 200ms+ before even
+// starting - the browser's own per-host connection limit turning a "run it all in parallel" call
+// into self-inflicted congestion, worse on some browsers than others (reported as a real lag
+// difference between Chrome and Firefox on the same page). Capping concurrency keeps enough
+// requests in flight to still be fast while staying well under that ceiling.
+async function mapWithConcurrency(items, limit, worker) {
+  let nextIndex = 0;
+  async function runNext() {
+    while (nextIndex < items.length) {
+      const i = nextIndex++;
+      await worker(items[i], i);
+    }
+  }
+  const workers = Array.from({ length: Math.min(limit, items.length) }, runNext);
+  await Promise.all(workers);
 }
 
 // Deliberately NOT awaited by callers on the critical path - kicked off in the background after the
@@ -439,27 +464,40 @@ async function resolveLPItemCategories(typeIds) {
   const missingTypes = [...new Set(typeIds)].filter(id => _lpItemCategoryCache[id] === undefined);
   if (!missingTypes.length) return;
 
+  // Free, no network: eve_db.js already has this for almost everything (see the comment above) -
+  // only whatever's genuinely absent from it needs the live ESI fallback below at all.
+  const stillMissing = [];
+  missingTypes.forEach(id => {
+    const localCat = window.EVE_CATEGORIES ? window.EVE_CATEGORIES[id] : undefined;
+    if (localCat !== undefined) {
+      _lpItemCategoryCache[id] = localCat;
+    } else {
+      stillMissing.push(id);
+    }
+  });
+  if (!stillMissing.length) { renderLPStoreState(); return; }
+
   const groupIdByType = {};
-  await Promise.all(missingTypes.map(async (id) => {
+  await mapWithConcurrency(stillMissing, 20, async (id) => {
     try {
       const res = await fetch(`https://esi.evetech.net/latest/universe/types/${id}/?datasource=tranquility`, { cache: 'no-store' });
       if (!res.ok) return;
       const data = await res.json();
       if (data && data.group_id !== undefined) groupIdByType[id] = data.group_id;
     } catch (e) { /* leave uncategorized rather than fail the whole batch */ }
-  }));
+  });
 
   const missingGroups = [...new Set(Object.values(groupIdByType))].filter(gid => _lpGroupCategoryCache[gid] === undefined);
-  await Promise.all(missingGroups.map(async (gid) => {
+  await mapWithConcurrency(missingGroups, 20, async (gid) => {
     try {
       const res = await fetch(`https://esi.evetech.net/latest/universe/groups/${gid}/?datasource=tranquility`, { cache: 'no-store' });
       if (!res.ok) return;
       const data = await res.json();
       _lpGroupCategoryCache[gid] = (data && data.category_id !== undefined) ? data.category_id : null;
     } catch (e) { _lpGroupCategoryCache[gid] = null; }
-  }));
+  });
 
-  missingTypes.forEach(id => {
+  stillMissing.forEach(id => {
     const gid = groupIdByType[id];
     _lpItemCategoryCache[id] = (gid !== undefined && _lpGroupCategoryCache[gid] != null) ? _lpGroupCategoryCache[gid] : null;
   });
