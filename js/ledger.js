@@ -239,10 +239,10 @@ window.getEffectiveJobProfit = getEffectiveJobProfit;
 // not just "a job for this exists") has been credited against it. Total demand and total supply are
 // each summed once, then subtracted - equivalent to claiming from a shared pool material-by-material,
 // just order-independent, since the end result (unclaimed demand) is the same regardless of which
-// job's line happens to be processed first. Shared by the Consolidated BOM (which then applies its
-// own display filters and real-stock netting on top) and by each prerequisite job's own card (which
-// nets against real stock the same way, but never applies the BOM's display filters - see both call
-// sites' own comments for why that split matters).
+// job's line happens to be processed first. Used by the Consolidated BOM, which then applies its own
+// display filters and real-stock netting on top - deliberately QUEUE-WIDE, which is correct for "what
+// do I still need to buy in total" but wrong for "is this ONE specific prerequisite job undersized"
+// (see computeJobOwnShortfall below for why that needs its own, narrower version of this same idea).
 function computeQtyStillNeededAfterInternalSupply(jobs) {
   const supplyByTypeId = {};
   jobs.forEach(j => {
@@ -265,6 +265,51 @@ function computeQtyStillNeededAfterInternalSupply(jobs) {
     if (stillNeeded > 0) result[typeId] = stillNeeded;
   });
   return result;
+}
+
+// Every job this specific prerequisite actually feeds - its one real parent (parentJobId), every
+// parent in a pooled/shared prerequisite's sharedParentIds, or a name-matched fallback for a job
+// saved before parentJobId existed. Deliberately NOT "every job in the queue that happens to want
+// the same product" - two completely unrelated builds that both need, say, a Gas Cloud Harvester I
+// are not each other's business.
+function computeJobOwnParents(job) {
+  if (Array.isArray(job.sharedParentIds) && job.sharedParentIds.length) {
+    return activeJobs.filter(j => j && job.sharedParentIds.includes(j.id));
+  }
+  if (job.parentJobId !== undefined && job.parentJobId !== null) {
+    const parent = activeJobs.find(j => j && j.id === job.parentJobId);
+    return parent ? [parent] : [];
+  }
+  if (job.parentJobName) {
+    return activeJobs.filter(j => j && j.id !== job.id && j.name === job.parentJobName);
+  }
+  return [];
+}
+
+// How many more units of its OWN product a specific prerequisite job would need to build to fully
+// cover just what ITS OWN linked parent(s) actually need - not the whole queue. Reported directly,
+// with real data: three separate "root + prerequisite" pairs all building the same item, only one
+// pair genuinely short, and the queue-wide version above put the SAME top-up badge on all three,
+// since it only ever tracked "how much of this product, total, across everything" rather than which
+// specific pairing was actually mismatched. Nets against real stock too, same reasoning as the BOM's
+// own netting - if some of what the parent(s) need is already sitting in your hangar, this job
+// doesn't need to build that portion either.
+function computeJobOwnShortfall(job) {
+  if (!job.isSubBuild || job.isStarted || job.autoImported || job.productTypeId === undefined) return 0;
+  const parents = computeJobOwnParents(job);
+  if (!parents.length) return 0;
+  let totalDemand = 0;
+  parents.forEach(p => {
+    if (!Array.isArray(p.materials)) return;
+    p.materials.forEach(mat => {
+      if (mat && mat.typeId === job.productTypeId) totalDemand += mat.qtyNeeded || 0;
+    });
+  });
+  const deductModeInput = document.getElementById('deduct-stock-mode');
+  const isStockDeductEnabled = deductModeInput ? deductModeInput.value === 'true' : true;
+  const stockQty = isStockDeductEnabled ? (userStockMap[job.productTypeId] || 0) : 0;
+  const netDemand = Math.max(0, totalDemand - stockQty);
+  return Math.max(0, netDemand - (job.qtyNeeded || 0));
 }
 
 function renderJournalPage() {
@@ -418,20 +463,6 @@ function renderJournalPage() {
 
   bomItems.sort((a, b) => b.lineCost - a.lineCost);
 
-  // Same "true missing" figure the BOM above lands on (internal supply AND real stock both netted
-  // out), but for EVERY material genuinely short - not just whatever the BOM's own order/category
-  // filters currently happen to be showing - keyed by the typeId of whichever job actually produces
-  // it, so a prerequisite job's own card (renderJobCardHTML) can offer to top itself up by exactly
-  // this many more runs regardless of what the BOM panel is filtered to at the moment.
-  const jobShortfallByProductTypeId = {};
-  Object.keys(qtyStillNeededByTypeId).forEach(typeId => {
-    const grossShortfall = qtyStillNeededByTypeId[typeId];
-    if (grossShortfall <= 0) return;
-    const stockQty = isStockDeductEnabled ? (allocatedStock[typeId] || 0) : 0;
-    const netShortfall = Math.max(0, grossShortfall - stockQty);
-    if (netShortfall > 0) jobShortfallByProductTypeId[typeId] = netShortfall;
-  });
-
   if (materialsVolumeEl) materialsVolumeEl.textContent = totalMaterialsVolume.toLocaleString(undefined, { maximumFractionDigits: 1 }) + ' m3';
   if (materialsCostEl) {
     materialsCostEl.textContent = window.formatISKCompact(aggregatedMissingCost);
@@ -448,7 +479,7 @@ function renderJournalPage() {
     materialStockInfoByJobId.set(job.id, applyJobMaterialsToStock(job, allocatedStock, isStockDeductEnabled));
   });
 
-  renderActiveJobsList(materialStockInfoByJobId, jobShortfallByProductTypeId);
+  renderActiveJobsList(materialStockInfoByJobId);
   renderConsolidatedBOMList(bomItems, aggregatedMissingCost);
   renderBuildHistoryLedger();
 }
@@ -507,13 +538,13 @@ window.clearJobIsolation = clearJobIsolation;
 // (which already carries the preset row, unclipped material list with "+ Build" actions, and a
 // working "Start Job" control) rather than a new layout - focus mode is a different FILTER + SCALE
 // over the same cards, not a new component.
-function renderFocusedJobView(container, jobId, materialStockInfoByJobId, jobShortfallByProductTypeId) {
+function renderFocusedJobView(container, jobId, materialStockInfoByJobId) {
   const focusedJob = activeJobs.find(j => j && j.id === jobId);
   if (!focusedJob) {
     // The focused job was built/deleted while focus was active - fall back to the normal queue
     // view instead of leaving the page on a dead end pointing at a job that no longer exists.
     focusedJobId = null;
-    renderActiveJobsList(materialStockInfoByJobId, jobShortfallByProductTypeId);
+    renderActiveJobsList(materialStockInfoByJobId);
     return;
   }
 
@@ -548,7 +579,7 @@ function renderFocusedJobView(container, jobId, materialStockInfoByJobId, jobSho
   // change to the card (that's what the collapse toggle itself is for).
   const priorExpandState = focusJobs.map(j => expandedJobCardIds.has(j.id));
   focusJobs.forEach(j => expandedJobCardIds.add(j.id));
-  const cardsHTML = focusJobs.map(j => renderJobCardHTML(j, materialStockInfoByJobId, true, jobShortfallByProductTypeId)).join('');
+  const cardsHTML = focusJobs.map(j => renderJobCardHTML(j, materialStockInfoByJobId, true)).join('');
   focusJobs.forEach((j, i) => { if (!priorExpandState[i]) expandedJobCardIds.delete(j.id); });
 
   const prereqCount = focusJobs.length - 1;
@@ -624,7 +655,7 @@ function renderJobClusterHTML(job, childrenOf, depth, renderJob) {
   return `<div class="job-cluster">${ownHTML}<div class="job-cluster-children">${kidsHTML}</div></div>`;
 }
 
-function renderActiveJobsList(materialStockInfoByJobId, jobShortfallByProductTypeId) {
+function renderActiveJobsList(materialStockInfoByJobId) {
   const container = document.getElementById('active-jobs-list');
   if (!container) return;
 
@@ -643,7 +674,7 @@ function renderActiveJobsList(materialStockInfoByJobId, jobShortfallByProductTyp
   // "show me just this one" request, so it wins even if the focused job wouldn't otherwise match
   // the current filters.
   if (focusedJobId !== null) {
-    renderFocusedJobView(container, focusedJobId, materialStockInfoByJobId, jobShortfallByProductTypeId);
+    renderFocusedJobView(container, focusedJobId, materialStockInfoByJobId);
     return;
   }
 
@@ -693,9 +724,9 @@ function renderActiveJobsList(materialStockInfoByJobId, jobShortfallByProductTyp
   // rather than physical nesting.
   const renderGroup = (jobs) => {
     if (!isListMode) {
-      return jobs.map(job => renderJobCardHTML(job, materialStockInfoByJobId, false, jobShortfallByProductTypeId)).join('');
+      return jobs.map(job => renderJobCardHTML(job, materialStockInfoByJobId)).join('');
     }
-    const renderJob = (job, depth, childCount) => renderJobListRowHTML(job, materialStockInfoByJobId, depth, childCount, jobShortfallByProductTypeId);
+    const renderJob = (job, depth, childCount) => renderJobListRowHTML(job, materialStockInfoByJobId, depth, childCount);
     // Only the ROOTS of each cluster (see buildJobClusters) become items of the outer list - a
     // cluster with children renders as one self-contained block (row, then its nested children
     // indented underneath), so the list never sees individual parent/child rows separately.
@@ -755,7 +786,7 @@ window.toggleQueueViewMode = toggleQueueViewMode;
 // Compact single-line-per-job view. Shows the essentials (icon/name, runs, status, cost, profit,
 // actions) with a chevron to expand the same BOM/details block used in grid view, reusing the same
 // collapse state so switching views doesn't lose whether you had a job's details open.
-function renderJobListRowHTML(job, materialStockInfoByJobId, depth, childCount, jobShortfallByProductTypeId) {
+function renderJobListRowHTML(job, materialStockInfoByJobId, depth, childCount) {
   const iconTypeId = job.productTypeId || job.typeId;
   const isJobReady = job.isStarted && job.startedAt && ((Date.now() - job.startedAt) / 1000 >= (job.totalBuildSeconds || 0));
   const jobIconUrl = window.getItemIconUrl(iconTypeId, window.TYPE_ID_TO_NAME[iconTypeId] || job.name, 64);
@@ -812,12 +843,11 @@ function renderJobListRowHTML(job, materialStockInfoByJobId, depth, childCount, 
 
   // A prerequisite job's own run count is a one-time decision made when it was queued (or last
   // hand-edited) - it never revisits itself if what its parent(s) need, or your stock, changes
-  // afterward (see computeQtyStillNeededAfterInternalSupply's own comment on why that's deliberate,
-  // not an oversight). This surfaces the gap right on the job that can close it, instead of leaving
-  // it as something only visible in the BOM sidebar - reported directly as wanting exactly this.
+  // afterward (see computeJobOwnShortfall's own comment on why that's deliberate, not an oversight).
+  // This surfaces the gap right on the job that can close it, instead of leaving it as something
+  // only visible in the BOM sidebar - reported directly as wanting exactly this.
   const topUpRunsNeeded = (() => {
-    if (!job.isSubBuild || job.isStarted || job.autoImported || job.productTypeId === undefined) return 0;
-    const missingQty = (jobShortfallByProductTypeId && jobShortfallByProductTypeId[job.productTypeId]) || 0;
+    const missingQty = computeJobOwnShortfall(job);
     if (missingQty <= 0) return 0;
     const recipe = window.recipeMap ? window.recipeMap[job.typeId] : null;
     const batchYield = (typeof window.getBatchYield === 'function' ? window.getBatchYield(recipe, false) : 1) || 1;
@@ -886,7 +916,7 @@ function renderJobListRowHTML(job, materialStockInfoByJobId, depth, childCount, 
             `}
             <span class="flex-shrink-0" style="width:12px;${(!job.isStarted && !job.autoImported) ? '' : ' visibility:hidden;'}">${renderRunsEditIconHTML(job.id, editingRunsJobIds.has(job.id))}</span>
             ${topUpRunsNeeded > 0 && !editingRunsJobIds.has(job.id) ? `
-              <button onclick="topUpPrerequisiteJob(${job.id})" class="lp-chip-btn flex-shrink-0" style="color:var(--red-400, #f87171); border-color:rgba(248,113,113,0.35);" title="What's built here is short ${topUpRunsNeeded > 1 ? topUpRunsNeeded + ' runs' : '1 run'} of what your queue actually needs - click to add exactly that many">+${topUpRunsNeeded}</button>
+              <button onclick="topUpPrerequisiteJob(${job.id})" class="lp-chip-btn flex-shrink-0" title="Build ${topUpRunsNeeded > 1 ? topUpRunsNeeded + ' more runs' : '1 more run'} to cover what your queue still needs from this - click to add them">${window.svgIcon('plus', { style: 'width:10px;height:10px;' })} ${topUpRunsNeeded} Run${topUpRunsNeeded > 1 ? 's' : ''}</button>
             ` : ''}
           </div>
           <div class="lp-divider-col flex items-center gap-1.5 flex-shrink-0" style="width:260px;" title="Job status">
@@ -1290,22 +1320,18 @@ async function commitJobsRunsEdit(jobId) {
 }
 window.commitJobsRunsEdit = commitJobsRunsEdit;
 
-// Tops up a prerequisite job by exactly enough runs to cover what the rest of the queue still needs
-// from it - the click-to-act counterpart of the "+N" button rendered next to that job's own run
+// Tops up a prerequisite job by exactly enough runs to cover what ITS OWN linked parent(s) still
+// need from it (computeJobOwnShortfall - deliberately not queue-wide, see that function's own
+// comment) - the click-to-act counterpart of the "+N" button rendered next to that job's own run
 // count (see renderJobCardHTML/renderJobListRowHTML's own topUpRunsNeeded). Recomputes the shortfall
 // fresh here rather than trusting whatever number was baked into the button at the last render - the
 // queue could have changed in the meantime (another job started, a material's stock refreshed), and
 // this should only ever add exactly what's genuinely still missing right now, not a stale amount.
 async function topUpPrerequisiteJob(jobId) {
   const job = activeJobs.find(j => j && j.id === jobId);
-  if (!job || !job.isSubBuild || job.isStarted || job.autoImported || job.productTypeId === undefined) return;
+  if (!job) return;
 
-  const deductModeInput = document.getElementById('deduct-stock-mode');
-  const isStockDeductEnabled = deductModeInput ? deductModeInput.value === 'true' : true;
-  const qtyStillNeededByTypeId = computeQtyStillNeededAfterInternalSupply(activeJobs);
-  const grossShortfall = qtyStillNeededByTypeId[job.productTypeId] || 0;
-  const stockQty = isStockDeductEnabled ? (userStockMap[job.productTypeId] || 0) : 0;
-  const missingQty = Math.max(0, grossShortfall - stockQty);
+  const missingQty = computeJobOwnShortfall(job);
   if (missingQty <= 0) { renderJournalPage(); return; } // already covered by now - just refresh the view
 
   const recipe = window.recipeMap ? window.recipeMap[job.typeId] : null;
@@ -1694,7 +1720,7 @@ function renderJobBOMBlockHTML(job, materialStockInfo, isFocusMode) {
     `;
 }
 
-function renderJobCardHTML(job, materialStockInfoByJobId, isFocusMode, jobShortfallByProductTypeId) {
+function renderJobCardHTML(job, materialStockInfoByJobId, isFocusMode) {
     const iconTypeId = job.productTypeId || job.typeId;
     const isJobReady = job.isStarted && job.startedAt && ((Date.now() - job.startedAt) / 1000 >= (job.totalBuildSeconds || 0));
     const isCollapsed = !expandedJobCardIds.has(job.id);
@@ -1705,12 +1731,11 @@ function renderJobCardHTML(job, materialStockInfoByJobId, isFocusMode, jobShortf
 
     // A prerequisite job's own run count is a one-time decision made when it was queued (or last
     // hand-edited) - it never revisits itself if what its parent(s) need, or your stock, changes
-    // afterward (see computeQtyStillNeededAfterInternalSupply's own comment on why that's deliberate,
-    // not an oversight). This surfaces the gap right on the job that can close it, instead of leaving
-    // it as something only visible in the BOM sidebar - reported directly as wanting exactly this.
+    // afterward (see computeJobOwnShortfall's own comment on why that's deliberate, not an oversight).
+    // This surfaces the gap right on the job that can close it, instead of leaving it as something
+    // only visible in the BOM sidebar - reported directly as wanting exactly this.
     const topUpRunsNeeded = (() => {
-      if (!job.isSubBuild || job.isStarted || job.autoImported || job.productTypeId === undefined) return 0;
-      const missingQty = (jobShortfallByProductTypeId && jobShortfallByProductTypeId[job.productTypeId]) || 0;
+      const missingQty = computeJobOwnShortfall(job);
       if (missingQty <= 0) return 0;
       const recipe = window.recipeMap ? window.recipeMap[job.typeId] : null;
       const batchYield = (typeof window.getBatchYield === 'function' ? window.getBatchYield(recipe, false) : 1) || 1;
@@ -1838,7 +1863,7 @@ function renderJobCardHTML(job, materialStockInfoByJobId, isFocusMode, jobShortf
               </span>
               ${(!job.isStarted && !job.autoImported) ? renderRunsEditIconHTML(job.id, false) : ''}
               ${topUpRunsNeeded > 0 ? `
-                <button onclick="event.stopPropagation(); topUpPrerequisiteJob(${job.id})" class="lp-chip-btn flex-shrink-0" style="color:var(--red-400, #f87171); border-color:rgba(248,113,113,0.35);" title="What's built here is short ${topUpRunsNeeded > 1 ? topUpRunsNeeded + ' runs' : '1 run'} of what your queue actually needs - click to add exactly that many">+${topUpRunsNeeded}</button>
+                <button onclick="event.stopPropagation(); topUpPrerequisiteJob(${job.id})" class="lp-chip-btn flex-shrink-0" title="Build ${topUpRunsNeeded > 1 ? topUpRunsNeeded + ' more runs' : '1 more run'} to cover what your queue still needs from this - click to add them">${window.svgIcon('plus', { style: 'width:10px;height:10px;' })} ${topUpRunsNeeded} Run${topUpRunsNeeded > 1 ? 's' : ''}</button>
               ` : ''}
             </span>
           `}

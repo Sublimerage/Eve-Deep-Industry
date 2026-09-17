@@ -239,7 +239,11 @@ const SVG_ICON_PATHS = {
   // badges (renderJobMetaChipHTML) can share the exact same icon via svgIcon() instead of a third
   // hand-copied inline path.
   user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-7 8-7s8 3 8 7"/>',
-  building: '<path d="M4 21V7a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v14"/><path d="M12 11h6a1 1 0 0 1 1 1v9"/><line x1="8" y1="9" x2="8" y2="9.01"/><line x1="8" y1="13" x2="8" y2="13.01"/><line x1="8" y1="17" x2="8" y2="17.01"/><line x1="16" y1="15" x2="16" y2="15.01"/><line x1="16" y1="19" x2="16" y2="19.01"/>'
+  building: '<path d="M4 21V7a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v14"/><path d="M12 11h6a1 1 0 0 1 1 1v9"/><line x1="8" y1="9" x2="8" y2="9.01"/><line x1="8" y1="13" x2="8" y2="13.01"/><line x1="8" y1="17" x2="8" y2="17.01"/><line x1="16" y1="15" x2="16" y2="15.01"/><line x1="16" y1="19" x2="16" y2="19.01"/>',
+  // A plain plus - the Ledger's "top up this prerequisite job's runs" button (renderJobCardHTML/
+  // renderJobListRowHTML) pairs this with the missing quantity so "+N" reads as an add action at a
+  // glance instead of needing the tooltip to explain it.
+  plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>'
 };
 
 function svgIcon(name, opts) {
