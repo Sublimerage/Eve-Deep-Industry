@@ -2312,8 +2312,23 @@ function countDescendants(node) {
 // _lpRequiredItemProductTypeId (the one identity that survives even a required item's own flat-stub
 // <-> real-subtree transition - see injectLPRedemptionNodes' own comment) are the fallbacks for that
 // case, tried in order from cheapest/most-common to most specific.
+//
+// On the LP Store specifically, the anchor is always the ROOT card, never whatever was actually
+// clicked - reported directly as "the camera drifts a lot" there despite the exact clicked card
+// provably staying at 0px drift. The reason: columns lay out left-to-right by depth with the root
+// always rightmost (renderTreeDiagram, js/app.js) - building a required item for the first time
+// inserts a whole new run of columns for its own materials BETWEEN it and the root, so even with
+// the clicked card perfectly pinned, the root - and the LP Economics card appended just past it,
+// which is the whole point of this interaction, checking how the numbers just changed - visibly
+// shifts anyway, simply because there's now more diagram between them than there was a moment ago.
+// No single fixed anchor can prevent that when new content is inserted in between two points; the
+// fix is choosing the anchor the user is actually watching (root/economics), not the button they
+// happened to click, letting the clicked card itself be the one that moves instead.
 async function recalculateWithPanAnchor(e) {
-  const anchorEl = e && e.target ? e.target.closest('.diagram-node') : null;
+  const isLPStore = !!(window.recipeTreeRoot && window.recipeTreeRoot.isLPIsolatedRoot);
+  const anchorEl = isLPStore
+    ? (window.recipeTreeRoot ? document.getElementById(`node-card-${window.recipeTreeRoot.instanceId}`) : null)
+    : (e && e.target ? e.target.closest('.diagram-node') : null);
   const anchorInstanceId = anchorEl ? anchorEl.getAttribute('data-instance-id') : null;
   const rectBefore = anchorEl ? anchorEl.getBoundingClientRect() : null;
   const anchorNodeBefore = (anchorInstanceId != null && window.recipeTreeRoot)
@@ -2643,8 +2658,13 @@ function createNodeCard(node, autoCompact) {
             ` : ''}
             ${!isRoot ? (() => {
               const hasChildren = node.children && node.children.length > 0;
+              // Fixed width sized for "Compact" (the longer of the two labels, measured at
+              // ~87px) - reported directly: switching a component between Build (children
+              // present, "Hide") and Buy (no children, "Compact") made this specific button
+              // visibly resize, which was making the whole card layout feel unstable on top of
+              // the actual pan-compensation work. Both labels now render at the identical width.
               return `
-              <button onclick="toggleNodeCollapse(event, ${node.instanceId}, '${node.pathKey}')" class="toggle-btn" title="Collapse to a compact chip">
+              <button onclick="toggleNodeCollapse(event, ${node.instanceId}, '${node.pathKey}')" class="toggle-btn" style="min-width:88px;justify-content:center;" title="Collapse to a compact chip">
                 <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6,9 12,15 18,9"/></svg>${hasChildren ? ' Hide' : ' Compact'}
               </button>
             `;

@@ -1088,8 +1088,10 @@ function installLPRecalculateHook() {
 // window.recipeTreeRoot.calculatedCost (materials + job fee, the Calculator's own unmodified
 // number) already includes them.
 function renderLPExtraStats() {
-  document.getElementById('lp-info-card-col')?.remove();
-  if (!_lpIsolatedResult || !window.recipeTreeRoot) return;
+  if (!_lpIsolatedResult || !window.recipeTreeRoot) {
+    document.getElementById('lp-info-card-col')?.remove();
+    return;
+  }
 
   const root = window.recipeTreeRoot;
   const treeContainer = document.getElementById('tree-container');
@@ -1144,11 +1146,7 @@ function renderLPExtraStats() {
   const heroFontSize = fitFontSize(profitText, [[15, '32px'], [18, '26px'], [22, '21px'], [99, '17px']]);
   const iskPerLpFontSize = fitFontSize(iskPerLpDisplay, [[9, '20px'], [13, '16px'], [99, '13px']]);
 
-  const card = document.createElement('div');
-  card.id = 'lp-info-card';
-  card.className = 'diagram-node glass-card p-3.5 w-[26rem]';
-  card.style.borderTopColor = '#c084fc';
-  card.innerHTML = `
+  const innerHTML = `
     <div class="flex items-center gap-1.5 border-b border-[#3a3025] pb-2 mb-2.5">
       <svg viewBox="0 0 24 24" fill="none" stroke="#c084fc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex-shrink:0;"><circle cx="12" cy="8" r="5"/><path d="M8.5 12.5L7 21l5-3 5 3-1.5-8.5"/></svg>
       <span class="font-bold text-sm text-white">LP Store Economics</span>
@@ -1168,6 +1166,27 @@ function renderLPExtraStats() {
       <div class="text-right font-bold mono whitespace-nowrap" style="color:${profitColor}; font-size:${iskPerLpFontSize};">${iskPerLpDisplay}</div>
     </div>
   `;
+
+  // Update the existing card IN PLACE when it's already correctly positioned (the common case -
+  // every recalculate after the first) rather than removing and recreating both elements from
+  // scratch every single pass. A same-typed remove+insert is a real, avoidable source of layout
+  // churn on a page where a plain Hide/Compact or Build/Buy click already reflows a lot on its own
+  // (see recalculateWithPanAnchor's own comment on this page's redemption-node rebuilding) - one
+  // less thing moving on every keystroke/click. Still falls back to a full rebuild if the column
+  // is missing or ended up somewhere else (defensive, not expected in normal use).
+  const existingCol = document.getElementById('lp-info-card-col');
+  const existingCard = document.getElementById('lp-info-card');
+  if (existingCol && existingCard && existingCol.parentElement === treeContainer && treeContainer.lastElementChild === existingCol) {
+    existingCard.innerHTML = innerHTML;
+    return;
+  }
+  existingCol?.remove();
+
+  const card = document.createElement('div');
+  card.id = 'lp-info-card';
+  card.className = 'diagram-node glass-card p-3.5 w-[26rem]';
+  card.style.borderTopColor = '#c084fc';
+  card.innerHTML = innerHTML;
 
   const col = document.createElement('div');
   col.id = 'lp-info-card-col';
