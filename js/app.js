@@ -1841,7 +1841,17 @@ async function selectItem(typeId, name, preserveView = false, anchorInstanceId =
     if (resyncedNode) window.selectedInstanceId = resyncedNode.instanceId;
   }
 
-  recalculate();
+  // Awaited - window.recalculate is a plain synchronous function on the Calculator, so calling it
+  // bare "worked" there by accident (a synchronous call still blocks until it's done regardless of
+  // whether the caller awaits it). On the LP Store, installLPRecalculateHook (js/lpstore.js) replaces
+  // this exact same global binding with an async, coalescing wrapper - calling it bare there let this
+  // code measure the anchor card's position (right below) before that async work had actually
+  // finished rendering, computing pan compensation against a stale or half-updated layout instead of
+  // the real final one. That's what made the very first Build/Buy toggle on a freshly isolated LP
+  // Store offer specifically prone to a real, measured drift (confirmed directly: a real anchor toggle
+  // moved the root card 90px with this bug in place, zero px with it fixed) even though the exact same
+  // click worked instantly and correctly on the Calculator.
+  await recalculate();
 
   if (anchorPathKey && anchorRectBefore) {
     const anchorNodeAfter = findNodeByPathKey(window.recipeTreeRoot, anchorPathKey);
