@@ -2896,21 +2896,69 @@ function syncSellStrategy(e) {
 
 // (extractJobMaterialsForNode moved to config.js so both the calculator and ledger pages can use it)
 
-// Finds every sub-assembly (depth > 0) that's toggled to "Build" and actually has its own inputs -
-// i.e. every intermediate manufacturing job the player needs to run before the final product.
-// Returned deepest-first, since prerequisites must be built before whatever depends on them.
-function collectSubBuildNodes(root) {
-  const results = [];
-  function walk(node) {
-    if (!node) return;
-    if (node.depth > 0 && node.isBuildingSelf && node.children && node.children.length > 0) {
-      results.push(node);
-    }
-    if (node.children) node.children.forEach(child => { if (child) walk(child); });
+// A Build-toggled sub-assembly's own queued job used to always plan to manufacture the FULL
+// theoretical quantity its parent's recipe calls for, completely ignoring how much of that exact
+// component was already sitting in stock - reported directly: "even though i have some of the
+// required component in stock, the calculator added the entire needed stock to build instead of
+// just building the missing stuff." extractJobMaterialsForNode (js/config.js) already correctly
+// computes a stock-reduced "net" quantity for a built component whenever it lists it as a material
+// of its parent - that number was purely informational until now; the actual job queued for that
+// component, and in turn ITS OWN raw-material shopping list underneath it, never used it at all.
+//
+// Walks the tree top-down one boundary at a time, reusing extractJobMaterialsForNode's own already-
+// correct per-level stock math at each one instead of duplicating it - a component appearing
+// directly under root gets root's own reading of how much stock covers it; one nested inside
+// another Build-toggled sub-assembly instead gets THAT sub-assembly's own reading (computed once its
+// own quantity has already been shrunk to its net-of-stock size and cascaded to its children), so a
+// smaller outer job correctly asks for proportionally less underneath it too. Each boundary node is
+// temporarily shrunk to its net run count, its own materials/cost/time captured at that size, then
+// restored before returning - so nothing about the live tree or the Calculator's own display is left
+// changed afterward. Deliberately does NOT touch calculateTreeNodeCost's own cost/profit figures for
+// the live view (stock-agnostic by design, see that function's own comment) - this only changes what
+// gets queued to the Ledger. Doesn't attempt to share one stock pool across sibling boundaries at
+// different branches of the tree (each of extractJobMaterialsForNode's calls still gets its own
+// fresh reading of window.userStockMap, same as before) - a rarer edge case than the one reported,
+// and out of scope for this fix.
+function resolveStockAwareSubBuilds(root, facility) {
+  const subBuilds = [];
+
+  function resolveLevel(parentMaterials, parentNode) {
+    (parentNode.children || []).forEach(child => {
+      const isBoundary = child.depth > 0 && child.isBuildingSelf && child.children && child.children.length > 0;
+      if (!isBoundary) return;
+
+      const productTypeId = child.productTypeId || child.typeId;
+      const materialEntry = parentMaterials.find(m => m.typeId === productTypeId);
+      const netQtyNeeded = materialEntry ? materialEntry.netQtyNeeded : child.qtyNeeded;
+      const stockConsumed = materialEntry ? materialEntry.stockQty : 0;
+      const batchYield = child.batchYield || 1;
+      const netRunsNeeded = Math.ceil(netQtyNeeded / batchYield);
+
+      const originalRunsNeeded = child.runsNeeded;
+      const originalQtyNeeded = child.qtyNeeded;
+      child.runsNeeded = netRunsNeeded;
+      child.qtyNeeded = netRunsNeeded * batchYield;
+      if (typeof window.scaleTreeQuantities === 'function') window.scaleTreeQuantities(child, facility);
+
+      const childMaterials = extractJobMaterialsForNode(child);
+      const calculatedCost = typeof window.calculateTreeNodeCost === 'function' ? window.calculateTreeNodeCost(child) : 0;
+      const totalBuildSeconds = typeof calculateTotalBuildSeconds === 'function' ? calculateTotalBuildSeconds(child) : 0;
+
+      resolveLevel(childMaterials, child); // anything nested one level deeper inside this boundary - pushed first, so prerequisites land deepest-first in subBuilds, matching collectSubBuildNodes' own ordering
+
+      if (netRunsNeeded > 0) {
+        subBuilds.push({ node: child, stockConsumed, netQtyNeeded, netRunsNeeded, materials: childMaterials, calculatedCost, totalBuildSeconds });
+      }
+
+      child.runsNeeded = originalRunsNeeded;
+      child.qtyNeeded = originalQtyNeeded;
+      if (typeof window.scaleTreeQuantities === 'function') window.scaleTreeQuantities(child, facility);
+    });
   }
-  walk(root);
-  results.sort((a, b) => b.depth - a.depth); // deepest (most prerequisite) first
-  return results;
+
+  const rootMaterials = extractJobMaterialsForNode(root);
+  resolveLevel(rootMaterials, root);
+  return { rootMaterials, subBuilds };
 }
 
 function addCurrentJobToLedger(e) {
@@ -2936,7 +2984,10 @@ function addCurrentJobToLedger(e) {
   let unitSellPrice = selectedStrategy.startsWith('custom-') ? customPrice : outputPrices.sell;
   const baseTime = extractBuildTime(window.recipeTreeRoot.recipe, window.recipeTreeRoot.typeId, window.recipeTreeRoot.name);
 
-  const materials = extractJobMaterialsForNode(window.recipeTreeRoot);
+  const structureTypeForStock = window.getActiveStructureType ? window.getActiveStructureType() : { costBonus: 5.0, meBonus: 1.0 };
+  const facilityForStock = structureTypeForStock.meBonus / 100;
+  const stockAwareResult = resolveStockAwareSubBuilds(window.recipeTreeRoot, facilityForStock);
+  const materials = stockAwareResult.rootMaterials;
 
   const rootJobName = window.recipeTreeRoot.productName || window.recipeTreeRoot.name.replace(/ Blueprint$/i, '').replace(/ Reaction Formula$/i, '').replace(/ Formula$/i, '').trim();
 
@@ -3004,18 +3055,21 @@ function addCurrentJobToLedger(e) {
   // there's no way yet to know it'll turn out to match a real corp job (js/ledger.js's sync upgrades
   // it to scope:'corp' automatically once/if it actually does - see its own comment on that).
   const addedByCharId = window.getActiveCharId ? window.getActiveCharId() : null;
-  const subBuildNodes = collectSubBuildNodes(window.recipeTreeRoot);
-  const subBuildJobs = subBuildNodes.map(node => ({
-    id: Date.now() + Math.floor(Math.random() * 1000) + node.instanceId,
-    typeId: node.typeId,
-    productTypeId: node.productTypeId,
-    name: node.productName || node.name.replace(/ Blueprint$/i, '').replace(/ Reaction Formula$/i, '').replace(/ Formula$/i, '').trim(),
-    runsNeeded: node.runsNeeded,
-    qtyNeeded: node.qtyNeeded,
-    calculatedCost: node.calculatedCost || 0,
-    baseTime: extractBuildTime(node.recipe),
-    totalBuildSeconds: calculateTotalBuildSeconds(node),
-    materials: extractJobMaterialsForNode(node),
+  // stockAwareResult.subBuilds (computed above, alongside the root's own materials) already excludes
+  // anything fully covered by existing stock and sizes everything else down to just the shortfall -
+  // see resolveStockAwareSubBuilds' own comment for why a plain tree walk (the old collectSubBuildNodes
+  // + node.runsNeeded/qtyNeeded here) couldn't do that on its own.
+  const subBuildJobs = stockAwareResult.subBuilds.map(sb => ({
+    id: Date.now() + Math.floor(Math.random() * 1000) + sb.node.instanceId,
+    typeId: sb.node.typeId,
+    productTypeId: sb.node.productTypeId,
+    name: sb.node.productName || sb.node.name.replace(/ Blueprint$/i, '').replace(/ Reaction Formula$/i, '').replace(/ Formula$/i, '').trim(),
+    runsNeeded: sb.netRunsNeeded,
+    qtyNeeded: sb.netQtyNeeded,
+    calculatedCost: sb.calculatedCost || 0,
+    baseTime: extractBuildTime(sb.node.recipe),
+    totalBuildSeconds: sb.totalBuildSeconds,
+    materials: sb.materials,
     isSubBuild: true,
     parentJobId: rootJobId,
     parentJobName: rootJobName, // display-only now (the "⚙ Prereq for: X" label) - parentJobId is the real link
