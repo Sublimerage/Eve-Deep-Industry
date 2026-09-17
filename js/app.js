@@ -2293,6 +2293,60 @@ function countDescendants(node) {
   return count;
 }
 
+// Shared by every per-card control that only ever needs a plain recalculate() - never a full tree
+// rebuild via selectItem (Hide/Compact, the Sell/Buy/LP acquisition pill, the compact chip's own
+// toggle icon) - so each of those stays pinned to its current screen position through the
+// re-render, exactly like selectItem's own anchorInstanceId mechanism already does for Build/Buy
+// mode and ME/TE edits (see its own comment for the full "why" - reflow of the content AROUND a
+// card visibly shifts it even though panX/panY themselves never change). Those three controls were
+// each independently calling recalculate() directly with no compensation at all, reported directly
+// as the camera jumping on Hide/Compact on both the Calculator and LP Store pages.
+//
+// A plain recalculate() never rebuilds the tree via buildRecursiveRecipeTree, so the anchor almost
+// always keeps its own instanceId - the fast path below (same node-card-{instanceId} element,
+// compact chips included, since createNodeCard sets card.id unconditionally either way) covers the
+// Calculator and most of the LP Store. The one exception: js/lpstore.js's recalculate hook rebuilds
+// EVERY redemption-requirement child fresh, with a brand new instanceId, on every single pass - even
+// for a plain Hide/Compact click on one of those cards specifically (see ensureLPRedemptionNodesPresent's
+// own comment on why it re-derives them every time, not just once). pathKey and, failing that,
+// _lpRequiredItemProductTypeId (the one identity that survives even a required item's own flat-stub
+// <-> real-subtree transition - see injectLPRedemptionNodes' own comment) are the fallbacks for that
+// case, tried in order from cheapest/most-common to most specific.
+async function recalculateWithPanAnchor(e) {
+  const anchorEl = e && e.target ? e.target.closest('.diagram-node') : null;
+  const anchorInstanceId = anchorEl ? anchorEl.getAttribute('data-instance-id') : null;
+  const rectBefore = anchorEl ? anchorEl.getBoundingClientRect() : null;
+  const anchorNodeBefore = (anchorInstanceId != null && window.recipeTreeRoot)
+    ? findNodeByInstanceId(window.recipeTreeRoot, parseInt(anchorInstanceId)) : null;
+  const anchorPathKey = anchorNodeBefore ? anchorNodeBefore.pathKey : null;
+  const anchorProductTypeId = anchorNodeBefore ? anchorNodeBefore._lpRequiredItemProductTypeId : undefined;
+
+  if (typeof window.recalculate === 'function') await window.recalculate();
+
+  if (!rectBefore || !window.recipeTreeRoot) return;
+
+  let anchorElAfter = anchorInstanceId != null ? document.getElementById(`node-card-${anchorInstanceId}`) : null;
+  if (!anchorElAfter) {
+    let anchorNodeAfter = anchorPathKey ? findNodeByPathKey(window.recipeTreeRoot, anchorPathKey) : null;
+    if (!anchorNodeAfter && anchorProductTypeId !== undefined) {
+      (function findByRequiredItemProductTypeId(node) {
+        if (!node || anchorNodeAfter) return;
+        if (node._lpRequiredItemProductTypeId === anchorProductTypeId) { anchorNodeAfter = node; return; }
+        if (node.children) node.children.forEach(findByRequiredItemProductTypeId);
+      })(window.recipeTreeRoot);
+    }
+    anchorElAfter = anchorNodeAfter ? document.getElementById(`node-card-${anchorNodeAfter.instanceId}`) : null;
+  }
+
+  if (anchorElAfter) {
+    const rectAfter = anchorElAfter.getBoundingClientRect();
+    window.panX -= (rectAfter.left - rectBefore.left);
+    window.panY -= (rectAfter.top - rectBefore.top);
+    updateTransform();
+  }
+}
+window.recalculateWithPanAnchor = recalculateWithPanAnchor;
+
 // A node can be compact for two different reasons - explicitly collapsed, or auto-compacted for
 // sitting in an oversized column (renderTreeDiagram) - and a click always means "flip whatever
 // it's actually showing right now," not "toggle the explicit flag specifically" (which would be a
@@ -2300,7 +2354,7 @@ function countDescendants(node) {
 // to ADD it to collapsedInstanceIds, which does nothing new since the auto-compact rule already had
 // it compact). Reading the card's own rendered class is the simplest single source of truth for
 // "which one is it right now" without duplicating the sibling-count threshold logic here too.
-function toggleNodeCollapse(e, instanceId, pathKey) {
+async function toggleNodeCollapse(e, instanceId, pathKey) {
   if (e) e.stopPropagation();
   // The inline onclick="...(event, id, '${node.pathKey}')" build (below) stringifies a genuinely
   // missing pathKey into the literal text "undefined" rather than an actual undefined value - guard
@@ -2319,7 +2373,7 @@ function toggleNodeCollapse(e, instanceId, pathKey) {
     window.expandedOverrideIds.delete(key);
     window.collapsedInstanceIds.add(key);
   }
-  if (typeof window.recalculate === 'function') window.recalculate();
+  await recalculateWithPanAnchor(e);
 }
 window.toggleNodeCollapse = toggleNodeCollapse;
 

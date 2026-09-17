@@ -911,42 +911,15 @@ async function toggleLPRequiredItemBuild(e, typeId) {
     window.buildSelfOverrides[parseInt(recipe.blueprintTypeID)] = next;
   }
 
-  // Same pan-compensation optimizers.js's toggleBuildSelf does for every other Build/Buy toggle
-  // (see its own comment on why this matters) - this required-item toggle calls recalculate()
-  // directly rather than going through toggleBuildSelf at all, so it never inherited that fix.
-  // Building a required item for the first time replaces its flat stub (node.typeId === the
-  // product id) with a real recursive sub-tree (node.typeId === the BLUEPRINT id instead) - a
-  // brand new instanceId AND a changed typeId, so pathKey (which is built from each node's own
-  // typeId) changes too and can't re-find it the way every other rebuild-surviving lookup in this
-  // app does. _lpRequiredItemProductTypeId is the one identity injectLPRedemptionNodes deliberately
-  // keeps stable across that flat-stub/real-subtree transition (see its own comment) - anchor on
-  // that here instead.
-  const anchorEl = e && e.target ? e.target.closest('.diagram-node') : null;
-  const anchorRectBefore = anchorEl ? anchorEl.getBoundingClientRect() : null;
-
-  if (typeof window.recalculate === 'function') await window.recalculate();
-
-  if (anchorRectBefore && window.recipeTreeRoot) {
-    function findByRequiredItemProductTypeId(node) {
-      if (!node) return null;
-      if (node._lpRequiredItemProductTypeId === typeId) return node;
-      if (node.children) {
-        for (const c of node.children) {
-          const found = findByRequiredItemProductTypeId(c);
-          if (found) return found;
-        }
-      }
-      return null;
-    }
-    const anchorNodeAfter = findByRequiredItemProductTypeId(window.recipeTreeRoot);
-    const anchorElAfter = anchorNodeAfter ? document.getElementById(`node-card-${anchorNodeAfter.instanceId}`) : null;
-    if (anchorElAfter) {
-      const rectAfter = anchorElAfter.getBoundingClientRect();
-      window.panX -= (rectAfter.left - anchorRectBefore.left);
-      window.panY -= (rectAfter.top - anchorRectBefore.top);
-      updateTransform();
-    }
-  }
+  // Same pan-compensation every other per-card recalculate()-only control uses (app.js's
+  // recalculateWithPanAnchor - see its own comment) - this required-item toggle used to call
+  // recalculate() directly with no compensation at all. recalculateWithPanAnchor's own fallback
+  // chain (pathKey, then _lpRequiredItemProductTypeId) is exactly what's needed here: building a
+  // required item for the first time replaces its flat stub (node.typeId === the product id) with a
+  // real recursive sub-tree (node.typeId === the BLUEPRINT id instead) - a brand new instanceId AND
+  // a changed typeId, so even pathKey can't re-find it, only _lpRequiredItemProductTypeId (which
+  // injectLPRedemptionNodes deliberately keeps stable across that transition) can.
+  await window.recalculateWithPanAnchor(e);
 }
 window.toggleLPRequiredItemBuild = toggleLPRequiredItemBuild;
 

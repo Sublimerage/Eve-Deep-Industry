@@ -166,28 +166,12 @@ async function toggleBuildSelf(e, typeId) {
   // selectItem() in the first place), so it's untouched by this guard and keeps working exactly as
   // before.
   if (root && root.isLPIsolatedRoot && !root.recipe) {
-    // Same pan-compensation selectItem does below for the normal rebuild path (see its own
-    // anchorInstanceId comment) - this branch never calls selectItem at all, so without this the
-    // camera visibly jumped on every Build/Buy toggle for an LP offer's synthetic root, unlike the
-    // Calculator page (which never takes this branch, since its root is never isLPIsolatedRoot).
-    const anchorEl = e && e.target ? e.target.closest('.diagram-node') : null;
-    const anchorInstanceIdLP = anchorEl ? parseInt(anchorEl.getAttribute('data-instance-id')) : null;
-    const anchorNodeLP = anchorInstanceIdLP != null ? findNodeByInstanceId(root, anchorInstanceIdLP) : null;
-    const anchorPathKeyLP = anchorNodeLP ? anchorNodeLP.pathKey : null;
-    const anchorRectBeforeLP = anchorEl ? anchorEl.getBoundingClientRect() : null;
-
-    if (typeof window.recalculate === 'function') await window.recalculate();
-
-    if (anchorPathKeyLP && anchorRectBeforeLP && window.recipeTreeRoot) {
-      const anchorNodeAfterLP = findNodeByPathKey(window.recipeTreeRoot, anchorPathKeyLP);
-      const anchorElAfterLP = anchorNodeAfterLP ? document.getElementById(`node-card-${anchorNodeAfterLP.instanceId}`) : null;
-      if (anchorElAfterLP) {
-        const rectAfterLP = anchorElAfterLP.getBoundingClientRect();
-        window.panX -= (rectAfterLP.left - anchorRectBeforeLP.left);
-        window.panY -= (rectAfterLP.top - anchorRectBeforeLP.top);
-        updateTransform();
-      }
-    }
+    // Same pan-compensation every other per-card recalculate()-only control uses
+    // (recalculateWithPanAnchor, app.js - see its own comment on the fallback chain this needs) -
+    // this branch never calls selectItem at all, so without this the camera visibly jumped on every
+    // Build/Buy toggle for an LP offer's synthetic root, unlike the Calculator page (which never
+    // takes this branch, since its root is never isLPIsolatedRoot).
+    await window.recalculateWithPanAnchor(e);
     return;
   }
 
@@ -212,13 +196,14 @@ function onCardMEChange(e, typeId, instanceId) {
 }
 
 // --- Action: Per-Card TE Change ---
-function onCardTEChange(e, typeId, instanceId) {
+// onCardMEChange (above) already pins the card via selectItem's own anchorInstanceId - this used to
+// call recalculate() directly instead with no compensation at all, an asymmetry that made editing
+// TE (but not ME) visibly jump the camera.
+async function onCardTEChange(e, typeId, instanceId) {
   if (e) e.stopPropagation();
   const val = Math.max(0, Math.min(20, parseFloat(e.target.value) || 0));
   window.customTEOverrides[typeId] = val;
-  if (typeof window.recalculate === 'function') {
-    window.recalculate();
-  }
+  await window.recalculateWithPanAnchor(e);
 }
 
 // --- Action: Build All Sub-Components ---
@@ -595,10 +580,10 @@ async function applyBudgetImpactOptimizer() {
   if (typeof window.recalculate === 'function') window.recalculate();
 }
 
-function setComponentBuyMode(e, typeId, mode) {
+async function setComponentBuyMode(e, typeId, mode) {
   if (e) e.stopPropagation();
   window.customBuyModes[typeId] = mode;
-  if (typeof window.recalculate === 'function') window.recalculate();
+  await window.recalculateWithPanAnchor(e);
 }
 
 // A compact chip has no room for the full card's two labeled Sell/Buy buttons, so this is a single
@@ -606,12 +591,12 @@ function setComponentBuyMode(e, typeId, mode) {
 // a click-to-switch control instead of two separate ones. Never lands on 'lp': that stays reachable
 // only from the full card's own dedicated button (see createNodeCard's own comment on why), so
 // flipping away from it here always goes to 'buy', not a third cycle position.
-function toggleComponentBuyMode(e, typeId) {
+async function toggleComponentBuyMode(e, typeId) {
   if (e) e.stopPropagation();
   const globalStrategy = document.getElementById('input-price-mode')?.value || 'sell';
   const current = window.customBuyModes[typeId] || globalStrategy;
   window.customBuyModes[typeId] = (current === 'buy') ? 'sell' : 'buy';
-  if (typeof window.recalculate === 'function') window.recalculate();
+  await window.recalculateWithPanAnchor(e);
 }
 window.toggleComponentBuyMode = toggleComponentBuyMode;
 
