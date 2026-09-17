@@ -325,9 +325,22 @@ function renderJournalPage() {
   // Booster", produced by its own reaction job sitting right there in the queue) would show up in the
   // shopping list as if it needed to be bought from the market, even though it's already accounted
   // for by the job that makes it.
-  const internallySuppliedTypeIds = new Set(
-    relevantJobsForBOM.filter(j => j && j.productTypeId !== undefined).map(j => j.productTypeId)
-  );
+  //
+  // internallySuppliedPool tracks HOW MUCH of each product is actually going to come out of these
+  // jobs (each job's own qtyNeeded - its real planned output), not just whether a supplying job
+  // exists at all. Reported directly: manually shrinking a prerequisite job's run count below what
+  // its parent actually needs left the Consolidated BOM showing the material as fully covered
+  // regardless - the old check only asked "does ANY job produce this typeId," so the parent's real
+  // shortfall was invisible right up until the job actually ran short in EVE. Each material line now
+  // claims against this shared pool (decrementing it, same pattern used for real stock elsewhere in
+  // this app) and only the portion that pool can't cover gets listed - if a prerequisite's own run
+  // count is too small to cover what it's feeding, the difference now correctly shows up to buy.
+  const internallySuppliedPool = {};
+  relevantJobsForBOM.forEach(j => {
+    if (j && j.productTypeId !== undefined) {
+      internallySuppliedPool[j.productTypeId] = (internallySuppliedPool[j.productTypeId] || 0) + (j.qtyNeeded || 0);
+    }
+  });
   relevantJobsForBOM.forEach(job => {
     // Already-started jobs have already committed their materials - a "what do I still need to
     // buy" list has nothing useful to say about them, so they're excluded entirely rather than
@@ -335,7 +348,15 @@ function renderJournalPage() {
     if (job && !job.isStarted && Array.isArray(job.materials)) {
       job.materials.forEach(mat => {
         if (!mat || !mat.typeId) return;
-        if (internallySuppliedTypeIds.has(mat.typeId)) return;
+        let qtyStillNeeded = mat.qtyNeeded || 0;
+        const suppliedRemaining = internallySuppliedPool[mat.typeId];
+        if (suppliedRemaining !== undefined) {
+          const claimed = Math.min(qtyStillNeeded, suppliedRemaining);
+          internallySuppliedPool[mat.typeId] = suppliedRemaining - claimed;
+          qtyStillNeeded -= claimed;
+        }
+        if (qtyStillNeeded <= 0) return; // fully covered by what's already being built internally
+
         if (activeOrderFilter !== 'all' && mat.strategy !== activeOrderFilter) return;
 
         const category = getItemCategory(mat.typeId, mat.name);
@@ -351,7 +372,7 @@ function renderJournalPage() {
             strategy: mat.strategy || 'sell'
           };
         }
-        consolidatedBOM[id].totalQtyNeeded += mat.qtyNeeded || 0;
+        consolidatedBOM[id].totalQtyNeeded += qtyStillNeeded;
       });
     }
   });
@@ -1279,8 +1300,8 @@ async function cascadeRunChangeToChildren(parentJob, oldMaterials) {
 
 // Spins a buildable material off a job's own material list into its own queued prerequisite job,
 // linked exactly the way a Calculator-side sub-build already is (isSubBuild/parentJobName) - so it
-// gets picked up by internallySuppliedTypeIds in renderJournalPage() for free, no new suppression
-// logic needed for the parent's material row to stop double-counting it.
+// gets picked up by internallySuppliedPool in renderJournalPage() for free, no new suppression logic
+// needed for the parent's material row to stop double-counting it.
 async function addMaterialAsPrerequisiteJob(jobId, typeId, missingQty) {
   const parentJob = activeJobs.find(j => j && j.id === jobId);
   if (!parentJob) return;
@@ -2136,7 +2157,7 @@ function tightMergeSameParentOnce() {
 // sharedParentIds listing every job it now feeds, instead of picking just one parent to keep - that
 // needs zero extra plumbing to render or shop correctly: buildJobClusters already treats a sub-build
 // with no resolvable parent as its own top-level entry (the same fallback an orphaned prerequisite -
-// e.g. its one parent got deleted - already used), and internallySuppliedTypeIds already suppresses a
+// e.g. its one parent got deleted - already used), and internallySuppliedPool already tracks a
 // covered material queue-wide by product rather than per-parent, so it still correctly keeps that
 // material off every parent's shopping list, not just one.
 function poolCrossParentDuplicatesOnce() {

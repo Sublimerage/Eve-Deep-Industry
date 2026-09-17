@@ -367,27 +367,30 @@ window.safeParseJSON = safeParseJSON;
 // shared here (config.js loads on every page) rather than duplicated per-page, so the Calculator's own
 // "do I have enough" display and the Ledger's own job cards can never silently disagree about "how
 // much do I actually still have" - the same class of bug already caught once between the Ledger's card
-// display and its own Copy BOM button. Reported directly: the Ledger's own BOM correctly accounts for
-// jobs already queued/started, but "the calculator still thinks I have all the items needed" - the
-// Calculator page never loads js/ledger.js at all, so it had no way to know those jobs existed. Reads
-// eve_ledger_jobs fresh from localStorage every call (not some other page's in-memory activeJobs array,
-// which the Calculator never has) so this works correctly from any page. Returns a NEW object (never
-// mutates rawStockMap) - the caller should treat this as ITS OWN starting stock pool instead of the raw
-// ESI figure, then deplete further for whatever it's calculating (its own build, its own tree, etc.).
+// display and its own Copy BOM button. Reads eve_ledger_jobs fresh from localStorage every call (not
+// some other page's in-memory activeJobs array, which the Calculator never has) so this works
+// correctly from any page. Returns a NEW object (never mutates rawStockMap) - the caller should treat
+// this as ITS OWN starting stock pool instead of the raw ESI figure, then deplete further for whatever
+// it's calculating (its own build, its own tree, etc.).
 //
-// Started jobs are deducted first (in their own stored order), then pending jobs claim what's left
-// (also in their own stored order) - same priority convention as js/ledger.js's own renderJournalPage
-// pass. A started job whose consumption a fresh ESI asset refresh has already confirmed isn't
-// subtracted again - see getEsiAssetsExpiry (js/esi.js) and job.assetsExpiryAtStart (js/ledger.js) for
-// the full reasoning; critically, that freshness signal lives in localStorage (shared across every
-// tab), not a plain window.* variable, specifically so this function and js/ledger.js's own
-// applyJobMaterialsToStock always reach the SAME answer for the same job - an earlier version that
-// used a per-tab in-memory variable let the two pages disagree outright (reported directly: the Ledger
-// showing an item as entirely missing while the Calculator showed almost all of it covered, for the
-// same real stock). Deliberately re-implemented here rather than sharing js/ledger.js's own
-// applyJobMaterialsToStock, since that version also returns rich per-job/per-material detail for
-// rendering each job's own BOM block, which nothing outside the Ledger page needs; this only ever
-// needs the final depleted pool.
+// Only STARTED jobs deduct here - a merely queued job hasn't actually consumed anything yet (in EVE
+// or in this app), so it isn't a real claim on your stock, just a plan that could still be reordered
+// or deleted. Reported directly, and discussed at length: reserving stock for something not yet
+// committed to made the Calculator understate what's genuinely available while planning a second,
+// unrelated build, and didn't match how the Ledger's OWN internal reconciliation already treats
+// started vs. pending jobs differently (see js/ledger.js's renderJournalPage/applyJobMaterialsToStock
+// - started jobs are deducted unconditionally there too; only pending ones compete for what's left, a
+// distinction this function previously ignored entirely). A started job whose consumption a fresh ESI
+// asset refresh has already confirmed isn't subtracted again - see getEsiAssetsExpiry (js/esi.js) and
+// job.assetsExpiryAtStart (js/ledger.js) for the full reasoning; critically, that freshness signal
+// lives in localStorage (shared across every tab), not a plain window.* variable, specifically so
+// this function and js/ledger.js's own applyJobMaterialsToStock always reach the SAME answer for the
+// same job - an earlier version that used a per-tab in-memory variable let the two pages disagree
+// outright (reported directly: the Ledger showing an item as entirely missing while the Calculator
+// showed almost all of it covered, for the same real stock). Deliberately re-implemented here rather
+// than sharing js/ledger.js's own applyJobMaterialsToStock, since that version also returns rich
+// per-job/per-material detail for rendering each job's own BOM block, which nothing outside the
+// Ledger page needs; this only ever needs the final depleted pool.
 function computeStockAfterLedgerClaims(rawStockMap) {
   const pool = { ...(rawStockMap || {}) };
   const jobs = safeParseJSON(localStorage.getItem('eve_ledger_jobs'), []);
@@ -418,7 +421,6 @@ function computeStockAfterLedgerClaims(rawStockMap) {
       && currentAssetsExpiry !== null && currentAssetsExpiry > baseline;
     deductJob(job, !alreadyReflected);
   });
-  jobs.filter(j => j && !j.isStarted).forEach(job => deductJob(job, true));
 
   return pool;
 }
