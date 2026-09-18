@@ -37,13 +37,14 @@ function stampBulkMETargetIfArmed(typeId) {
 }
 window.stampBulkMETargetIfArmed = stampBulkMETargetIfArmed;
 
-// Sets every currently-built non-root component to the given ME/TE right now, AND arms
-// window.bulkMETarget so toggleBuildSelf/buildAllComponents keep stamping it onto anything
-// switched to Build afterward too - until clearBulkMETarget() (the toast's "Stop" action, or the
-// card's own Stop button) turns that back off. Forcibly overwrites even a component with its own
-// auto-filled-from-owned-BPO value, same as any other manual ME/TE edit already does - this is a
-// deliberate "assume everything's maxed/at this level" planning tool, not meant to defer to what
-// you actually own.
+// Sets every currently-built component (including the root/main card - it's just as manufacturable
+// and just as subject to ME/TE as anything under it, and reported directly as the one card bulk
+// apply silently skipped) to the given ME/TE right now, AND arms window.bulkMETarget so
+// toggleBuildSelf/buildAllComponents keep stamping it onto anything switched to Build afterward too
+// - until clearBulkMETarget() (the toast's "Stop" action, or the card's own Stop button) turns that
+// back off. Forcibly overwrites even a component with its own auto-filled-from-owned-BPO value,
+// same as any other manual ME/TE edit already does - this is a deliberate "assume everything's
+// maxed/at this level" planning tool, not meant to defer to what you actually own.
 function applyBulkMETarget(me, te) {
   const clampedME = Math.max(0, Math.min(10, parseFloat(me) || 0));
   const clampedTE = Math.max(0, Math.min(20, parseFloat(te) || 0));
@@ -61,15 +62,15 @@ function applyBulkMETarget(me, te) {
   }
   window.bulkMETarget = { me: clampedME, te: clampedTE };
 
-  function stampTree(node, isRoot) {
+  function stampTree(node) {
     if (!node) return;
-    if (!isRoot && node.isBuildingSelf && node.isManufacturable && !node.isReaction) {
+    if (node.isBuildingSelf && node.isManufacturable && !node.isReaction) {
       window.customMEOverrides[node.typeId] = clampedME;
       window.customTEOverrides[node.typeId] = clampedTE;
     }
-    if (node.children) node.children.forEach(c => stampTree(c, false));
+    if (node.children) node.children.forEach(c => stampTree(c));
   }
-  if (window.recipeTreeRoot) stampTree(window.recipeTreeRoot, true);
+  if (window.recipeTreeRoot) stampTree(window.recipeTreeRoot);
 
   if (window.currentProduct) {
     window.selectItem(window.currentProduct.id, window.currentProduct.name, true);

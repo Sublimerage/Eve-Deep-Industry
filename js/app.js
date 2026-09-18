@@ -48,6 +48,75 @@ function meTeSourceHint(node) {
   return 'No owned BPO found for this blueprint (or not logged in) - defaults to 0%/0% until you edit it.';
 }
 
+const SKILL_LEVEL_ROMAN = ['0', 'I', 'II', 'III', 'IV', 'V'];
+
+// Walks every currently-Built node (root included) and checks its recipe's requiredSkills against
+// what's actually trained (eve_char_skills' full skill sheet, the same one calculateAdjustedJobSeconds
+// already reads for the required-skill TIME bonus) - that time bonus silently contributes zero for a
+// missing skill rather than flagging anything, so it's never actually told you whether you CAN build
+// something, only how long it'd take if you could. Returns [] (not a false "you're missing
+// everything") when no real skill sheet is loaded at all - a logged-out visitor gets no data to
+// judge by, not a wall of false warnings.
+function computeMissingSkills(root) {
+  const sheet = window.safeParseJSON(localStorage.getItem('eve_char_skills'), null);
+  const trained = sheet && sheet.allSkills;
+  if (!trained || Object.keys(trained).length === 0) return [];
+
+  const missingByItem = [];
+  function walk(node) {
+    if (!node) return;
+    if (node.isBuildingSelf && node.recipe && Array.isArray(node.recipe.requiredSkills) && node.recipe.requiredSkills.length > 0) {
+      const missing = node.recipe.requiredSkills
+        .filter(req => (trained[req.skillId] || 0) < req.level)
+        .map(req => ({
+          skillId: req.skillId,
+          skillName: (window.TYPE_ID_TO_NAME && window.TYPE_ID_TO_NAME[req.skillId]) || `Skill #${req.skillId}`,
+          required: req.level,
+          trained: trained[req.skillId] || 0
+        }));
+      if (missing.length > 0) {
+        missingByItem.push({ typeId: node.typeId, name: node.productName || node.name, missing });
+      }
+    }
+    if (node.children) node.children.forEach(walk);
+  }
+  walk(root);
+  return missingByItem;
+}
+window.computeMissingSkills = computeMissingSkills;
+
+// Refreshes the icon-rail Skills tab's warning dot and (if that panel is the one currently open)
+// its own list body - called at the end of recalculate() so both track Build/Buy toggles and a
+// skill sheet that finishes fetching after the tree already rendered.
+function updateMissingSkillsUI() {
+  const missing = computeMissingSkills(window.recipeTreeRoot);
+  const dot = document.getElementById('skills-tab-dot');
+  if (dot) dot.classList.toggle('hidden', missing.length === 0);
+
+  const body = document.getElementById('skills-flyout-body');
+  if (!body) return;
+  if (missing.length === 0) {
+    const sheet = window.safeParseJSON(localStorage.getItem('eve_char_skills'), null);
+    const hasSheet = sheet && sheet.allSkills && Object.keys(sheet.allSkills).length > 0;
+    body.innerHTML = hasSheet
+      ? `<div class="fo-card-note" style="color:var(--accent);">Every component you're currently building is covered by your trained skills.</div>`
+      : `<div class="fo-card-note">Log in via ESI SSO (top right) to check your trained skills against what these blueprints actually require.</div>`;
+    return;
+  }
+  body.innerHTML = missing.map(item => `
+    <div style="margin-bottom:10px;">
+      <div class="text-white font-semibold text-xs mb-1 truncate">${window.esc(item.name)}</div>
+      ${item.missing.map(m => `
+        <div class="fo-row" style="padding:3px 0;">
+          <span class="fo-row-label" style="color:#e85555;" title="Skill ID ${m.skillId}">${window.esc(m.skillName)}</span>
+          <span class="text-[11px] mono font-semibold" style="color:#e85555;">Need ${SKILL_LEVEL_ROMAN[m.required] || m.required} &middot; have ${SKILL_LEVEL_ROMAN[m.trained] || m.trained}</span>
+        </div>
+      `).join('')}
+    </div>
+  `).join('');
+}
+window.updateMissingSkillsUI = updateMissingSkillsUI;
+
 function saveTaxSettings() {
   try {
     // facility-select's value is now the structure key itself (npc/raitaru/azbel/sotiyo) - a structure
@@ -2123,6 +2192,7 @@ function recalculate() {
   
   renderBillOfMaterials(window.recipeTreeRoot, brokerFee);
   setTimeout(drawConnectingLines, 50);
+  if (typeof window.updateMissingSkillsUI === 'function') window.updateMissingSkillsUI();
 
   saveActiveState();
   try {
@@ -2582,6 +2652,11 @@ function createNodeCard(node, autoCompact) {
   // a flexed row snaps its value flush to the edge regardless of overflow, so edge distance alone
   // doesn't tell you it fits) - so this uses noticeably more of the card's real width than a flat
   // guess would, without re-introducing the wrap.
+  // Root-only: the tree-wide missing-skills check (computeMissingSkills, above) only needs to run
+  // once per render, not once per card, so it's computed here and only for isRoot rather than inside
+  // every createNodeCard call.
+  const missingSkills = isRoot ? computeMissingSkills(node) : [];
+
   const netProfitNumStr = Math.round(node.netProfitSell || 0).toLocaleString();
   const netProfitLen = netProfitNumStr.length;
   const netProfitFontSize = netProfitLen <= 9 ? '36px' : netProfitLen <= 11 ? '28px' : netProfitLen <= 13 ? '24px' : netProfitLen <= 16 ? '20px' : netProfitLen <= 18 ? '17px' : '14px';
@@ -2792,6 +2867,19 @@ function createNodeCard(node, autoCompact) {
                   <div class="text-orange-300 font-bold border-b border-[#3a3025] pb-1 mb-1">Estimated Item Value (EIV)</div>
                   <div class="flex justify-between space-x-4 text-slate-300"><span>Unit EIV:</span> <span class="text-orange-300 font-bold">${formattedUnitEIV}</span></div>
                   <div class="flex justify-between space-x-4 text-slate-300"><span>Total Job EIV:</span> <span class="text-orange-400 font-bold">${formattedTotalEIV}</span></div>
+                </div>
+              </div>
+            ` : ''}
+            ${isRoot && missingSkills.length > 0 ? `
+              <div class="relative group inline-block" onclick="event.stopPropagation()">
+                <span class="toggle-btn cursor-pointer" style="color:#e85555;border-color:rgba(232,85,85,0.4);background:rgba(232,85,85,0.14);" onclick="openFlyoutSection('skills')" title="Missing required skills somewhere in this build - click for details">
+                  <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.7 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                  Skills
+                </span>
+                <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block bg-black/90 border border-[#e85555] text-white text-xs p-2 rounded shadow-2xl z-[999] whitespace-nowrap mono pointer-events-none">
+                  <div class="text-[#e85555] font-bold border-b border-[#3a3025] pb-1 mb-1">Missing Required Skills</div>
+                  ${missingSkills.slice(0, 4).map(item => `<div class="text-slate-300">${window.esc(item.name)}: <span class="text-[#e85555] font-semibold">${item.missing.map(m => window.esc(m.skillName)).join(', ')}</span></div>`).join('')}
+                  ${missingSkills.length > 4 ? `<div class="text-slate-500 italic">+${missingSkills.length - 4} more - see the Skills tab</div>` : ''}
                 </div>
               </div>
             ` : ''}
@@ -3946,6 +4034,7 @@ const FLYOUT_TITLES = {
   implants: 'Pilot Implants',
   fees: 'Taxes & Fees',
   markets: 'Markets',
+  skills: 'Skills',
   // 'store'/'station' are lpstore.html-only section ids (its own icon-rail reuses this exact
   // lookup, plus 'pricing'/'build'/'fees' above for the sections it shares in spirit with the
   // Calculator) - harmless extra keys here, index.html never asks for either.
