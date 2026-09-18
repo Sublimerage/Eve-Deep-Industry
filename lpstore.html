@@ -8,7 +8,7 @@
 <meta http-equiv="Expires" content="0">
 <title>Eve Deep Industry — LP Store</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c8ff4d' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='8' r='5'/%3E%3Cpath d='M8.5 12.5L7 21l5-3 5 3-1.5-8.5'/%3E%3C/svg%3E">
-<link class="cache-bust" rel="stylesheet" href="css/tailwind-build.css?v=1.0.13">
+<link class="cache-bust" rel="stylesheet" href="css/tailwind-build.css?v=1.0.16">
 <link class="cache-bust" rel="stylesheet" href="css/styles.css?v=27.87.0">
 <script>(function(){try{var t=localStorage.getItem('eve_color_theme');if(t&&t!=='lime')document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
 <!-- GoatCounter - privacy-friendly page-view analytics, no cookies/consent banner needed -->
@@ -467,13 +467,26 @@
         <button onclick="exitIsolation(event)" class="font-semibold hover:underline flex-shrink-0" style="color:var(--accent);">Esc to exit</button>
       </div>
 
+      <!-- Onboarding tips - see index.html's own copy of this for the full comment. -->
+      <div id="pan-tip-callout" class="absolute top-14 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2.5 px-3.5 py-2 mono text-xs max-w-[min(92vw,380px)] community-btn-pulse" style="background:rgba(var(--accent-rgb),0.16); border:1.5px solid rgba(var(--accent-rgb),0.55); border-radius:var(--radius-btn); box-shadow:0 8px 24px rgba(0,0,0,0.4);" onclick="event.stopPropagation()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 flex-shrink-0" style="color:var(--accent);">
+          <path d="M12 3a6 6 0 0 1 6 6v6a6 6 0 0 1-12 0V9a6 6 0 0 1 6-6z"/>
+          <line x1="12" y1="3.2" x2="12" y2="11"/>
+          <path d="M12 3.2a6 6 0 0 1 5.9 5.8h-5.9z" fill="var(--accent)" stroke="none"/>
+        </svg>
+        <span class="text-slate-200 font-semibold">Right-click + drag to <span class="text-white font-bold">pan</span> the canvas</span>
+        <button onclick="advanceOnboardingTip()" class="btn-glass px-2.5 py-1 text-[10.5px] font-bold flex-shrink-0" style="white-space:nowrap;">Next</button>
+      </div>
+
       <div class="absolute top-3 right-3 z-40 flex items-center gap-1.5 mono text-xs" onclick="event.stopPropagation()">
         <span id="zoom-level-text" class="px-2.5 py-1.5 glass-card text-slate-300 font-semibold">100%</span>
-        <button onclick="collapseAllNodes()" class="icon-btn" title="Collapse every branch that has inputs, to shrink very tall builds">
-          <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="7,4 12,9 17,4"/><polyline points="7,20 12,15 17,20"/></svg>
+        <button onclick="collapseAllNodes()" id="collapse-all-btn" class="btn-glass btn-glass-muted px-2.5 py-1.5 text-[11px] flex items-center gap-1 community-btn-pulse" title="Collapse every branch that has inputs, to shrink very tall builds">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;"><polyline points="7,4 12,9 17,4"/><polyline points="7,20 12,15 17,20"/></svg>
+          Collapse
         </button>
-        <button onclick="expandAllNodes()" class="icon-btn" title="Expand every collapsed branch">
-          <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="7,9 12,4 17,9"/><polyline points="7,15 12,20 17,15"/></svg>
+        <button onclick="expandAllNodes()" id="expand-all-btn" class="btn-glass btn-glass-muted px-2.5 py-1.5 text-[11px] flex items-center gap-1" title="Expand every collapsed branch">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;"><polyline points="7,9 12,4 17,9"/><polyline points="7,15 12,20 17,15"/></svg>
+          Expand
         </button>
         <button onclick="centerOnSelectedNode()" class="icon-btn" title="Center on selected card, or the final output if nothing is selected [F]">
           <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>
@@ -637,7 +650,7 @@
   <script src="js/esi.js?v=8.0.38" defer></script>
   <script src="js/tree.js?v=8.0.6" defer></script>
   <script src="js/optimizers.js?v=8.0.16" defer></script>
-  <script src="js/app.js?v=15.84.7" defer></script>
+  <script src="js/app.js?v=15.86.0" defer></script>
   <script src="js/lpstore.js?v=7.37.0" defer></script>
   <script src="js/custom-select.js?v=1.5.0" defer></script>
 </body>
