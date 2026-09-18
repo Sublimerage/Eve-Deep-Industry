@@ -2480,6 +2480,30 @@ function createNodeCard(node, autoCompact) {
   const effectiveCost = mergedSources ? node._mergedCost : node.calculatedCost;
   const mergedBadge = mergedSources ? ` <span class="text-[10px]" style="color:var(--accent);" title="Shared by ${mergedSources.length} components:\n${mergedSources.map(s => `• ${s.parentName}: ${s.qtyNeeded.toLocaleString()}`).join('\n')}">×${mergedSources.length}</span>` : '';
 
+  // Root's Net Profit row shrinks its own font in steps as the ISK figure gets longer (same
+  // "step down instead of wrap" trick as lpstore.js's hero-num sizing) so a big profit/loss number
+  // plus the "(X.X%)" alongside it stay on one line instead of wrapping the % underneath and
+  // growing the card - which is otherwise the plain overflow behavior of a 32px number in a fixed
+  // width column once it passes ~9 characters.
+  // Steps chosen by directly measuring, per length, the largest size that still leaves the
+  // "Net Profit" label and this value clear of each other (not just clear of the card edge -
+  // a flexed row snaps its value flush to the edge regardless of overflow, so edge distance alone
+  // doesn't tell you it fits) - so this uses noticeably more of the card's real width than a flat
+  // guess would, without re-introducing the wrap.
+  const netProfitNumStr = Math.round(node.netProfitSell || 0).toLocaleString();
+  const netProfitLen = netProfitNumStr.length;
+  const netProfitFontSize = netProfitLen <= 9 ? '36px' : netProfitLen <= 11 ? '28px' : netProfitLen <= 13 ? '24px' : netProfitLen <= 16 ? '20px' : netProfitLen <= 18 ? '17px' : '14px';
+
+  // The Cost row and Job Inst. Fee row don't need their OWN shrink tiers the way Net Profit does -
+  // measured directly, their label is already small enough (Cost row's caption was always 9.5px;
+  // Job Inst. Fee's is given the same treatment below) that the value can stay at one fixed size
+  // and still never touch it, all the way out to a 19-digit ISK figure. Shrinking the value on top
+  // of that was the mistake in the previous pass - it made ordinary numbers harder to read for no
+  // reason, and left every row on the card using a different font-size scale. Just nowrap + a fixed
+  // size here; only the actual hero number (Net Profit) needs to flex.
+  const costNumStr = Math.round(effectiveCost || 0).toLocaleString();
+  const jobFeeNumStr = Math.round(node.jobFee || 0).toLocaleString();
+
   // Collapsed (explicit OR auto-compact, passed in by renderTreeDiagram) non-root, non-isolated
   // cards render as a compact "chip" instead of the full card - just the icon, name, qty, cost, and
   // a single click-anywhere-to-expand control. No longer requires node.children.length > 0: a leaf
@@ -2522,7 +2546,7 @@ function createNodeCard(node, autoCompact) {
           <div class="font-bold text-xs text-white truncate" title="${window.esc(compactDisplayName)}">${window.esc(compactDisplayName)}${mergedBadge}</div>
           <div class="text-[11px] mono flex items-center justify-between gap-2">
             <span class="text-orange-400 truncate min-w-0" title="Qty: ${effectiveQty.toLocaleString()}">Qty: ${effectiveQty.toLocaleString()}</span>
-            <span class="font-bold truncate min-w-0 flex-shrink-0" style="color:var(--cost);" title="${Math.round(effectiveCost || 0).toLocaleString()} ISK">${Math.round(effectiveCost || 0).toLocaleString()} ISK</span>
+            <span class="font-bold truncate min-w-0 flex-shrink-0" style="color:var(--cost);" title="${Math.round(effectiveCost || 0).toLocaleString()} ISK">${Math.round(effectiveCost || 0).toLocaleString()} <span style="font-size:0.7em;">ISK</span></span>
           </div>
         </div>
         ${compactBuyToggle}
@@ -2818,20 +2842,29 @@ function createNodeCard(node, autoCompact) {
           </div>
         </div>
         <div class="flex items-center justify-between text-xs">
-          <span class="${!isRoot && savingsPct !== null ? 'text-green-400 font-semibold' : ''}">${!isRoot && savingsPct !== null ? `Order Savings <span class="ml-1">${savingsPct}%</span>` : ''}</span>
+          <span>${!isRoot && savingsPct !== null ? `<span class="text-slate-400 uppercase tracking-wide" style="font-size:9.5px;">Order Savings</span> <span class="text-green-400 font-bold">${savingsPct}%</span>` : ''}</span>
           <button onclick="openMarketComparison(event, ${productTypeId}, '${window.esc(node.productName || node.name)}')" class="icon-btn flex-shrink-0" style="width:22px;height:22px;" title="Compare price and trade volume across your tracked markets">
             <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;"><polyline points="17,1 21,5 17,9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7,23 3,19 7,15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
           </button>
         </div>
-        ${node.jobFee > 0 && node.isBuildingSelf ? `<div class="flex justify-between text-xs"><span class="text-[#e85555] font-semibold">Job Inst. Fee</span><span class="text-[#e85555] font-semibold">+${Math.round(node.jobFee).toLocaleString()} ISK</span></div>` : ''}
+        ${node.jobFee > 0 && node.isBuildingSelf ? `<div class="flex items-center justify-between text-xs"><span class="text-[#e85555] uppercase tracking-wide flex-shrink-0" style="font-size:9.5px;">Job Inst. Fee</span><span class="text-[#e85555] font-bold" style="white-space:nowrap;">+${jobFeeNumStr} <span style="font-size:0.7em;">ISK</span></span></div>` : ''}
         <div class="flex items-center justify-between border-t border-[#3a3025] pt-1.5">
-          <span class="text-slate-400 uppercase tracking-wide" style="font-size:9.5px;">${isRoot ? 'Total Production Cost' : node.isBuildingSelf ? 'Calculated Build Cost' : node._lpAcquiredOffer ? 'LP Redemption Cost' : 'Market Buy Cost'}</span>
-          <span class="font-bold" style="color:var(--cost);">${Math.round(effectiveCost || 0).toLocaleString()} ISK</span>
+          <span class="text-slate-400 uppercase tracking-wide flex-shrink-0" style="font-size:9.5px;">${isRoot ? 'Total Production Cost' : node.isBuildingSelf ? 'Build Cost' : node._lpAcquiredOffer ? 'LP Redemption Cost' : 'Market Buy Cost'}</span>
+          <span class="font-bold" style="color:var(--cost);white-space:nowrap;">${costNumStr} <span style="font-size:0.7em;">ISK</span></span>
         </div>
         ${isRoot ? `
           <div class="flex items-center justify-between border-t border-green-500/40 pt-1.5">
-            <span class="text-slate-400 uppercase tracking-wide" style="font-size:9.5px;">${window.rootSellStrategy === 'custom-contract' ? 'Net Profit, Contract Output' : 'Net Profit, Sell Output'}</span>
-            <span class="hero-num ${(node.netProfitSell || 0) >= 0 ? 'profit' : 'loss'}">${Math.round(node.netProfitSell || 0).toLocaleString()} ISK</span>
+            <span class="text-slate-400 uppercase tracking-wide" style="font-size:9.5px;">Net Profit</span>
+            <span style="white-space:nowrap;">
+              <span class="hero-num ${(node.netProfitSell || 0) >= 0 ? 'profit' : 'loss'}" style="font-size:${netProfitFontSize};">${netProfitNumStr}</span>
+              <span class="hero-num ${(node.netProfitSell || 0) >= 0 ? 'profit' : 'loss'}" style="font-size:11px;">ISK</span>
+              <!-- Same (Net Profit / Total Production Cost) x 100 formula the "Sell ROI" summary stat
+                   box above the canvas already uses (see recalculate's own roiSell) - computed fresh
+                   here from values already in scope for the root (effectiveCost IS totalProductionCost
+                   for root - see effectiveCost's own comment) rather than threading roiSell all the way
+                   down from renderTreeDiagram, so this can never drift out of sync with that number. -->
+              <span class="text-xs font-semibold" style="opacity:0.65;">(${effectiveCost > 0 ? ((node.netProfitSell || 0) / effectiveCost * 100).toFixed(1) : '0.0'}%)</span>
+            </span>
           </div>
         ` : ''}
       </div>
@@ -2839,18 +2872,18 @@ function createNodeCard(node, autoCompact) {
         <div class="text-sm mono space-y-1 border-t border-[#3a3025] pt-1.5">
           ${buildTimeUI}
           ${isRoot ? `
-            <div class="flex justify-between font-bold" title="This job's own time PLUS every sub-component you're manufacturing yourself (not buying) - this is the number the Ledger's countdown timer actually uses, since building sub-components takes real time before you can even start the final job.">
-              <span class="text-slate-300">Total Project Time:</span>
+            <div class="flex justify-between text-xs text-slate-400 mono cursor-help" title="This job's own time PLUS every sub-component you're manufacturing yourself (not buying) - this is the number the Ledger's countdown timer actually uses, since building sub-components takes real time before you can even start the final job.">
+              <span>Total Project Time:</span>
               ${node.totalBuildSeconds > 0
-                ? `<span class="text-orange-300 font-bold">${window.formatDuration(node.totalBuildSeconds)}</span>`
+                ? `<span class="text-slate-300 font-semibold">${window.formatDuration(node.totalBuildSeconds)}</span>`
                 : `<span class="text-slate-500 italic">No Time Data</span>`}
             </div>
           ` : ''}
           ${isRoot ? `
-            <div class="flex justify-between font-bold" title="Total net sell profit divided by the total time to build this item and every sub-component you're manufacturing yourself.">
-              <span class="text-slate-300">Est. ISK/Hour:</span>
+            <div class="flex justify-between text-xs text-slate-400 mono cursor-help" title="Total net sell profit divided by the total time to build this item and every sub-component you're manufacturing yourself.">
+              <span>Est. ISK/Hour:</span>
               ${node.totalBuildSeconds > 0
-                ? `<span class="${(node.netProfitSell || 0) >= 0 ? 'text-green-400' : 'text-red-400'} font-bold">${Math.round((node.netProfitSell || 0) / (node.totalBuildSeconds / 3600)).toLocaleString()} ISK</span>`
+                ? `<span class="${(node.netProfitSell || 0) >= 0 ? 'text-green-400' : 'text-red-400'} font-semibold">${Math.round((node.netProfitSell || 0) / (node.totalBuildSeconds / 3600)).toLocaleString()} <span style="font-size:0.7em;">ISK</span></span>`
                 : `<span class="text-slate-500 italic">No Time Data</span>`}
             </div>
           ` : ''}
