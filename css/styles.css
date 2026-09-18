@@ -559,6 +559,19 @@ nav.primary-tabs { display: flex; align-items: center; gap: 4px; height: 100%; }
 .icon-rail-btn-active .icon-label { color: var(--accent); }
 .icon-rail-btn:hover svg { stroke: var(--accent); }
 .icon-rail-btn:hover .icon-label { color: var(--accent); }
+/* Skills tab warning dot (js/app.js updateMissingSkillsUI) - small enough to sit in the icon's own
+   corner without competing with the icon itself, shown/hidden by toggling .hidden, never removed
+   from the DOM (so there's nothing to re-create on every recalculate). */
+.icon-rail-dot {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e85555;
+  border: 1.5px solid var(--bg-0);
+}
 
 svg[viewBox] { stroke: currentColor; }
 
