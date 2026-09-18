@@ -2420,8 +2420,18 @@ window.toggleNodeCollapse = toggleNodeCollapse;
 // (createNodeCard excludes it outright) - collapsing it here anyway used to hide the root's own
 // children from the tree entirely (traverse's own early-return doesn't know root is special),
 // which is why Collapse All previously left only the root card visible instead of a column of chips.
+// The Collapse/Expand buttons pulse once for a first-time visitor (same trick as the Community
+// button - see initCommunityMenuButton) until they're actually used once, then never again.
+function markCollapseExpandSeen() {
+  if (localStorage.getItem('eve_collapse_btn_seen') === '1') return;
+  localStorage.setItem('eve_collapse_btn_seen', '1');
+  const btn = document.getElementById('collapse-all-btn');
+  if (btn) btn.classList.remove('community-btn-pulse');
+}
+
 function collapseAllNodes() {
   if (!window.recipeTreeRoot) return;
+  markCollapseExpandSeen();
   function walk(node, isRoot) {
     if (!node) return;
     if (!isRoot) {
@@ -2440,6 +2450,7 @@ window.collapseAllNodes = collapseAllNodes;
 // being in an oversized column - a snapshot action (like Collapse All), not a standing "never
 // auto-compact again" mode, so a later switch to an even bigger build still auto-compacts normally.
 function expandAllNodes() {
+  markCollapseExpandSeen();
   window.collapsedInstanceIds.clear();
   function walk(node, isRoot) {
     if (!node) return;
@@ -2451,6 +2462,87 @@ function expandAllNodes() {
   centerOnRootNode();
 }
 window.expandAllNodes = expandAllNodes;
+
+// Stops the Collapse button's pulse before it ever plays for a returning visitor - same reasoning
+// as initCommunityMenuButton (the static HTML always starts with the class present, so a fresh
+// visitor sees it with no flash either way).
+function initCollapseExpandPulse() {
+  if (localStorage.getItem('eve_collapse_btn_seen') === '1') {
+    const btn = document.getElementById('collapse-all-btn');
+    if (btn) btn.classList.remove('community-btn-pulse');
+  }
+}
+window.initCollapseExpandPulse = initCollapseExpandPulse;
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initCollapseExpandPulse);
+} else {
+  initCollapseExpandPulse();
+}
+
+// A short, sequenced onboarding tour through #pan-tip-callout (same element/position/pulse styling
+// throughout - only the icon/text/button swap between steps): right-click-to-pan, then arrow-key
+// tree walking, then the F/I/Space shortcuts. Shown once ever, one step at a time, each advanced
+// ONLY by its own button click - not by touching the canvas or pressing the real key, same
+// reasoning as the single pan tip this replaced: an accidental trigger shouldn't count as "seen,"
+// or someone could blow through the whole tour by accident without reading any of it. Same
+// "static-visible, JS hides it for a returning visitor" pattern as the Collapse button's pulse
+// above, so there's no flash for a first-timer - the static HTML already shows step 1's own
+// content, so even a slow JS init still shows something correct in the meantime.
+const ONBOARDING_TIPS = [
+  {
+    icon: '<path d="M12 3a6 6 0 0 1 6 6v6a6 6 0 0 1-12 0V9a6 6 0 0 1 6-6z"/><line x1="12" y1="3.2" x2="12" y2="11"/><path d="M12 3.2a6 6 0 0 1 5.9 5.8h-5.9z" fill="var(--accent)" stroke="none"/>',
+    html: 'Right-click + drag to <span class="text-white font-bold">pan</span> the canvas'
+  },
+  {
+    icon: '<polyline points="12,3 12,21"/><polyline points="3,12 21,12"/><polyline points="9,6 12,3 15,6"/><polyline points="9,18 12,21 15,18"/><polyline points="6,9 3,12 6,15"/><polyline points="18,9 21,12 18,15"/>',
+    html: 'Use <span class="text-white font-bold">arrow keys</span> to walk the tree, card to card'
+  },
+  {
+    icon: '<rect x="2.5" y="6.5" width="19" height="11" rx="2"/><line x1="6" y1="10.5" x2="6.01" y2="10.5"/><line x1="10" y1="10.5" x2="10.01" y2="10.5"/><line x1="14" y1="10.5" x2="14.01" y2="10.5"/><line x1="18" y1="10.5" x2="18.01" y2="10.5"/><line x1="7.5" y1="14" x2="16.5" y2="14"/>',
+    html: '<span class="text-white font-bold">F</span> centers the selected card &middot; <span class="text-white font-bold">I</span> isolates it &middot; <span class="text-white font-bold">Space</span> compacts/expands it'
+  }
+];
+let onboardingTipStep = 0;
+
+function renderOnboardingTip() {
+  const el = document.getElementById('pan-tip-callout');
+  if (!el) return;
+  const step = ONBOARDING_TIPS[onboardingTipStep];
+  const isLast = onboardingTipStep === ONBOARDING_TIPS.length - 1;
+  el.innerHTML = `
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 flex-shrink-0" style="color:var(--accent);">${step.icon}</svg>
+    <span class="text-slate-200 font-semibold">${step.html}</span>
+    <button onclick="advanceOnboardingTip()" class="btn-glass px-2.5 py-1 text-[10.5px] font-bold flex-shrink-0" style="white-space:nowrap;">${isLast ? 'Got it' : 'Next'}</button>
+  `;
+}
+
+function advanceOnboardingTip() {
+  onboardingTipStep++;
+  if (onboardingTipStep >= ONBOARDING_TIPS.length) {
+    localStorage.setItem('eve_onboarding_tips_seen', '1');
+    const el = document.getElementById('pan-tip-callout');
+    if (el) el.classList.add('hidden');
+    return;
+  }
+  renderOnboardingTip();
+}
+window.advanceOnboardingTip = advanceOnboardingTip;
+
+function initOnboardingTip() {
+  const el = document.getElementById('pan-tip-callout');
+  if (!el) return;
+  if (localStorage.getItem('eve_onboarding_tips_seen') === '1') {
+    el.classList.add('hidden');
+    return;
+  }
+  renderOnboardingTip();
+}
+window.initOnboardingTip = initOnboardingTip;
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initOnboardingTip);
+} else {
+  initOnboardingTip();
+}
 
 function createNodeCard(node, autoCompact) {
   const productTypeId = node.productTypeId || node.typeId;
