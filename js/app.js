@@ -2377,14 +2377,25 @@ function renderSubtreeColumns(container, rootNode) {
   // rendered card changes), so this is the only place that needs to know a merge happened at all.
   window.__mergeRedirect = mergeRedirect;
 
-  // Third pass: auto-compact any column wider than AUTO_COMPACT_SIBLING_THRESHOLD, same visual
-  // treatment as an explicit collapse (a compact chip, descendants hidden) but derived from how
-  // crowded the column actually turned out rather than a manual click - this is what makes a huge
-  // build manageable without first having to know to click Collapse All. An explicit choice always
-  // wins over this rule in either direction: collapsedInstanceIds forces compact even in a small
-  // column, expandedOverrideIds forces full-size even in an oversized one (see toggleNodeCollapse).
+  // Third pass: auto-compact any column wider than AUTO_COMPACT_SIBLING_THRESHOLD - shrinks a chip
+  // for being crowded, same as compactVisibleIds/compactAllMode above, WITHOUT hiding what's
+  // underneath (see markDescendantsHidden's own comment below for why this changed). This is what
+  // makes a huge build manageable without first having to know to click Collapse All. An explicit
+  // choice always wins over this rule in either direction: collapsedInstanceIds forces compact even
+  // in a small column, expandedOverrideIds forces full-size even in an oversized one (see
+  // toggleNodeCollapse).
   const autoCompactIds = new Set();
   const hiddenByCompactIds = new Set();
+  // Only Collapse All (collapsedInstanceIds, below) still calls this - it used to also fire for a
+  // column just being over the auto-compact sibling threshold, which meant a card with a lot of
+  // siblings (a capital ship easily has 15-20 top-level components, well past the 8-sibling
+  // threshold) silently hid every one of ITS OWN descendants too, with no explicit collapse ever
+  // requested. Reported directly: "+1 Layer"'s newly-revealed tier wasn't appearing at all - it was
+  // rendering fine in the underlying data, just immediately hidden by this rule on its own parent
+  // tier, which had nothing to do with the tier the user just asked to reveal. Auto-compact-for-
+  // overflow now gets the same "shrink but stay visible and connected" treatment as
+  // compactVisibleIds/compactAllMode above - it was never supposed to be a second way to hide things,
+  // only a way to keep a wide column from overwhelming the screen.
   function markDescendantsHidden(node) {
     if (!node || !node.children) return;
     node.children.forEach(child => {
@@ -2417,11 +2428,13 @@ function renderSubtreeColumns(container, rootNode) {
         autoCompactIds.add(node.instanceId);
         return;
       }
-      const effectivelyCompact = window.collapsedInstanceIds.has(key)
-        || (overCap && !window.expandedOverrideIds.has(key));
-      if (effectivelyCompact) {
+      if (window.collapsedInstanceIds.has(key)) {
         autoCompactIds.add(node.instanceId);
         markDescendantsHidden(node);
+        return;
+      }
+      if (overCap && !window.expandedOverrideIds.has(key)) {
+        autoCompactIds.add(node.instanceId);
       }
     });
   });
@@ -4437,10 +4450,19 @@ function resumeCardBlurAfterPanZoom(delayMs) {
   }, delayMs);
 }
 
+// Applies panX/panY at full float precision now, not rounded to the nearest pixel - reported
+// directly: the camera crept a few pixels off on almost every button click, even ones already
+// pinning the root card via withRootPanAnchor. Root-caused directly: rounding here meant the
+// actually-rendered position was never quite what a pan-anchor correction (computed from a precise
+// getBoundingClientRect delta) asked for, off by up to 0.5px every single time - individually
+// invisible, but each button click's own correction is computed from THAT already-slightly-wrong
+// rendered position, so successive clicks on genuinely different actions (not just undoing each
+// other) had no reason to cancel out and could drift the same direction click after click.
+// Confirmed directly: dropping the rounding took a measured 0.425px residual on one collapse/expand
+// pair down to 0.0002px (plain floating-point noise). Sub-pixel CSS transforms render fine in every
+// modern browser - this was never providing any real benefit.
 function updateTransform() {
-  const roundedPanX = Math.round(window.panX);
-  const roundedPanY = Math.round(window.panY);
-  if (content) content.style.transform = `translate(${roundedPanX}px, ${roundedPanY}px) scale(${window.zoomScale})`;
+  if (content) content.style.transform = `translate(${window.panX}px, ${window.panY}px) scale(${window.zoomScale})`;
   const zoomText = document.getElementById('zoom-level-text');
   if (zoomText) zoomText.textContent = `Zoom: ${Math.round(window.zoomScale * 100)}%`;
 }

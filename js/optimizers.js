@@ -252,13 +252,28 @@ function markAllBuild(node) {
   // exact same unconditional recursion doing the wrong thing for the right reason.
   const wasAlreadyBuilding = !!node.isBuildingSelf;
   if (node.isManufacturable) {
-    if (window.buildSelfOverrides[node.typeId] !== true) changedAny = true;
+    const isNewlyBuilding = window.buildSelfOverrides[node.typeId] !== true;
+    if (isNewlyBuilding) changedAny = true;
     window.buildSelfOverrides[node.typeId] = true;
     stampBulkMETargetIfArmed(node.typeId);
     if (node.displayTypeId) {
       if (window.buildSelfOverrides[node.displayTypeId] !== true) changedAny = true;
       window.buildSelfOverrides[node.displayTypeId] = true;
       stampBulkMETargetIfArmed(node.displayTypeId);
+    }
+    // A node +1 Layer is revealing for the first time in this action should always start fully
+    // visible, never pre-hidden - reported directly: the newly-revealed tier wasn't appearing at
+    // all. Root-caused to a SECOND, independent issue from the auto-compact-overflow one fixed
+    // alongside this: collapsedInstanceIds/compactVisibleIds are keyed by pathKey specifically so a
+    // manual collapse/compact survives an unrelated rebuild elsewhere in the tree - but that same
+    // persistence means a pathKey collapsed once, then retracted (Buy All/-1 Layer) and later
+    // re-revealed by +1 Layer, comes back pre-collapsed from a choice made in a completely different
+    // context the user has no reason to remember making. Since this node is being freshly stamped
+    // Build for the first time right now, any leftover state for it is exactly that kind of stale
+    // leftover, not a live choice - clear it so the reveal this click actually asked for is visible.
+    if (isNewlyBuilding && node.pathKey) {
+      if (window.collapsedInstanceIds) window.collapsedInstanceIds.delete(node.pathKey);
+      if (window.compactVisibleIds) window.compactVisibleIds.delete(node.pathKey);
     }
   }
   if (node.children && wasAlreadyBuilding) {
