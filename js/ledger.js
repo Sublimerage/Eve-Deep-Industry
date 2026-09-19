@@ -854,8 +854,14 @@ function renderJobListRowHTML(job, materialStockInfoByJobId, depth, childCount) 
     return Math.ceil(missingQty / batchYield);
   })();
 
+  // "N units total" - the row view's own real-unit-output figure, same wording/data as the grid
+  // card's own copy of this (see that card's own "units total" span) - reported directly as wanting
+  // it somewhere for the row view too, but in the row's own expanded/maximized detail, not crowded
+  // into the always-visible collapsed banner next to the run count the way a first attempt at this
+  // tried (redundant with the grid card there too, on top of not being where it was wanted).
   const expandedDetailHTML = isExpanded ? `
     <div class="px-3 pb-3 pt-1" onclick="event.stopPropagation()">
+      <div class="text-xs mono mb-2" style="color:var(--text-mute);">${(job.qtyNeeded || 0).toLocaleString()} units total</div>
       ${renderJobBOMBlockHTML(job, materialStockInfo)}
       ${!job.isStarted ? `
         <div class="lp-inset flex items-center gap-1.5 mt-2">
@@ -904,9 +910,7 @@ function renderJobListRowHTML(job, materialStockInfoByJobId, depth, childCount) 
                visibility:hidden, not by omitting the element - same technique the Shop pill above uses)
                for started/auto-imported jobs, so the run count's own x position still doesn't drift
                row to row depending on which jobs happen to be editable. -->
-          <!-- Widened from 230px - runsDisplayHTML's own comment covers why it can now also append a
-               "· N Units" suffix (batch yield over 1), which the old width didn't leave room for. -->
-          <div class="flex items-baseline justify-end gap-1 flex-shrink-0" style="width:300px;" onclick="event.stopPropagation()">
+          <div class="flex items-baseline justify-end gap-1 flex-shrink-0" style="width:230px;" onclick="event.stopPropagation()">
             ${editingRunsJobIds.has(job.id) ? `
               <span class="text-xs mono" style="color:var(--text-mute);">Jobs</span>
               <input type="number" id="jobs-edit-input-${job.id}" min="1" value="${job.jobCount || 1}" onkeydown="if(event.key==='Enter'){this.blur();}else if(event.key==='Escape'){toggleRunsEditMode(event, ${job.id});}" onblur="handleJobsRunsBlur(${job.id})" class="field-line text-sm font-extrabold mono text-center num-no-spin" style="width:${Math.max(4, String(job.jobCount || 1).length + 2)}ch; color:var(--accent);" title="Jobs - how many separate real jobs">
@@ -2190,26 +2194,18 @@ function renderJobOwnershipPillHTML(job) {
 // weight, color still inherits so the words stay the same green as the numbers) - the count is the
 // thing actually worth reading at a glance; the unit word is just there to disambiguate it.
 //
-// Reported directly: nowhere on the card says how many actual UNITS a job's runs produce - for
-// anything with a batch yield over 1 (ammo, charges, most reactions, several capital components),
-// "5 Runs" alone doesn't tell you whether that's 5 units or 500. job.qtyNeeded (set alongside
-// runsNeeded whenever a job's tree is built/rebuilt - see rebuildTreeForSnapshot's own callers) is
-// already the real total output, runs/jobCount/batchYield all accounted for - this only needed to
-// actually show it. Appended inline rather than a second line, same reasoning the card's own
-// comment above gives for folding the prereq relationship into the name line instead of its own row
-// - a second line here would make every row two lines tall instead of one, for information genuinely
-// small enough to fit alongside the runs count itself. Skipped when it's not actually new information
-// (batchYield 1 - the common case) - stating "5 Runs · 5 units" on every single ordinary job would be
-// pure noise, not clarification.
+// Deliberately does NOT also show real unit output (runs x batch yield) here - a first attempt at
+// that appended it inline right in this same string, which turned out redundant with the grid card's
+// own separate "N units total" line (missed on the first pass - see renderActiveJobsList's own "units
+// total" span) and, on the row view specifically, was reported as belonging in the row's own expanded
+// detail rather than crowded into the always-visible collapsed banner next to Runs. See
+// expandedDetailHTML's own comment (row view) for where that actually lives now.
 function runsDisplayHTML(job) {
   const unit = (word) => `<span style="font-size:0.6em; font-weight:600;">${word}</span>`;
-  const unitsSuffix = (job.qtyNeeded && job.qtyNeeded !== job.runsNeeded)
-    ? ` <span style="opacity:0.6; font-size:0.7em; font-weight:600;">&middot;</span> ${job.qtyNeeded.toLocaleString()} ${unit(`Unit${job.qtyNeeded > 1 ? 's' : ''}`)}`
-    : '';
   if ((job.jobCount || 1) <= 1) {
-    return `${job.runsNeeded.toLocaleString()} ${unit(`Run${job.runsNeeded > 1 ? 's' : ''}`)}${unitsSuffix}`;
+    return `${job.runsNeeded.toLocaleString()} ${unit(`Run${job.runsNeeded > 1 ? 's' : ''}`)}`;
   }
-  return `${job.jobCount.toLocaleString()} ${unit(`Job${job.jobCount > 1 ? 's' : ''}`)} <span style="opacity:0.6; font-size:0.7em; font-weight:600;">&times;</span> ${(job.runsPerJob || 1).toLocaleString()} ${unit(`Run${(job.runsPerJob || 1) > 1 ? 's' : ''}`)}${unitsSuffix}`;
+  return `${job.jobCount.toLocaleString()} ${unit(`Job${job.jobCount > 1 ? 's' : ''}`)} <span style="opacity:0.6; font-size:0.7em; font-weight:600;">&times;</span> ${(job.runsPerJob || 1).toLocaleString()} ${unit(`Run${(job.runsPerJob || 1) > 1 ? 's' : ''}`)}`;
 }
 
 // The small gear icon next to a prerequisite's name - a shared one gets a "xN" count alongside it so
