@@ -199,6 +199,20 @@ img {
   transform: translateZ(0);
   backface-visibility: hidden;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease, transform 0.2s ease;
+  /* Skips layout/paint entirely for a card that's off-screen right now (content-visibility:auto -
+     the browser's own purpose-built answer to "huge pannable canvas, only a fraction ever actually
+     visible") - reported directly as the canvas getting laggy on a big capital ship build, and a big
+     build easily reaches 1000+ rendered cards once auto-compact/material-merging can't shrink it
+     enough on their own. contain-intrinsic-size gives the browser a placeholder size to lay out with
+     before an off-screen card has ever actually been rendered once, close to this card's own typical
+     size at default zoom, so nothing jumps around as cards cross into view. Not applied to compact
+     chips - they're already small and few enough not to be the problem, and have a different real
+     size this placeholder wouldn't match. */
+  content-visibility: auto;
+  contain-intrinsic-size: 352px 280px;
+}
+.diagram-node.diagram-node-compact {
+  content-visibility: visible;
 }
 
 .diagram-node:hover {
@@ -264,6 +278,21 @@ img {
 }
 .glass-card { border-radius: var(--radius-card); }
 header { height: 56px; flex-shrink: 0; position: relative; }
+
+/* Suspends every tree card's backdrop-filter for the exact duration of an active pan/zoom gesture
+   (js/app.js suspendCardBlurDuringPanZoom/resumeCardBlurAfterPanZoom) - measured directly as the
+   dominant cost of canvas lag on a big, fully-expanded tree (capital ships, easily 1000+ rendered
+   cards): re-sampling blur() for every card on every frame the content moves under it. A still card
+   costs nothing extra, so this keeps the identical glass look the rest of the time and only ever
+   removes it while something's actually moving. #pan-zoom-content is the direct parent of every
+   tree card (js/app.js's `content`), so this reaches all of them without needing to touch anything
+   outside the canvas (header/sidebar/BOM panel have a small fixed element count and were never the
+   bottleneck). !important because a plain class-on-ancestor selector wouldn't otherwise beat
+   .glass-card's own same-specificity rule reliably. */
+#pan-zoom-content.pan-zoom-active .diagram-node {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
 
 /* Data-load status pill - just the dot at rest, the full text (INITIALIZING.../RECIPES & PRICES
    LOADED/an error) slides out on hover instead of permanently occupying header width for something
