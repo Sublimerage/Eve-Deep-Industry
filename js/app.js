@@ -1947,7 +1947,10 @@ async function selectItem(typeId, name, preserveView = false, anchorInstanceId =
     }
   }
 
-  if (!preserveView) { resetPanZoom(); } else { window.scheduleConnectingLinesRedraw(); }
+  // Drawn synchronously here too when preserveView - the anchor correction just above changed
+  // panX/panY again, after recalculate() already drew once for the pre-correction position, same
+  // reasoning as resetPanZoom's own comment.
+  if (!preserveView) { resetPanZoom(); } else { drawConnectingLines(); window.scheduleConnectingLinesRedraw(); }
 
   const statusText = document.getElementById('status-text');
   const statusDot = document.getElementById('status-dot');
@@ -2222,21 +2225,26 @@ function recalculate() {
   } else { renderTreeDiagram(window.recipeTreeRoot, priceStrategy, profitSell, roiSell); }
   
   renderBillOfMaterials(window.recipeTreeRoot, brokerFee);
-  // Cleared synchronously, right here, not just left for drawConnectingLines' own svg.innerHTML =
-  // '' whenever its own scheduled redraw finally runs - the cards above just got torn down and
-  // rebuilt (and, for anything wrapped in withRootPanAnchor/recalculateWithPanAnchor, panX/panY just
-  // jumped to compensate), which moves every card INSTANTLY via the CSS transform, but the SVG lines
-  // are a separate overlay that only gets its coordinates from drawConnectingLines - so without this,
-  // the OLD lines (computed for the OLD layout) stayed on screen, visibly misaligned against the
-  // ALREADY-MOVED cards, until the redraw caught up. Reported directly as connecting lines jumping "a
-  // quarter of a screen" to the right for a split second on Collapse specifically, right after root
-  // stopped being measured off its content-visibility placeholder size (previous fix) - that made the
-  // pan correction bigger and more accurate, which just made this pre-existing gap far more
-  // noticeable than it used to be by coincidence. scheduleConnectingLinesRedraw's own comment covers
-  // the other half of this - why the redraw itself is rAF-based now, not a flat setTimeout, after
-  // clearing synchronously here turned out to introduce its own brief blank flicker on a flat delay.
-  const treeSvgEl = document.getElementById('tree-svg');
-  if (treeSvgEl) treeSvgEl.innerHTML = '';
+  // Drawn synchronously, immediately, right here - not deferred at all. The cards above just got
+  // torn down and rebuilt (and, for anything wrapped in withRootPanAnchor/recalculateWithPanAnchor,
+  // panX/panY just jumped to compensate), which moves every card INSTANTLY via the CSS transform,
+  // but the SVG lines are a separate overlay that only gets its coordinates from drawConnectingLines
+  // - leaving them for later, however briefly, always shows SOMETHING wrong in the meantime: first
+  // it was the OLD lines sitting stale at their OLD coordinates (reported as jumping "a quarter of a
+  // screen" to the right on Collapse); clearing immediately and deferring the redraw instead fixed
+  // that but traded it for a brief blank flash (reported as a flicker on page load/Collapse) - and
+  // that flash turned out to be timing-sensitive enough to only show up in some browsers (Chrome,
+  // not Vivaldi) even after tightening the delay. Drawing for real right here, synchronously, means
+  // there's simply never a gap for either artifact to appear in - getBoundingClientRect() (which
+  // drawConnectingLines uses throughout) forces a real layout flush, so this reflects the ACTUAL
+  // just-rebuilt DOM, not stale data. The one thing this can still miss: a handful of cards using
+  // content-visibility's off-screen placeholder size if the browser hasn't gotten around to
+  // measuring their true size yet (see createNodeCard's own comment on why root specifically is
+  // excluded from that) - scheduleConnectingLinesRedraw right after is a silent follow-up correction
+  // for exactly that edge case, not the primary draw, so on the vastly more common case where
+  // nothing was mid-placeholder, this second pass repaints something already correct and changes
+  // nothing visible at all.
+  drawConnectingLines();
   window.scheduleConnectingLinesRedraw();
   if (typeof window.updateMissingSkillsUI === 'function') window.updateMissingSkillsUI();
 
@@ -3753,12 +3761,12 @@ function highlightNodeByTypeId(typeId) {
     targetNode = resolveRenderedNode(targetNode);
     const needsExpand = ensureNodeVisible(targetNode);
     window.selectedInstanceId = targetNode.instanceId;
-    // scheduleConnectingLinesRedraw, not a direct call - when needsExpand is true, the
-    // recalculate() just above already scheduled its own pending redraw (see its own comment); a
-    // direct call here would draw correctly immediately and then get clobbered by a flicker a frame
-    // later once that still-pending one fires too. Going through the scheduler cancels it instead.
     if (needsExpand && typeof window.recalculate === 'function') window.recalculate();
     applyNodeHighlightClasses();
+    // Drawn synchronously - see recalculate()'s own comment on why an immediate draw beats a
+    // deferred one. scheduleConnectingLinesRedraw right after is just the placeholder-settling
+    // follow-up correction, same as everywhere else.
+    drawConnectingLines();
     window.scheduleConnectingLinesRedraw();
     centerOnSelectedNode();
   }
@@ -3789,6 +3797,10 @@ function isolateComponent(e, instanceId) {
   window.isolatedPathKey = node ? node.pathKey : null;
   window.selectedInstanceId = instanceId;
   renderIsolatedDiagram();
+  // Drawn synchronously - renderIsolatedDiagram doesn't go through recalculate(), so this needs its
+  // own immediate draw the same way; scheduleConnectingLinesRedraw right after is just the
+  // placeholder-settling follow-up correction, same as everywhere else.
+  drawConnectingLines();
   window.scheduleConnectingLinesRedraw();
   setTimeout(centerOnSelectedNode, 60);
 }
@@ -3803,9 +3815,9 @@ function exitIsolation(e) {
   setTimeout(() => {
     window.selectedInstanceId = targetId;
     applyNodeHighlightClasses();
-    // scheduleConnectingLinesRedraw, not a direct call - same reasoning as highlightNodeByTypeId's
-    // own comment: recalculate() above already scheduled its own pending redraw, so a direct call
-    // here would race it instead of replacing it.
+    // Drawn synchronously - see recalculate()'s own comment on why an immediate draw beats a
+    // deferred one.
+    drawConnectingLines();
     window.scheduleConnectingLinesRedraw();
     centerOnSelectedNode();
   }, 60);
@@ -3882,12 +3894,10 @@ function centerOnInstanceId(targetId) {
   window.panY = (viewportRect.height / 2) - cardContentCenterY * window.zoomScale;
 
   updateTransform();
-  // scheduleConnectingLinesRedraw, not a direct call - centerOnInstanceId is the shared camera-move
-  // primitive behind F/centerOnRootNode/centerOnSelectedNode, any of which can run right after a
-  // recalculate() that already scheduled its own pending redraw (resetPanZoom's own comment covers
-  // the resetPanZoom -> centerOnRootNode case specifically). Camera just moved again here, so this
-  // redraw should always be the one that actually wins - the scheduler's own cancel-then-reschedule
-  // is exactly that, instead of an earlier still-pending call clobbering this correct one a frame later.
+  // Drawn synchronously - centerOnInstanceId is the shared camera-move primitive behind F/
+  // centerOnRootNode/centerOnSelectedNode, and just moved the camera again here, same reasoning as
+  // recalculate()'s own comment on why an immediate draw beats a deferred one.
+  drawConnectingLines();
   window.scheduleConnectingLinesRedraw();
 
   card.classList.add('ring-4', 'ring-orange-400');
@@ -4557,15 +4567,14 @@ function resetPanZoom() {
   window.panX = 0;
   window.panY = 0;
   updateTransform();
-  // Routed through the same debounced scheduler recalculate() itself uses, not a direct call -
-  // resetPanZoom runs right after recalculate() on every fresh product load (selectItem's
-  // !preserveView branch), which had ALREADY scheduled its own rAF-based redraw a moment earlier.
-  // Calling drawConnectingLines() directly here drew the lines correctly immediately, but that
-  // earlier scheduled redraw was still pending and fired anyway a frame later, clearing this
-  // already-correct SVG and redrawing the identical content again - a real, guaranteed clear-then-
-  // redraw flicker on every single page load, not just an occasional one. Going through the
-  // scheduler here cancels that pending call instead of racing it, so only the last one (this one)
-  // actually runs.
+  // Drawn synchronously, immediately - resetPanZoom runs right after recalculate() on every fresh
+  // product load (selectItem's !preserveView branch), and just changed panX/panY AGAIN after
+  // recalculate() already drew once for the pre-reset camera position - so this needs its own fresh,
+  // immediate redraw for the new one, same reasoning as recalculate()'s own comment on why an
+  // immediate draw beats a deferred one (no gap for a blank flash OR stale lines to appear in).
+  // scheduleConnectingLinesRedraw right after is only the same silent placeholder-settling follow-up
+  // correction every other call site uses now, not the primary draw.
+  drawConnectingLines();
   window.scheduleConnectingLinesRedraw();
   centerOnRootNode();
 }
