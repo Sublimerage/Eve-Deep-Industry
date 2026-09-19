@@ -3033,7 +3033,21 @@ function createNodeCard(node, autoCompact) {
     }
   }
 
-  card.className = `diagram-node glass-card p-2.5 shadow-lg transition-all relative ${cardStyle}`;
+  // diagram-node-root (isRoot only) opts OUT of the general content-visibility:auto rule (see its
+  // own comment in css/styles.css) - root is what withRootPanAnchor and recalculateWithPanAnchor
+  // measure via getBoundingClientRect() on literally every single wrapped button, and recalculate()
+  // tears down and rebuilds every card's DOM element from scratch on every call (renderSubtreeColumns
+  // always creates fresh nodes, never reuses old ones) - so content-visibility's own "remembered last
+  // real size" optimization can never actually carry over between renders the way it would for an
+  // element that persists across a normal page's scroll. Root's own real size was landing on the
+  // wrong side of that race often enough to matter: reported directly (with a live stack trace) as a
+  // consistent ~105px drift on EVERY repeated click of an already-fully-compacted tree, where the
+  // rendered layout genuinely was not changing at all - the only thing that could explain a real,
+  // repeatable error that size was the one card the correction actually measures intermittently
+  // getting sized off its contain-intrinsic-size placeholder (352x280) instead of its true, usually
+  // taller, content. Root is always exactly one card - giving it up front, always-real layout costs
+  // nothing measurable next to the 1000+ cards this rule exists for in the first place.
+  card.className = `diagram-node glass-card p-2.5 shadow-lg transition-all relative ${cardStyle}${isRoot ? ' diagram-node-root' : ''}`;
   if (borderAccent) card.setAttribute('style', borderAccent);
   card.innerHTML = `
     <div class="flex items-start space-x-3 border-b border-[#3a3025] pb-2.5 mb-2.5">
