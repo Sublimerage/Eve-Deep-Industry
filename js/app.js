@@ -1956,10 +1956,27 @@ async function selectItem(typeId, name, preserveView = false, anchorInstanceId =
 
   const allTypeIds = new Set();
   window.collectAllTypeIds(window.recipeTreeRoot, allTypeIds);
-  window.fetchMarketPrices(Array.from(allTypeIds)).finally(() => {
+  // Deliberately not awaited - selectItem's own caller (a click handler, or withRootPanAnchor
+  // wrapping one) doesn't wait around for the real ESI price fetch to finish, or every rebuild
+  // would freeze the UI for however long that network call takes. But that also meant this callback
+  // ran completely outside any anchor's protection - by the time it fires, the click that started
+  // this is long over and whatever wrapped it (withRootPanAnchor, if any) already measured its
+  // "after" position and returned, with no idea this second render was still coming. On a fast/
+  // cached local price fetch this lands so quickly it's invisible; against the real ESI API over a
+  // real connection, especially for a tree with many priced materials, it can easily take long
+  // enough to land well after the click - reported directly as the camera drifting on "almost any
+  // action," including several (+1/-1 Layer, the optimizers, Bulk ME/TE Apply) that rebuild via this
+  // exact function. Wrapping just this callback in its own withRootPanAnchor re-measures against
+  // root's CURRENT position right before the price-driven re-render, so it's pinned regardless of
+  // whatever else happened - or how long the fetch took - in between.
+  window.fetchMarketPrices(Array.from(allTypeIds)).finally(async () => {
     if (statusDot) statusDot.className = 'w-2.5 h-2.5 rounded-full bg-green-400';
     if (statusText) statusText.textContent = 'RECIPES & PRICES LOADED';
-    recalculate();
+    if (typeof window.withRootPanAnchor === 'function') {
+      await window.withRootPanAnchor(async () => { recalculate(); });
+    } else {
+      recalculate();
+    }
   });
 }
 
