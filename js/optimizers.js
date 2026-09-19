@@ -223,26 +223,30 @@ async function onCardTEChange(e, typeId, instanceId) {
 // (tree.js's ++instanceCounter), which would silently invalidate any card the user had expanded/
 // collapsed. node.pathKey (tree.js) now gives collapsedInstanceIds/expandedOverrideIds a stable key
 // that survives a rebuild (see nodeStableKey in app.js), so that concern no longer applies.
-async function buildAllComponents() {
-  function markAllBuild(node) {
-    let changedAny = false;
-    if (!node) return changedAny;
-    if (node.isManufacturable) {
-      if (window.buildSelfOverrides[node.typeId] !== true) changedAny = true;
-      window.buildSelfOverrides[node.typeId] = true;
-      stampBulkMETargetIfArmed(node.typeId);
-      if (node.displayTypeId) {
-        if (window.buildSelfOverrides[node.displayTypeId] !== true) changedAny = true;
-        window.buildSelfOverrides[node.displayTypeId] = true;
-        stampBulkMETargetIfArmed(node.displayTypeId);
-      }
+// Marks every manufacturable node in the given subtree to Build, returning whether anything
+// actually changed - shared by Build All (calls this in a loop until a pass changes nothing, see
+// its own comment on why) and +1 Layer below (calls it exactly once per click).
+function markAllBuild(node) {
+  let changedAny = false;
+  if (!node) return changedAny;
+  if (node.isManufacturable) {
+    if (window.buildSelfOverrides[node.typeId] !== true) changedAny = true;
+    window.buildSelfOverrides[node.typeId] = true;
+    stampBulkMETargetIfArmed(node.typeId);
+    if (node.displayTypeId) {
+      if (window.buildSelfOverrides[node.displayTypeId] !== true) changedAny = true;
+      window.buildSelfOverrides[node.displayTypeId] = true;
+      stampBulkMETargetIfArmed(node.displayTypeId);
     }
-    if (node.children) {
-      node.children.forEach(c => { if (markAllBuild(c)) changedAny = true; });
-    }
-    return changedAny;
   }
+  if (node.children) {
+    node.children.forEach(c => { if (markAllBuild(c)) changedAny = true; });
+  }
+  return changedAny;
+}
+window.markAllBuild = markAllBuild;
 
+async function buildAllComponents() {
   if (!window.recipeTreeRoot) return;
   const root = window.recipeTreeRoot;
 
@@ -276,6 +280,77 @@ async function buildAllComponents() {
     btn.innerHTML = originalLabel;
   }
 }
+
+// --- Action: +1 Layer of Build ---
+// Exactly ONE mark-then-rebuild pass of Build All's own loop, instead of looping to convergence -
+// each click reveals and builds precisely the next tier down (root's own direct components first,
+// then what was underneath THOSE, and so on), instead of jumping straight to the full depth.
+async function buildOneLayerDeeper() {
+  if (!window.recipeTreeRoot) return;
+  const root = window.recipeTreeRoot;
+
+  const isLPSynthetic = root.isLPIsolatedRoot && !root.recipe;
+  if (isLPSynthetic || !window.currentProduct) {
+    const changed = markAllBuild(root);
+    syncTreeBuildStates(root);
+    if (typeof window.recalculate === 'function') window.recalculate();
+    if (!changed && typeof window.showToast === 'function') window.showToast('Already fully built - nothing deeper to reveal.', 'info');
+    return;
+  }
+
+  const changed = markAllBuild(root);
+  if (!changed) {
+    if (typeof window.showToast === 'function') window.showToast('Already fully built - nothing deeper to reveal.', 'info');
+    return;
+  }
+  await window.selectItem(window.currentProduct.id, window.currentProduct.name, true);
+}
+window.buildOneLayerDeeper = buildOneLayerDeeper;
+
+// Collects the current "build frontier": every node set to Build whose own manufacturable children
+// are either absent or all still Buy - i.e. the deepest tier actually being built, walked
+// independently down EVERY branch (a build tree isn't uniformly deep, so this is never a single
+// global depth) rather than one shared number. Root is never included - there's always at least
+// the main item itself set to Build, or none of any of this makes sense.
+function findBuildFrontier(node, isRoot, frontier) {
+  if (!node || !node.isManufacturable || !node.isBuildingSelf) return;
+  const buildingChildren = (node.children || []).filter(c => c.isManufacturable && c.isBuildingSelf);
+  if (buildingChildren.length === 0) {
+    if (!isRoot) frontier.push(node);
+  } else {
+    buildingChildren.forEach(c => findBuildFrontier(c, false, frontier));
+  }
+}
+
+// --- Action: -1 Layer of Build ---
+// The reverse of +1 Layer: flips the current build frontier (above) back to Buy, retracting every
+// branch's own deepest built tier by exactly one step. Symmetric with +1 Layer for the common case
+// of clicking them back and forth, but computed fresh from whatever the tree actually looks like
+// right now rather than a separate click-counter - so it stays correct even if some cards were
+// toggled by hand in between, instead of just undoing "the last click" blindly.
+async function buildOneLayerShallower() {
+  if (!window.recipeTreeRoot) return;
+  const root = window.recipeTreeRoot;
+  const frontier = [];
+  findBuildFrontier(root, true, frontier);
+  if (frontier.length === 0) {
+    if (typeof window.showToast === 'function') window.showToast('Nothing to retract - only the main item itself is set to Build.', 'info');
+    return;
+  }
+  frontier.forEach(node => {
+    window.buildSelfOverrides[node.typeId] = false;
+    if (node.displayTypeId) window.buildSelfOverrides[node.displayTypeId] = false;
+  });
+
+  const isLPSynthetic = root.isLPIsolatedRoot && !root.recipe;
+  if (isLPSynthetic || !window.currentProduct) {
+    syncTreeBuildStates(root);
+    if (typeof window.recalculate === 'function') window.recalculate();
+    return;
+  }
+  await window.selectItem(window.currentProduct.id, window.currentProduct.name, true);
+}
+window.buildOneLayerShallower = buildOneLayerShallower;
 
 // --- Action: Buy All Sub-Components ---
 async function buyAllSubComponents() {
