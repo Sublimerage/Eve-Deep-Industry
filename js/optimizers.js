@@ -45,61 +45,69 @@ window.stampBulkMETargetIfArmed = stampBulkMETargetIfArmed;
 // back off. Forcibly overwrites even a component with its own auto-filled-from-owned-BPO value,
 // same as any other manual ME/TE edit already does - this is a deliberate "assume everything's
 // maxed/at this level" planning tool, not meant to defer to what you actually own.
-function applyBulkMETarget(me, te) {
-  const clampedME = Math.max(0, Math.min(10, parseFloat(me) || 0));
-  const clampedTE = Math.max(0, Math.min(20, parseFloat(te) || 0));
+// Wrapped in withRootPanAnchor (app.js) - a sidebar button, not a diagram card, same as every
+// other bulk action on this page (reported directly: "all the buttons everywhere" were moving the
+// camera, this one included).
+async function applyBulkMETarget(me, te) {
+  await window.withRootPanAnchor(async () => {
+    const clampedME = Math.max(0, Math.min(10, parseFloat(me) || 0));
+    const clampedTE = Math.max(0, Math.min(20, parseFloat(te) || 0));
 
-  // Captured once - the very first bulk action since the last full Reset - not re-captured on a
-  // second Max/Apply click (which would otherwise overwrite the true "before any of this" baseline
-  // with an already-bulk-modified state). This is what resetBulkMETarget() restores wholesale,
-  // deliberately not a per-click undo stack - the user explicitly asked for one full reset back to
-  // "before pressing any button," not stepped undo.
-  if (!window.bulkMEOriginalSnapshot) {
-    window.bulkMEOriginalSnapshot = {
-      me: { ...window.customMEOverrides },
-      te: { ...window.customTEOverrides }
-    };
-  }
-  window.bulkMETarget = { me: clampedME, te: clampedTE };
-
-  function stampTree(node) {
-    if (!node) return;
-    if (node.isBuildingSelf && node.isManufacturable && !node.isReaction) {
-      window.customMEOverrides[node.typeId] = clampedME;
-      window.customTEOverrides[node.typeId] = clampedTE;
+    // Captured once - the very first bulk action since the last full Reset - not re-captured on a
+    // second Max/Apply click (which would otherwise overwrite the true "before any of this" baseline
+    // with an already-bulk-modified state). This is what resetBulkMETarget() restores wholesale,
+    // deliberately not a per-click undo stack - the user explicitly asked for one full reset back to
+    // "before pressing any button," not stepped undo.
+    if (!window.bulkMEOriginalSnapshot) {
+      window.bulkMEOriginalSnapshot = {
+        me: { ...window.customMEOverrides },
+        te: { ...window.customTEOverrides }
+      };
     }
-    if (node.children) node.children.forEach(c => stampTree(c));
-  }
-  if (window.recipeTreeRoot) stampTree(window.recipeTreeRoot);
+    window.bulkMETarget = { me: clampedME, te: clampedTE };
 
-  if (window.currentProduct) {
-    window.selectItem(window.currentProduct.id, window.currentProduct.name, true);
-  } else if (typeof window.recalculate === 'function') {
-    window.recalculate();
-  }
-  if (typeof window.updateBulkMEStatusUI === 'function') window.updateBulkMEStatusUI();
+    function stampTree(node) {
+      if (!node) return;
+      if (node.isBuildingSelf && node.isManufacturable && !node.isReaction) {
+        window.customMEOverrides[node.typeId] = clampedME;
+        window.customTEOverrides[node.typeId] = clampedTE;
+      }
+      if (node.children) node.children.forEach(c => stampTree(c));
+    }
+    if (window.recipeTreeRoot) stampTree(window.recipeTreeRoot);
 
-  if (typeof window.showToast === 'function') {
-    window.showToast(`Set every built component to ME ${clampedME}% / TE ${clampedTE}% - will keep applying to anything you switch to Build from here on.`, 'success', { action: { label: 'Stop', onClick: () => window.clearBulkMETarget() } });
-  }
+    if (window.currentProduct) {
+      await window.selectItem(window.currentProduct.id, window.currentProduct.name, true);
+    } else if (typeof window.recalculate === 'function') {
+      window.recalculate();
+    }
+    if (typeof window.updateBulkMEStatusUI === 'function') window.updateBulkMEStatusUI();
+
+    if (typeof window.showToast === 'function') {
+      window.showToast(`Set every built component to ME ${clampedME}% / TE ${clampedTE}% - will keep applying to anything you switch to Build from here on.`, 'success', { action: { label: 'Stop', onClick: () => window.clearBulkMETarget() } });
+    }
+  });
 }
 window.applyBulkMETarget = applyBulkMETarget;
 
-function applyBulkMETargetMax() {
-  applyBulkMETarget(10, 20);
+async function applyBulkMETargetMax() {
+  await applyBulkMETarget(10, 20);
 }
 window.applyBulkMETargetMax = applyBulkMETargetMax;
 
 // Stops future auto-apply only - does not touch ME/TE values already set on components, and does
 // NOT clear bulkMEOriginalSnapshot (a later Reset still needs to reach back past this point to the
-// real original baseline, not just to whatever was true when Stop was clicked).
-function clearBulkMETarget() {
-  window.bulkMETarget = null;
-  if (typeof window.recalculate === 'function') window.recalculate();
-  if (typeof window.updateBulkMEStatusUI === 'function') window.updateBulkMEStatusUI();
-  if (typeof window.showToast === 'function') {
-    window.showToast('Stopped auto-applying bulk ME/TE to newly built components. Values already set are unchanged.', 'info');
-  }
+// real original baseline, not just to whatever was true when Stop was clicked). Wrapped in
+// withRootPanAnchor for the same reason as applyBulkMETarget above.
+async function clearBulkMETarget() {
+  await window.withRootPanAnchor(async () => {
+    window.bulkMETarget = null;
+    if (typeof window.recalculate === 'function') window.recalculate();
+    if (typeof window.updateBulkMEStatusUI === 'function') window.updateBulkMEStatusUI();
+    if (typeof window.showToast === 'function') {
+      window.showToast('Stopped auto-applying bulk ME/TE to newly built components. Values already set are unchanged.', 'info');
+    }
+  });
 }
 window.clearBulkMETarget = clearBulkMETarget;
 
@@ -107,21 +115,24 @@ window.clearBulkMETarget = clearBulkMETarget;
 // wholesale replaces customMEOverrides/customTEOverrides with the snapshot captured back in
 // applyBulkMETarget, then clears both the target (stops future auto-apply too) and the snapshot
 // itself, so the next Max/Apply click captures a fresh baseline rather than reusing this one.
-function resetBulkMETarget() {
+// Wrapped in withRootPanAnchor for the same reason as applyBulkMETarget above.
+async function resetBulkMETarget() {
   if (!window.bulkMEOriginalSnapshot) return;
-  window.customMEOverrides = { ...window.bulkMEOriginalSnapshot.me };
-  window.customTEOverrides = { ...window.bulkMEOriginalSnapshot.te };
-  window.bulkMETarget = null;
-  window.bulkMEOriginalSnapshot = null;
-  if (window.currentProduct) {
-    window.selectItem(window.currentProduct.id, window.currentProduct.name, true);
-  } else if (typeof window.recalculate === 'function') {
-    window.recalculate();
-  }
-  if (typeof window.updateBulkMEStatusUI === 'function') window.updateBulkMEStatusUI();
-  if (typeof window.showToast === 'function') {
-    window.showToast('Every component\'s ME/TE restored to what it was before Bulk ME/TE was ever used.', 'success');
-  }
+  await window.withRootPanAnchor(async () => {
+    window.customMEOverrides = { ...window.bulkMEOriginalSnapshot.me };
+    window.customTEOverrides = { ...window.bulkMEOriginalSnapshot.te };
+    window.bulkMETarget = null;
+    window.bulkMEOriginalSnapshot = null;
+    if (window.currentProduct) {
+      await window.selectItem(window.currentProduct.id, window.currentProduct.name, true);
+    } else if (typeof window.recalculate === 'function') {
+      window.recalculate();
+    }
+    if (typeof window.updateBulkMEStatusUI === 'function') window.updateBulkMEStatusUI();
+    if (typeof window.showToast === 'function') {
+      window.showToast('Every component\'s ME/TE restored to what it was before Bulk ME/TE was ever used.', 'success');
+    }
+  });
 }
 window.resetBulkMETarget = resetBulkMETarget;
 
@@ -229,6 +240,17 @@ async function onCardTEChange(e, typeId, instanceId) {
 function markAllBuild(node) {
   let changedAny = false;
   if (!node) return changedAny;
+  // Capture BEFORE marking this node build below - this is what makes +1 Layer only ever reveal
+  // one tier per call. Only recurse into children this node WAS ALREADY building before this call,
+  // not children it's only just now being switched to - reported directly: after Buy All, +1 Layer
+  // built the whole tree in one click instead of one layer. Buy All (buyAllSubComponents) only
+  // flips isBuildingSelf flags, it never clears node.children - so a branch that was fully fetched
+  // during an earlier Build All still has its whole subtree sitting in memory even after switching
+  // back to Buy. Recursing unconditionally (the old behavior) walked that stale leftover data and
+  // marked all of it build in one pass, regardless of how deep it actually was. Build All itself
+  // never showed this bug - it already reveals everything on purpose - but it was relying on the
+  // exact same unconditional recursion doing the wrong thing for the right reason.
+  const wasAlreadyBuilding = !!node.isBuildingSelf;
   if (node.isManufacturable) {
     if (window.buildSelfOverrides[node.typeId] !== true) changedAny = true;
     window.buildSelfOverrides[node.typeId] = true;
@@ -239,7 +261,7 @@ function markAllBuild(node) {
       stampBulkMETargetIfArmed(node.displayTypeId);
     }
   }
-  if (node.children) {
+  if (node.children && wasAlreadyBuilding) {
     node.children.forEach(c => { if (markAllBuild(c)) changedAny = true; });
   }
   return changedAny;
@@ -377,17 +399,24 @@ async function buyAllSubComponents() {
 }
 
 // --- Action: Reset Smart Buy Override Modes ---
-function resetSmartBuyModes() {
+// Wrapped in withRootPanAnchor (app.js) - a sidebar button, not a diagram card; the Undo callback
+// gets its own separate wrap since it fires later, after this call (and its own anchor) has
+// already returned.
+async function resetSmartBuyModes() {
   if (Object.keys(window.customBuyModes || {}).length === 0) return;
   const snapshot = { ...window.customBuyModes };
-  window.customBuyModes = {};
-  if (typeof window.recalculate === 'function') {
-    window.recalculate();
-  }
+  await window.withRootPanAnchor(async () => {
+    window.customBuyModes = {};
+    if (typeof window.recalculate === 'function') {
+      window.recalculate();
+    }
+  });
   if (typeof window.showToast === 'function') {
-    window.showToast('Reset every component\'s buy/build override back to default.', 'info', { action: { label: 'Undo', onClick: () => {
+    window.showToast('Reset every component\'s buy/build override back to default.', 'info', { action: { label: 'Undo', onClick: async () => {
       window.customBuyModes = snapshot;
-      if (typeof window.recalculate === 'function') window.recalculate();
+      await window.withRootPanAnchor(async () => {
+        if (typeof window.recalculate === 'function') window.recalculate();
+      });
     } } });
   }
 }
@@ -445,11 +474,15 @@ async function cascadeExpandFullTree() {
 }
 
 // Optimizer 1: True Greedy Build vs Buy Profit Margin Optimizer
+// Wrapped in withRootPanAnchor (app.js) - a sidebar button, not a diagram card; reported directly
+// by the user as moving the camera when clicked.
 async function applyBuildProfitOptimizer() {
   const inputThreshold = parseFloat(document.getElementById('build-profit-threshold')?.value);
   const threshold = isNaN(inputThreshold) ? 5.0 : Math.max(0, inputThreshold);
 
   if (!window.recipeTreeRoot) return;
+
+  await window.withRootPanAnchor(async () => {
 
   // Reach every manufacturable node in the tree, not just whatever's already been fetched (see
   // cascadeExpandFullTree's own comment). Deliberately left at "everything Build" afterward, not
@@ -553,14 +586,21 @@ async function applyBuildProfitOptimizer() {
   // sync + recalculate instead of a full selectItem() rebuild.
   syncTreeBuildStates(window.recipeTreeRoot);
   if (typeof window.recalculate === 'function') window.recalculate();
+
+  }); // withRootPanAnchor
 }
 
 // Optimizer 2: Component Market Spread Threshold
+// Wrapped in withRootPanAnchor (app.js) - a sidebar button, not a diagram card. Also called
+// internally from buyAllSubComponents (already wrapped there); withRootPanAnchor is safe to nest -
+// the inner call restores the anchor's screen position before the outer call ever re-measures it.
 async function applyComponentSpreadOptimizer() {
   const inputThreshold = parseFloat(document.getElementById('buy-savings-threshold')?.value);
   const threshold = isNaN(inputThreshold) ? 5.0 : Math.max(0, inputThreshold);
 
   if (!window.recipeTreeRoot) return;
+
+  await window.withRootPanAnchor(async () => {
 
   // Unlike applyBuildProfitOptimizer, this optimizer never decides Build vs Buy - it only picks a
   // buy-order-vs-instant-sell-order STRATEGY for whatever's already a leaf, so
@@ -583,13 +623,13 @@ async function applyComponentSpreadOptimizer() {
 
   function optimizeNode(node) {
     if (!node) return;
-    
+
     if (!node.isBuildingSelf || !node.children || node.children.length === 0) {
       const typeId = node.displayTypeId || node.typeId;
       // Use the tree-resolved productTypeId (never the blueprint's own id) for pricing.
       const productTypeId = node.productTypeId || typeId;
       const prices = window.priceCache[productTypeId] || { sell: 0, buy: 0 };
-      
+
       if (prices.sell > 0 && prices.buy > 0 && prices.sell > prices.buy) {
         const spreadPct = ((prices.sell - prices.buy) / prices.sell) * 100;
         if (spreadPct >= threshold) {
@@ -598,7 +638,7 @@ async function applyComponentSpreadOptimizer() {
           window.customBuyModes[typeId] = 'sell'; // Market spread is small: buy instantly off Sell Orders!
         }
       } else {
-        window.customBuyModes[typeId] = 'sell'; 
+        window.customBuyModes[typeId] = 'sell';
       }
     }
 
@@ -609,14 +649,19 @@ async function applyComponentSpreadOptimizer() {
 
   optimizeNode(window.recipeTreeRoot);
   if (typeof window.recalculate === 'function') window.recalculate();
+
+  }); // withRootPanAnchor
 }
 
 // Optimizer 3: Build Cost Savings Impact Threshold
+// Wrapped in withRootPanAnchor (app.js) - a sidebar button, not a diagram card.
 async function applyBudgetImpactOptimizer() {
   const inputThreshold = parseFloat(document.getElementById('total-cost-savings-threshold')?.value);
   const threshold = isNaN(inputThreshold) ? 1.0 : Math.max(0, inputThreshold);
 
   if (!window.recipeTreeRoot) return;
+
+  await window.withRootPanAnchor(async () => {
 
   // See applyComponentSpreadOptimizer's own comment just above - same reasoning applies here:
   // this optimizer only picks a buy-order-vs-instant-sell-order strategy for existing leaves, so
@@ -635,13 +680,13 @@ async function applyBudgetImpactOptimizer() {
 
   function optimizeNode(node) {
     if (!node) return;
-    
+
     if (!node.isBuildingSelf || !node.children || node.children.length === 0) {
       const typeId = node.displayTypeId || node.typeId;
       // Use the tree-resolved productTypeId (never the blueprint's own id) for pricing.
       const productTypeId = node.productTypeId || typeId;
       const prices = window.priceCache[productTypeId] || { sell: 0, buy: 0 };
-      
+
       const deductModeInput = document.getElementById('deduct-stock-mode');
       const isStockDeductEnabled = deductModeInput ? deductModeInput.value === 'true' : true;
       const stockQty = isStockDeductEnabled ? (window.userStockMap[productTypeId] || window.userStockMap[node.typeId] || 0) : 0;
@@ -671,6 +716,8 @@ async function applyBudgetImpactOptimizer() {
 
   optimizeNode(window.recipeTreeRoot);
   if (typeof window.recalculate === 'function') window.recalculate();
+
+  }); // withRootPanAnchor
 }
 
 async function setComponentBuyMode(e, typeId, mode) {

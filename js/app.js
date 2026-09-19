@@ -231,7 +231,8 @@ window.searchRigSlot = searchRigSlot;
 // Applies a rig selection (or clears it with typeId 0) for the given slot, persists it, and
 // recalculates. Uses onmousedown (not onclick) in the results list above so it fires before the
 // search input's onblur hides the dropdown.
-function selectRigForSlot(slotNum, typeId, name) {
+// Wrapped in withRootPanAnchor (app.js) - a sidebar control, not a diagram card.
+async function selectRigForSlot(slotNum, typeId, name) {
   const inputEl = document.getElementById(`rig-slot-${slotNum}-input`);
   const resultsEl = document.getElementById(`rig-slot-${slotNum}-results`);
   if (inputEl) {
@@ -244,7 +245,7 @@ function selectRigForSlot(slotNum, typeId, name) {
   setRigSlotFilledState(slotNum, !!typeId);
   localStorage.setItem(`eve_rig_slot_${slotNum}`, typeId ? String(typeId) : '');
   saveTaxSettings();
-  recalculate();
+  await window.withRootPanAnchor(async () => { recalculate(); });
 }
 window.selectRigForSlot = selectRigForSlot;
 
@@ -1095,6 +1096,7 @@ window.renderCardStationSelectorHTML = renderCardStationSelectorHTML;
 // Re-applies a plain system/structure/rig/tax snapshot (not necessarily a saved preset - e.g. the
 // live setup findBestProductionStation started from) - the same steps loadProductionPreset itself
 // runs, minus the preset-dropdown bookkeeping that only makes sense for an actual named preset.
+// Wrapped in withRootPanAnchor (app.js) - a sidebar control, not a diagram card.
 async function applyProductionSnapshot(snapshot) {
   if (!snapshot) return;
   if (snapshot.systemId && typeof window.selectSolarSystem === 'function') {
@@ -1110,7 +1112,9 @@ async function applyProductionSnapshot(snapshot) {
   saveTaxSettings();
   [1, 2, 3].forEach(slot => localStorage.setItem(`eve_rig_slot_${slot}`, snapshot[`rig${slot}`] || ''));
   restoreRigSlotInputs();
-  if (typeof window.recalculate === 'function') window.recalculate();
+  await window.withRootPanAnchor(async () => {
+    if (typeof window.recalculate === 'function') window.recalculate();
+  });
 }
 window.applyProductionSnapshot = applyProductionSnapshot;
 
@@ -1175,8 +1179,12 @@ async function findBestProductionStation() {
   } finally {
     // Whichever branch ran above always ends in a recalculate() that redraws this button fresh in
     // its normal (non-loading) state - this is only a safety net for the unexpected case where
-    // something threw before either branch's own final load/apply call ran.
-    if (typeof window.recalculate === 'function') window.recalculate();
+    // something threw before either branch's own final load/apply call ran. Wrapped in
+    // withRootPanAnchor like every other bare recalculate() in this file - nesting inside the
+    // loadProductionPreset/applyProductionSnapshot calls above is safe, see optimizers.js's own note.
+    await window.withRootPanAnchor(async () => {
+      if (typeof window.recalculate === 'function') window.recalculate();
+    });
   }
 }
 window.findBestProductionStation = findBestProductionStation;
@@ -1265,7 +1273,9 @@ async function loadProductionPreset(name) {
   const presetSelect = document.getElementById('production-preset-select');
   if (presetSelect) presetSelect.value = name;
 
-  if (typeof window.recalculate === 'function') window.recalculate();
+  await window.withRootPanAnchor(async () => {
+    if (typeof window.recalculate === 'function') window.recalculate();
+  });
 }
 window.loadProductionPreset = loadProductionPreset;
 
@@ -2961,9 +2971,20 @@ function createNodeCard(node, autoCompact) {
 
   card.className = `diagram-node glass-card p-2.5 shadow-lg transition-all relative ${cardStyle}`;
   if (borderAccent) card.setAttribute('style', borderAccent);
+  // The compact chip's whole card is one big "click anywhere to expand" target (card.onclick above),
+  // but the expanded card's own body click just selects/highlights (onNodeClick) - reported directly
+  // as "I click it, it expands, but there's no way to compact it back individually" (the small
+  // "Hide"/"Compact" button below IS the way, but nothing about the expanded card itself hints at
+  // it). Making the icon specifically clickable-to-recompact restores that same one-click symmetry
+  // without touching the rest of the card's many other interactive controls (buttons, inputs, the
+  // name's own copy-to-clipboard click) - none of which sit on the icon, so nothing else needs a
+  // stopPropagation added to keep working.
+  const iconCollapseAttrs = (!isRoot && !isIsolated)
+    ? ` onclick="toggleNodeCollapse(event, ${node.instanceId}, '${node.pathKey}')" style="cursor:pointer;" title="Click to collapse to a compact chip"`
+    : '';
   card.innerHTML = `
     <div class="flex items-start space-x-3 border-b border-[#3a3025] pb-2.5 mb-2.5">
-      <img src="${iconUrl}" alt="${window.esc(node.productName || node.name)}" class="w-10 h-10 rounded-md border border-white/10 bg-black/40 flex-shrink-0" onerror="this.onerror=function(){window.handleItemIconLoadError(this);}; this.src='https://images.evetech.net/types/${productTypeId}/icon?size=64';">
+      <img src="${iconUrl}" alt="${window.esc(node.productName || node.name)}" class="w-10 h-10 rounded-md border border-white/10 bg-black/40 flex-shrink-0"${iconCollapseAttrs} onerror="this.onerror=function(){window.handleItemIconLoadError(this);}; this.src='https://images.evetech.net/types/${productTypeId}/icon?size=64';">
       <div class="min-w-0 flex-1">
         <div class="flex items-center justify-between gap-1.5">
           <span class="font-bold text-sm text-white truncate min-w-0 cursor-pointer hover:text-orange-300 hover:underline transition" onclick="copyMaterialNameToClipboard(event, this, '${window.esc(node.productName || node.name.replace(/ Blueprint$/i, '').replace(/ Reaction Formula$/i, '').replace(/ Formula$/i, '').trim()).replace(/'/g, "\\'")}')" title="Click to copy this item's exact name to your clipboard, ready to paste into EVE's search/market">${node.productName || node.name.replace(/ Blueprint$/i, '').replace(/ Reaction Formula$/i, '').replace(/ Formula$/i, '').trim()}</span>${mergedBadge}
@@ -3944,9 +3965,12 @@ let bomViewMode = localStorage.getItem('eve_bom_view_mode') || 'card'; // 'card'
 let bomOrderFilter = 'all'; // 'all' | 'buy' | 'sell'
 let bomCategoryFilter = 'all'; // 'all' | 'minerals' | 'pigas' | 'fuel' | 'ships' | 'others'
 
-function setBOMCategoryFilter(cat) {
+// Wrapped in withRootPanAnchor (app.js) - a BOM panel pill, not a diagram card.
+async function setBOMCategoryFilter(cat) {
   bomCategoryFilter = cat;
-  if (typeof window.recalculate === 'function') window.recalculate();
+  await window.withRootPanAnchor(async () => {
+    if (typeof window.recalculate === 'function') window.recalculate();
+  });
 }
 window.setBOMCategoryFilter = setBOMCategoryFilter;
 
@@ -3957,15 +3981,19 @@ function updateBomViewModeButtonLabel() {
     : window.svgIcon('list') + ' Compact';
 }
 
-function toggleBomViewMode() {
+// Wrapped in withRootPanAnchor (app.js) - a BOM panel button, not a diagram card.
+async function toggleBomViewMode() {
   bomViewMode = bomViewMode === 'compact' ? 'card' : 'compact';
   localStorage.setItem('eve_bom_view_mode', bomViewMode);
   updateBomViewModeButtonLabel();
-  if (typeof window.recalculate === 'function') window.recalculate();
+  await window.withRootPanAnchor(async () => {
+    if (typeof window.recalculate === 'function') window.recalculate();
+  });
 }
 window.toggleBomViewMode = toggleBomViewMode;
 
-function setBOMOrderFilter(type) {
+// Wrapped in withRootPanAnchor (app.js) - a BOM panel pill, not a diagram card.
+async function setBOMOrderFilter(type) {
   bomOrderFilter = type;
   const btnAll = document.getElementById('btn-bom-order-all');
   const btnBuy = document.getElementById('btn-bom-order-buy');
@@ -3974,7 +4002,9 @@ function setBOMOrderFilter(type) {
   if (btnAll) { btnAll.className = `lp-pill${type === 'all' ? ' active' : ''}`; btnAll.style.cssText = pillStyle; }
   if (btnBuy) { btnBuy.className = `lp-pill${type === 'buy' ? ' active' : ''}`; btnBuy.style.cssText = pillStyle; }
   if (btnSell) { btnSell.className = `lp-pill${type === 'sell' ? ' active' : ''}`; btnSell.style.cssText = pillStyle; }
-  if (typeof window.recalculate === 'function') window.recalculate();
+  await window.withRootPanAnchor(async () => {
+    if (typeof window.recalculate === 'function') window.recalculate();
+  });
 }
 window.setBOMOrderFilter = setBOMOrderFilter;
 
@@ -3984,9 +4014,12 @@ window.setBOMOrderFilter = setBOMOrderFilter;
 // matters, so it starts tucked behind the divider instead of competing for attention with the actual
 // shopping list above it. Session-only (not persisted), same as this app's other display toggles.
 let isCalcAcquiredBomSectionExpanded = false;
-function toggleCalcAcquiredBomSection() {
+// Wrapped in withRootPanAnchor (app.js) - a BOM panel divider toggle, not a diagram card.
+async function toggleCalcAcquiredBomSection() {
   isCalcAcquiredBomSectionExpanded = !isCalcAcquiredBomSectionExpanded;
-  if (typeof recalculate === 'function') recalculate();
+  await window.withRootPanAnchor(async () => {
+    if (typeof recalculate === 'function') recalculate();
+  });
 }
 window.toggleCalcAcquiredBomSection = toggleCalcAcquiredBomSection;
 
@@ -4286,11 +4319,33 @@ if (viewport) {
     }
   });
 
+  // rAF-batched, not applied straight off every pointermove - a real mouse/trackpad can fire that
+  // event far more often than the screen actually repaints (measured 100-200+/sec on real hardware,
+  // well past a 60-144Hz refresh rate), and updateTransform's write was happening once per EVENT
+  // instead of once per FRAME. Individually cheap, but on a big capital ship build (1000+ rendered
+  // cards, see suspendCardBlurDuringPanZoom's own comment on the same-sized problem with blur) the
+  // sheer call volume was enough to back up the main thread and show up as exactly the classic
+  // "cursor gets ahead of the canvas, then it jerks to catch up" pattern - reported directly as
+  // "moving the camera is super stuttery" even after blur-suspend already shipped. Storing only the
+  // latest event and flushing at most once per animation frame is the standard fix for this whole
+  // class of problem (the same technique any pan/zoom canvas tool - Figma, Mapbox GL JS, etc. - uses,
+  // consistent with this file's own pointer-capture comment above citing the same precedent).
+  let pendingPanClientX = 0, pendingPanClientY = 0, panRafScheduled = false;
+  function flushPanFrame() {
+    panRafScheduled = false;
+    if (!window.isPanning) return;
+    window.panX = pendingPanClientX - window.startX;
+    window.panY = pendingPanClientY - window.startY;
+    updateTransform();
+  }
   window.addEventListener('pointermove', (e) => {
     if (window.isPanning && e.pointerId === window.panPointerId) {
-      window.panX = e.clientX - window.startX;
-      window.panY = e.clientY - window.startY;
-      updateTransform();
+      pendingPanClientX = e.clientX;
+      pendingPanClientY = e.clientY;
+      if (!panRafScheduled) {
+        panRafScheduled = true;
+        requestAnimationFrame(flushPanFrame);
+      }
     }
   });
 
@@ -4309,6 +4364,14 @@ if (viewport) {
   // leave panning stuck on with no way to turn it back off short of reloading the page.
   window.addEventListener('blur', () => endViewportPan(null));
 
+  // Same rAF-batching as the pan handler above for updateTransform (a trackpad's momentum scroll
+  // fires wheel events just as fast as a mouse fires pointermove). drawConnectingLines is worse than
+  // updateTransform though - it walks the whole tree and calls getBoundingClientRect() per card, real
+  // layout-forcing work - so unlike updateTransform it isn't just batched to once/frame, it's pushed
+  // out entirely until scrolling actually stops (same debounce idea already used for the blur
+  // resume below, reusing its own delay), instead of paying that cost on every single tick.
+  let pendingZoomRafScheduled = false;
+  let wheelLinesRedrawTimeout = null;
   viewport.addEventListener('wheel', (e) => {
     e.preventDefault();
     const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
@@ -4322,8 +4385,12 @@ if (viewport) {
     window.panY = mouseY - (mouseY - window.panY) * (newScale / window.zoomScale);
     window.zoomScale = newScale;
 
-    updateTransform();
-    drawConnectingLines();
+    if (!pendingZoomRafScheduled) {
+      pendingZoomRafScheduled = true;
+      requestAnimationFrame(() => { pendingZoomRafScheduled = false; updateTransform(); });
+    }
+    clearTimeout(wheelLinesRedrawTimeout);
+    wheelLinesRedrawTimeout = setTimeout(drawConnectingLines, 150);
     // No pointerup-equivalent for a wheel gesture, so debounce it instead - each tick pushes the
     // resume back out, and it only actually fires once scrolling has genuinely stopped for a beat.
     suspendCardBlurDuringPanZoom();

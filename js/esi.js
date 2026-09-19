@@ -248,7 +248,8 @@ function removeCharacter(charId) {
   if (typeof updateJournalStockCountBadge === 'function') updateJournalStockCountBadge();
   if (typeof populateJournalLocationDropdown === 'function') populateJournalLocationDropdown();
   if (typeof recalculate === 'function') {
-    recalculate();
+    if (typeof window.withRootPanAnchor === 'function') window.withRootPanAnchor(async () => { recalculate(); });
+    else recalculate();
   } else if (typeof renderJournalPage === 'function') {
     renderJournalPage();
   }
@@ -377,7 +378,8 @@ async function fetchAdjustedPrices() {
           });
           if (typeof updateEivIndicator === 'function') updateEivIndicator('ready');
           if (window.recipeTreeRoot && typeof recalculate === 'function') {
-            recalculate();
+            if (typeof window.withRootPanAnchor === 'function') window.withRootPanAnchor(async () => { recalculate(); });
+            else recalculate();
           }
           return;
         }
@@ -1408,8 +1410,16 @@ function applyStockLocationFilter() {
   updateStockDisplayCount();
   // This same function backs both pages that use it directly (index.html's own checkbox/select
   // onchange handlers, which already worked) - each page's actual recalculation entry point has a
-  // different name, so both are tried; only one will ever exist on a given page.
-  if (typeof window.recalculate === 'function') window.recalculate();
+  // different name, so both are tried; only one will ever exist on a given page. Wrapped in
+  // withRootPanAnchor when available (Calculator/LP Store's diagram pages) - see
+  // toggleDeductStockButton's own comment (js/config.js) for why this is conditional.
+  if (typeof window.recalculate === 'function') {
+    if (typeof window.withRootPanAnchor === 'function') {
+      window.withRootPanAnchor(async () => { window.recalculate(); });
+    } else {
+      window.recalculate();
+    }
+  }
   else if (typeof window.recalculateInvention === 'function') window.recalculateInvention();
 }
 
@@ -1427,6 +1437,8 @@ function closePasteModal() {
   _pasteModalOpenerEl = null;
 }
 
+// Wrapped in withRootPanAnchor when available - see toggleDeductStockButton's own comment
+// (js/config.js) for why this is conditional (shared across pages, some without a diagram).
 function clearUserStock() {
   const rawAssetItemsSnapshot = window.rawAssetItems.slice();
   const userStockMapSnapshot = { ...window.userStockMap };
@@ -1434,7 +1446,10 @@ function clearUserStock() {
   window.userStockMap = {};
   updateStockDisplayCount();
   populateLocationDropdown();
-  if (typeof recalculate === 'function') recalculate();
+  if (typeof recalculate === 'function') {
+    if (typeof window.withRootPanAnchor === 'function') window.withRootPanAnchor(async () => { recalculate(); });
+    else recalculate();
+  }
   closePasteModal();
   if (typeof window.showToast === 'function') {
     window.showToast('Cleared all tracked stock.', 'info', { action: { label: 'Undo', onClick: () => {
@@ -1442,7 +1457,10 @@ function clearUserStock() {
       window.userStockMap = userStockMapSnapshot;
       updateStockDisplayCount();
       populateLocationDropdown();
-      if (typeof recalculate === 'function') recalculate();
+      if (typeof recalculate === 'function') {
+        if (typeof window.withRootPanAnchor === 'function') window.withRootPanAnchor(async () => { recalculate(); });
+        else recalculate();
+      }
     } } });
   }
 }

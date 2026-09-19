@@ -304,12 +304,20 @@ document.addEventListener('keydown', (e) => {
 // Shared toggle-button handler for "Deduct Stock" controls across all pages - a clear on/off button
 // instead of a dropdown, but keeps the exact same id="deduct-stock-mode" + .value === 'true' pattern
 // every read site already uses, since <button value="..."> supports .value identically to <select>.
-function toggleDeductStockButton(btn, recalcFnName) {
+// Wrapped in withRootPanAnchor when it's available (the Calculator/LP Store pages, which have a
+// pan/zoom diagram to anchor) - a sidebar button, not a diagram card. Pages without a diagram (e.g.
+// the Ledger) never define withRootPanAnchor, so this falls back to calling recalcFnName directly.
+async function toggleDeductStockButton(btn, recalcFnName) {
   if (!btn) return;
   const newValue = btn.value === 'true' ? 'false' : 'true';
   btn.value = newValue;
   updateDeductStockButtonVisual(btn);
-  if (recalcFnName && typeof window[recalcFnName] === 'function') window[recalcFnName]();
+  if (!recalcFnName || typeof window[recalcFnName] !== 'function') return;
+  if (typeof window.withRootPanAnchor === 'function') {
+    await window.withRootPanAnchor(async () => { window[recalcFnName](); });
+  } else {
+    window[recalcFnName]();
+  }
 }
 window.toggleDeductStockButton = toggleDeductStockButton;
 
