@@ -872,7 +872,33 @@ async function fetchUserAndCorpAssets(charId, accessToken) {
       }
     })();
 
-    await Promise.all([divisionsPromise, skillsPromise, loyaltyPromise]);
+    // Character attributes (Charisma/Intelligence/Memory/Perception/Willpower) - same scope as the
+    // skills fetch above (esi-skills.read_skills.v1 covers both endpoints), so this needed no new
+    // OAuth consent screen for anyone already logged in. ESI's own returned values here are the
+    // character's CURRENT effective attributes - implants and any attribute remap already baked in,
+    // confirmed directly (not just assumed) against how EVEMon's own source has to SUBTRACT implant
+    // bonuses back out of this same raw value to recover a "base" figure - proof the raw ESI number
+    // already includes them. That's what makes the Skills tab's training-time estimate able to
+    // honestly say "given your current attribute remap and implants" without a second endpoint/scope
+    // just to read implants separately.
+    const attributesPromise = (async () => {
+      try {
+        const attrRes = await fetchWithAuth(`https://esi.evetech.net/latest/characters/${charId}/attributes/?datasource=tranquility`, {}, accessToken, true);
+        if (attrRes && attrRes.ok) {
+          const attrData = await attrRes.json();
+          if (attrData && typeof attrData.intelligence === 'number') {
+            localStorage.setItem('eve_char_attributes', JSON.stringify({
+              charisma: attrData.charisma, intelligence: attrData.intelligence, memory: attrData.memory,
+              perception: attrData.perception, willpower: attrData.willpower, fetchedAt: Date.now()
+            }));
+          }
+        }
+      } catch (e) {
+        console.warn('ESI Attributes fetch failed:', e);
+      }
+    })();
+
+    await Promise.all([divisionsPromise, skillsPromise, loyaltyPromise, attributesPromise]);
 
     // Character assets and corp assets are two completely independent paginated walks - different
     // endpoint, different data, neither reads what the other writes (each only ever pushes its own
@@ -2081,6 +2107,83 @@ async function fetchAllEsiPages(urlWithoutPage, accessToken, charId) {
   return results;
 }
 window.fetchAllEsiPages = fetchAllEsiPages;
+
+// EVE's own small, stable integer IDs for the 5 character attributes, as used inside a skill's own
+// dogma data (see fetchSkillTrainingInfo below) - confirmed directly against ESI's own
+// /dogma/attributes/{id}/ endpoint for each of 164-168, not guessed. These never change (they're as
+// old as EVE's skill system itself), so a plain hardcoded map is safe rather than another live call.
+const EVE_ATTRIBUTE_ID_TO_NAME = { 164: 'charisma', 165: 'intelligence', 166: 'memory', 167: 'perception', 168: 'willpower' };
+
+// A skill's training-time rank and which 2 of the 5 attributes govern its training speed - permanent,
+// same-for-everyone data (never tied to a specific character), so cached forever once fetched, same
+// idea as the system->region cache elsewhere in this app. Pulled from /universe/types/{id}/'s own
+// dogma_attributes array: attribute_id 275 (skillTimeConstant) is the rank multiplier CCP's own SP
+// formula uses (SP for level L = 250 * rank * sqrt(32)^(L-1), confirmed directly against
+// /dogma/attributes/275/'s own description text); 180/181 (primaryAttribute/secondaryAttribute) are
+// themselves attribute_ids pointing back into the 164-168 table above, not raw values. Public
+// endpoint - no auth/token needed, works even for a logged-out visitor looking at what a skill would
+// need.
+let _skillTrainingInfoCache = null;
+function loadSkillTrainingInfoCache() {
+  if (_skillTrainingInfoCache) return _skillTrainingInfoCache;
+  _skillTrainingInfoCache = window.safeParseJSON(localStorage.getItem('eve_skill_training_info_v1'), {});
+  return _skillTrainingInfoCache;
+}
+async function fetchSkillTrainingInfo(skillTypeId) {
+  const cache = loadSkillTrainingInfoCache();
+  if (cache[skillTypeId]) return cache[skillTypeId];
+  try {
+    const res = await fetch(`https://esi.evetech.net/latest/universe/types/${skillTypeId}/?datasource=tranquility`, { cache: 'no-store' });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const attrs = Array.isArray(data.dogma_attributes) ? data.dogma_attributes : [];
+    const find = id => { const a = attrs.find(x => x.attribute_id === id); return a ? a.value : null; };
+    const rank = find(275);
+    const primaryId = find(180);
+    const secondaryId = find(181);
+    if (!rank || !primaryId || !secondaryId) return null;
+    const info = { rank, primaryAttr: EVE_ATTRIBUTE_ID_TO_NAME[primaryId] || null, secondaryAttr: EVE_ATTRIBUTE_ID_TO_NAME[secondaryId] || null };
+    if (!info.primaryAttr || !info.secondaryAttr) return null;
+    cache[skillTypeId] = info;
+    localStorage.setItem('eve_skill_training_info_v1', JSON.stringify(cache));
+    return info;
+  } catch (e) {
+    console.warn(`Skill training info fetch failed for skill ${skillTypeId}:`, e);
+    return null;
+  }
+}
+window.fetchSkillTrainingInfo = fetchSkillTrainingInfo;
+
+// SP needed to reach skillLevel (1-5) for a skill of this rank - CCP's own formula, confirmed
+// directly via /dogma/attributes/275/'s description text: "Skill points required to train a skill =
+// 250 * skillTimeConstant * sqrt(32)^(skillLevel - 1)".
+function skillPointsForLevel(rank, level) {
+  if (level <= 0) return 0;
+  return 250 * rank * Math.pow(Math.sqrt(32), level - 1);
+}
+window.skillPointsForLevel = skillPointsForLevel;
+
+// Minutes to train a skill from its currently-trained level up to targetLevel, given the character's
+// own effective attributes (already implant/remap-inclusive - see attributesPromise's own comment
+// above). Assumes Omega training speed (primary + secondary/2 SP/min) - Alpha clones train at exactly
+// half this rate, but ESI has no simple "is this character Alpha or Omega" field to check, and Omega
+// is the overwhelmingly common case for anyone actively using a build calculator like this one.
+// Simplifying assumption, stated plainly here rather than silently: treats the character as having
+// exactly the floor SP for their currently trained level (no partial credit for SP already invested
+// into a skill mid-training) - ESI's own skillpoints_in_skill field is documented by CCP's own ESI
+// team as unreliable for this (only updates when the skill queue itself changes), and getting a truly
+// accurate in-progress figure needs a second endpoint/scope (skillqueue) this app doesn't otherwise
+// need. Returns null if the target is already met.
+function estimateSkillTrainingMinutes(rank, currentLevel, targetLevel, charAttributes, primaryAttr, secondaryAttr) {
+  if (targetLevel <= currentLevel) return null;
+  const spNeeded = skillPointsForLevel(rank, targetLevel) - skillPointsForLevel(rank, currentLevel);
+  const primaryVal = (charAttributes && charAttributes[primaryAttr]) || 17;
+  const secondaryVal = (charAttributes && charAttributes[secondaryAttr]) || 17;
+  const spPerMinute = primaryVal + (secondaryVal / 2);
+  if (spPerMinute <= 0) return null;
+  return spNeeded / spPerMinute;
+}
+window.estimateSkillTrainingMinutes = estimateSkillTrainingMinutes;
 
 // Fetches the character's owned blueprints (with real ME/TE research levels) from ESI. A job's
 // blueprint_id references a specific blueprint item instance - this is the only place its actual

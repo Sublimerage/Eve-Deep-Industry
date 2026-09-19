@@ -57,11 +57,22 @@ const SKILL_LEVEL_ROMAN = ['0', 'I', 'II', 'III', 'IV', 'V'];
 // something, only how long it'd take if you could. Returns [] (not a false "you're missing
 // everything") when no real skill sheet is loaded at all - a logged-out visitor gets no data to
 // judge by, not a wall of false warnings.
-function computeMissingSkills(root) {
-  const sheet = window.safeParseJSON(localStorage.getItem('eve_char_skills'), null);
-  const trained = sheet && sheet.allSkills;
-  if (!trained || Object.keys(trained).length === 0) return [];
+// useRealSkillsOnly=true always reads your ACTUAL trained sheet, ignoring Simulate All to 5 - used
+// for the training-time calculator below, which needs to answer "how long until this is really
+// covered" regardless of whatever the simulate toggle happens to be previewing for build time right
+// now. Every other caller (the per-item Need/Have breakdown, the Skills tab's warning dot) wants the
+// toggle respected, so that stays the default.
+function computeMissingSkills(root, useRealSkillsOnly) {
+  // Whether to show anything at all is gated on the RAW sheet existing, deliberately not on the
+  // effective (possibly-simulated) one below - "log in via ESI SSO to check this" should still show
+  // for a logged-out visitor even with Simulate All to 5 armed, since there's no real baseline to
+  // simulate a change against yet.
+  const rawSheet = window.safeParseJSON(localStorage.getItem('eve_char_skills'), null);
+  if (!rawSheet || !rawSheet.allSkills || Object.keys(rawSheet.allSkills).length === 0) return [];
 
+  const trained = useRealSkillsOnly
+    ? rawSheet.allSkills
+    : (window.getEffectiveCharSkills ? window.getEffectiveCharSkills() : rawSheet).allSkills;
   const missingByItem = [];
   function walk(node) {
     if (!node) return;
@@ -85,37 +96,140 @@ function computeMissingSkills(root) {
 }
 window.computeMissingSkills = computeMissingSkills;
 
+// "What if every skill this build needs were trained to V?" - a pure display-time simulation, never
+// touches the real trained sheet or localStorage. Routed through withRootPanAnchor like every other
+// sidebar toggle on this page (see optimizers.js's own comment on why) - recalculate() at the end
+// already refreshes the Skills panel itself (updateMissingSkillsUI is one of its own last steps).
+async function toggleSimulateSkillsToFive() {
+  window.simulateSkillsToFive = !window.simulateSkillsToFive;
+  await window.withRootPanAnchor(async () => {
+    if (typeof window.recalculate === 'function') window.recalculate();
+  });
+}
+window.toggleSimulateSkillsToFive = toggleSimulateSkillsToFive;
+
+// Renders the "Simulate All to 5" toggle itself - same on/off visual language as
+// updateDeductStockButtonVisual (js/config.js): btn-glass normally, btn-glass-muted when off,
+// swap which one carries the accent to show which state is active. Disabled (not just inert-looking)
+// with no real skill sheet loaded - there's nothing real to compare a simulated build against yet.
+function renderSimulateSkillsToggle(hasSheet) {
+  const on = !!window.simulateSkillsToFive;
+  const disabledAttrs = hasSheet ? '' : ' disabled style="opacity:0.5;cursor:not-allowed;"';
+  return `
+    <button onclick="toggleSimulateSkillsToFive()" class="btn-glass${on ? '' : ' btn-glass-muted'} w-full px-3 py-1.5 text-xs flex items-center justify-center gap-1.5" style="margin-bottom:10px;"${disabledAttrs} title="${hasSheet ? 'Preview build time/missing-skill checks as if every skill this build needs were trained to level V - does not touch your real trained skills.' : 'Log in via ESI SSO first - nothing real to simulate against yet.'}">
+      ${window.svgIcon ? window.svgIcon(on ? 'check' : 'zap') : ''} ${on ? 'Simulating All Skills at V' : 'Simulate All Skills at V'}
+    </button>
+  `;
+}
+
 // Refreshes the icon-rail Skills tab's warning dot and (if that panel is the one currently open)
 // its own list body - called at the end of recalculate() so both track Build/Buy toggles and a
 // skill sheet that finishes fetching after the tree already rendered.
 function updateMissingSkillsUI() {
   const missing = computeMissingSkills(window.recipeTreeRoot);
   const dot = document.getElementById('skills-tab-dot');
-  if (dot) dot.classList.toggle('hidden', missing.length === 0);
+  if (dot) dot.classList.toggle('hidden', missing.length === 0 || !!window.simulateSkillsToFive);
 
   const body = document.getElementById('skills-flyout-body');
   if (!body) return;
+  const rawSheet = window.safeParseJSON(localStorage.getItem('eve_char_skills'), null);
+  const hasSheet = !!(rawSheet && rawSheet.allSkills && Object.keys(rawSheet.allSkills).length > 0);
+  const toggleHTML = renderSimulateSkillsToggle(hasSheet);
+
+  // Training time is always computed against your REAL trained levels (useRealSkillsOnly), never
+  // the simulated ones - otherwise arming Simulate All to 5 would make computeMissingSkills report
+  // nothing missing at all, and the training-time section (whose entire job is "here's how long
+  // until that simulated preview is actually true") would have nothing left to show right when it's
+  // most relevant to be looking at it.
+  const realMissing = window.simulateSkillsToFive ? computeMissingSkills(window.recipeTreeRoot, true) : missing;
+
   if (missing.length === 0) {
-    const sheet = window.safeParseJSON(localStorage.getItem('eve_char_skills'), null);
-    const hasSheet = sheet && sheet.allSkills && Object.keys(sheet.allSkills).length > 0;
-    body.innerHTML = hasSheet
-      ? `<div class="fo-card-note" style="color:var(--accent);">Every component you're currently building is covered by your trained skills.</div>`
-      : `<div class="fo-card-note">Log in via ESI SSO (top right) to check your trained skills against what these blueprints actually require.</div>`;
-    return;
+    body.innerHTML = toggleHTML + (hasSheet
+      ? `<div class="fo-card-note" style="color:var(--accent);">Every component you're currently building is covered by your trained skills${window.simulateSkillsToFive ? ' (simulated at V)' : ''}.</div>`
+      : `<div class="fo-card-note">Log in via ESI SSO (top right) to check your trained skills against what these blueprints actually require.</div>`)
+      + `<div id="skills-training-time-body"></div>`;
+  } else {
+    body.innerHTML = toggleHTML + `<div id="skills-training-time-body"></div>` + missing.map(item => `
+      <div style="margin-bottom:10px;">
+        <div class="text-white font-semibold text-xs mb-1 truncate">${window.esc(item.name)}</div>
+        ${item.missing.map(m => `
+          <div class="fo-row" style="padding:3px 0;">
+            <span class="fo-row-label" style="color:#e85555;" title="Skill ID ${m.skillId}">${window.esc(m.skillName)}</span>
+            <span class="text-[11px] mono font-semibold" style="color:#e85555;">Need ${SKILL_LEVEL_ROMAN[m.required] || m.required} &middot; have ${SKILL_LEVEL_ROMAN[m.trained] || m.trained}</span>
+          </div>
+        `).join('')}
+      </div>
+    `).join('');
   }
-  body.innerHTML = missing.map(item => `
-    <div style="margin-bottom:10px;">
-      <div class="text-white font-semibold text-xs mb-1 truncate">${window.esc(item.name)}</div>
-      ${item.missing.map(m => `
-        <div class="fo-row" style="padding:3px 0;">
-          <span class="fo-row-label" style="color:#e85555;" title="Skill ID ${m.skillId}">${window.esc(m.skillName)}</span>
-          <span class="text-[11px] mono font-semibold" style="color:#e85555;">Need ${SKILL_LEVEL_ROMAN[m.required] || m.required} &middot; have ${SKILL_LEVEL_ROMAN[m.trained] || m.trained}</span>
-        </div>
-      `).join('')}
-    </div>
-  `).join('');
+
+  renderSkillTrainingTimes(realMissing);
 }
 window.updateMissingSkillsUI = updateMissingSkillsUI;
+
+// How long until every one of these is actually trained, given the character's own real attributes
+// (implant/remap-inclusive - see the attributes fetch's own comment in js/esi.js) - answers "how
+// long do I need to train for those skills" directly, not just "what's missing." Dedupes across
+// items first: the same skill can legitimately be required by several different components in one
+// build (e.g. two different T2 components both needing the same Encryption Methods level) - training
+// it once to the HIGHEST level any of them needs covers every appearance, so it should only ever be
+// counted, and its own training time only computed, once - not once per item that happens to need it.
+async function renderSkillTrainingTimes(missingByItem) {
+  const container = document.getElementById('skills-training-time-body');
+  if (!container) return;
+  if (!missingByItem || missingByItem.length === 0) { container.innerHTML = ''; return; }
+
+  const uniqueSkills = new Map();
+  missingByItem.forEach(item => {
+    item.missing.forEach(m => {
+      const existing = uniqueSkills.get(m.skillId);
+      if (!existing || m.required > existing.required) {
+        uniqueSkills.set(m.skillId, { skillId: m.skillId, skillName: m.skillName, required: m.required, trained: m.trained });
+      }
+    });
+  });
+
+  const charAttributes = window.safeParseJSON(localStorage.getItem('eve_char_attributes'), null);
+
+  // fetchSkillTrainingInfo hits a live ESI call only the FIRST time any given skill is ever asked
+  // for (permanently cached after - see its own comment) - cheap enough in the common case
+  // (updateMissingSkillsUI runs on every recalculate()) to just recompute plainly each time rather
+  // than adding a separate diffing/memoization layer on top for what's normally a handful of skills.
+  const results = await Promise.all(Array.from(uniqueSkills.values()).map(async (skill) => {
+    const info = await window.fetchSkillTrainingInfo(skill.skillId);
+    if (!info) return { ...skill, minutes: null };
+    const minutes = window.estimateSkillTrainingMinutes(info.rank, skill.trained, skill.required, charAttributes, info.primaryAttr, info.secondaryAttr);
+    return { ...skill, minutes };
+  }));
+
+  // The container this writes into may no longer exist, or may belong to a totally different tree
+  // by the time these ESI calls resolve (recalculate() rebuilds it on every render, and the user is
+  // free to switch products mid-fetch) - re-check rather than trust the reference captured above.
+  const liveContainer = document.getElementById('skills-training-time-body');
+  if (!liveContainer) return;
+
+  const knownResults = results.filter(r => r.minutes != null);
+  const totalMinutes = knownResults.reduce((sum, r) => sum + r.minutes, 0);
+  const allKnown = knownResults.length === results.length;
+
+  liveContainer.innerHTML = `
+    <div class="fo-card" style="margin-bottom:10px;">
+      <div class="fo-card-title">${window.svgIcon ? window.svgIcon('hourglass', { style: 'width:13px;height:13px;display:inline-block;vertical-align:-2px;margin-right:4px;' }) : ''}Estimated Training Time</div>
+      ${!charAttributes ? `<div class="fo-card-note">Log in via ESI SSO to use your real attributes (remap + implants already included) - showing an unskilled 17/17/17/17/17 estimate until then.</div>` : ''}
+      ${results.map(r => `
+        <div class="fo-row" style="padding:3px 0;">
+          <span class="fo-row-label" title="Skill ID ${r.skillId}">${window.esc(r.skillName)} <span class="mono" style="opacity:0.7;">${SKILL_LEVEL_ROMAN[r.trained] || r.trained}&rarr;${SKILL_LEVEL_ROMAN[r.required] || r.required}</span></span>
+          <span class="text-[11px] mono font-semibold" style="color:var(--accent);">${r.minutes != null ? window.formatDurationCompact(r.minutes * 60) : 'unknown'}</span>
+        </div>
+      `).join('')}
+      <div class="fo-row" style="padding:5px 0 0; margin-top:4px; border-top:1px solid #3a3025;">
+        <span class="fo-row-label font-semibold">Total${allKnown ? '' : ' (partial)'}</span>
+        <span class="text-[11px] mono font-bold" style="color:var(--accent);">${window.formatDurationCompact(totalMinutes * 60)}</span>
+      </div>
+      <div class="fo-card-note" style="margin-top:6px;">Assumes Omega training speed and full SP already banked at your current trained level - doesn't account for partial progress on a skill mid-training.</div>
+    </div>
+  `;
+}
+window.renderSkillTrainingTimes = renderSkillTrainingTimes;
 
 function saveTaxSettings() {
   try {
@@ -3024,7 +3138,11 @@ function createNodeCard(node, autoCompact) {
   let buildTimeUI = '';
   if (node.isBuildingSelf && node.isManufacturable) {
     const baseTime = extractBuildTime(node.recipe);
-    const skills = window.safeParseJSON(localStorage.getItem('eve_char_skills'), { industry: 5, advIndustry: 5, allSkills: { [window.REACTIONS_SKILL_ID || 45746]: 5 } });
+    // getEffectiveCharSkills, not a direct localStorage read - so this tooltip's own displayed
+    // levels stay consistent with whatever calculateAdjustedJobSeconds actually used a few lines
+    // down (including Simulate All to 5, if armed) instead of quietly showing the real level next to
+    // a simulated time.
+    const skills = window.getEffectiveCharSkills ? window.getEffectiveCharSkills() : window.safeParseJSON(localStorage.getItem('eve_char_skills'), { industry: 5, advIndustry: 5, allSkills: { [window.REACTIONS_SKILL_ID || 45746]: 5 } });
     const structureType = window.getActiveStructureType ? window.getActiveStructureType() : { shortLabel: 'Sotiyo', teBonus: 30.0 };
     const structureName = structureType.shortLabel;
     const structureTEBonus = `${structureType.teBonus}%`;

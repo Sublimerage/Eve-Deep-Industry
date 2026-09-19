@@ -791,9 +791,33 @@ function logSkillDiagnosticOnce(typeId, message) {
 const REACTIONS_SKILL_ID = 45746;
 window.REACTIONS_SKILL_ID = REACTIONS_SKILL_ID;
 
+// Single shared read of the trained skill sheet - every real read site (build-time math here, the
+// Missing Required Skills check, the ME/TE hover tooltip) goes through this instead of its own
+// separate localStorage.getItem('eve_char_skills') call, so the "Simulate All to 5" toggle
+// (js/app.js) only has to be taught to ONE place, not kept in sync across several. When armed, every
+// lookup into allSkills - including one for a skill that was never trained at all - returns at least
+// 5 via a Proxy, since simulating "what if every needed skill were trained to V" is the whole point;
+// a skill genuinely already above 5 is impossible (5 is the real in-game cap), so max(real, 5) can
+// never under-report anything real, only stand in for what isn't trained yet.
+function getEffectiveCharSkills() {
+  const raw = window.safeParseJSON(localStorage.getItem('eve_char_skills'), { industry: 5, advIndustry: 5, allSkills: { [REACTIONS_SKILL_ID]: 5 } });
+  if (!window.simulateSkillsToFive) return raw;
+  return {
+    industry: Math.max(raw.industry || 0, 5),
+    advIndustry: Math.max(raw.advIndustry || 0, 5),
+    allSkills: new Proxy(raw.allSkills || {}, {
+      get(target, prop) {
+        if (typeof prop !== 'string' && typeof prop !== 'number') return target[prop];
+        return Math.max(target[prop] || 0, 5);
+      }
+    })
+  };
+}
+window.getEffectiveCharSkills = getEffectiveCharSkills;
+
 function calculateAdjustedJobSeconds(baseTimeSeconds, customTE, runsNeeded, isReaction, productTypeId, requiredSkills, isInvention) {
   if (!baseTimeSeconds || baseTimeSeconds <= 0) return 0;
-  const skills = window.safeParseJSON(localStorage.getItem('eve_char_skills'), { industry: 5, advIndustry: 5, allSkills: { [REACTIONS_SKILL_ID]: 5 } });
+  const skills = getEffectiveCharSkills();
 
   // The isReaction PARAMETER also gets passed true by invention.js purely to reuse this
   // function's "skip TE-research" behavior below - invention isn't actually a reaction, and its
