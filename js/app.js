@@ -1995,6 +1995,7 @@ function saveActiveState() {
     // (both saved right alongside these), which is exactly what loadSavedState restores first.
     localStorage.setItem('eve_collapsed_instance_ids', JSON.stringify(Array.from(window.collapsedInstanceIds || [])));
     localStorage.setItem('eve_expanded_override_ids', JSON.stringify(Array.from(window.expandedOverrideIds || [])));
+    localStorage.setItem('eve_compact_visible_ids', JSON.stringify(Array.from(window.compactVisibleIds || [])));
     localStorage.setItem('eve_compact_all_mode', window.compactAllMode ? '1' : '0');
   } catch (e) { console.warn('[App] Failed to save the current build state - it will be lost on reload:', e); }
 }
@@ -2013,6 +2014,7 @@ function loadSavedState() {
     window.rootCustomPrice = parseFloat(localStorage.getItem('eve_root_custom_price')) || 0;
     window.collapsedInstanceIds = new Set(window.safeParseJSON(localStorage.getItem('eve_collapsed_instance_ids'), []));
     window.expandedOverrideIds = new Set(window.safeParseJSON(localStorage.getItem('eve_expanded_override_ids'), []));
+    window.compactVisibleIds = new Set(window.safeParseJSON(localStorage.getItem('eve_compact_visible_ids'), []));
     window.compactAllMode = localStorage.getItem('eve_compact_all_mode') === '1';
 
     const savedProduct = window.safeParseJSON(localStorage.getItem('eve_active_product'), null);
@@ -2404,8 +2406,19 @@ function renderSubtreeColumns(container, rootNode) {
         autoCompactIds.add(node.instanceId);
         return;
       }
-      const effectivelyCompact = window.collapsedInstanceIds.has(nodeStableKey(node))
-        || (overCap && !window.expandedOverrideIds.has(nodeStableKey(node)));
+      const key = nodeStableKey(node);
+      // Individually compacting ONE card (Space, a chip's own click, the per-card "Compact" button -
+      // all toggleNodeCollapse) used to go through collapsedInstanceIds below, which hides whatever
+      // was underneath it too - reported directly as pressing Space to compact a card hiding its own
+      // connections, when the actual ask was Compact All's per-node treatment (shrink, stay visible
+      // and connected) applied to just that one card. compactVisibleIds is that: same chip render,
+      // deliberately skips markDescendantsHidden exactly like Compact All does above.
+      if (window.compactVisibleIds.has(key)) {
+        autoCompactIds.add(node.instanceId);
+        return;
+      }
+      const effectivelyCompact = window.collapsedInstanceIds.has(key)
+        || (overCap && !window.expandedOverrideIds.has(key));
       if (effectivelyCompact) {
         autoCompactIds.add(node.instanceId);
         markDescendantsHidden(node);
@@ -2556,13 +2569,20 @@ async function withRootPanAnchor(action) {
 }
 window.withRootPanAnchor = withRootPanAnchor;
 
-// A node can be compact for two different reasons - explicitly collapsed, or auto-compacted for
-// sitting in an oversized column (renderTreeDiagram) - and a click always means "flip whatever
-// it's actually showing right now," not "toggle the explicit flag specifically" (which would be a
-// no-op on an auto-compacted chip that was never explicitly collapsed in the first place - it'd try
-// to ADD it to collapsedInstanceIds, which does nothing new since the auto-compact rule already had
-// it compact). Reading the card's own rendered class is the simplest single source of truth for
-// "which one is it right now" without duplicating the sibling-count threshold logic here too.
+// A node can be compact for three different reasons - explicitly collapsed (Collapse All - hides
+// descendants), individually compacted (this function, on a single card - does NOT hide
+// descendants), or auto-compacted for sitting in an oversized column (renderTreeDiagram) - and a
+// click always means "flip whatever it's actually showing right now," not "toggle one specific flag"
+// (which would be a no-op on an auto-compacted chip that was never explicitly touched in the first
+// place). Reading the card's own rendered class is the simplest single source of truth for "which
+// one is it right now" without duplicating the sibling-count threshold logic here too.
+//
+// Compacting HERE always goes through compactVisibleIds, never collapsedInstanceIds - reported
+// directly: pressing Space to compact one selected card was hiding its connections to whatever was
+// underneath it, when the actual ask was the same "shrink but stay visible and connected" treatment
+// Compact All already gives the whole tree, just scoped to one card. collapsedInstanceIds (the
+// hiding one) is now reserved for Collapse All alone - this function, the compact chip's own click,
+// and the per-card "Compact" button all route through the non-hiding set instead.
 async function toggleNodeCollapse(e, instanceId, pathKey) {
   if (e) e.stopPropagation();
   // The inline onclick="...(event, id, '${node.pathKey}')" build (below) stringifies a genuinely
@@ -2571,16 +2591,17 @@ async function toggleNodeCollapse(e, instanceId, pathKey) {
   // a meaningless shared key instead of falling back to its own instanceId.
   const key = (pathKey && pathKey !== 'undefined') ? pathKey : instanceId;
   const cardEl = document.getElementById(`node-card-${instanceId}`);
-  const currentlyCompact = cardEl ? cardEl.classList.contains('diagram-node-compact') : window.collapsedInstanceIds.has(key);
+  const currentlyCompact = cardEl ? cardEl.classList.contains('diagram-node-compact') : (window.collapsedInstanceIds.has(key) || window.compactVisibleIds.has(key));
   if (currentlyCompact) {
-    // Expand: force full-size regardless of why it was compact - just clearing
-    // collapsedInstanceIds wouldn't be enough if the column is still over the auto-compact
-    // threshold, which would otherwise put it right back into a chip on the next render.
+    // Expand: force full-size regardless of why it was compact - just clearing one of the two
+    // compact sets wouldn't be enough if the column is still over the auto-compact threshold
+    // (expandedOverrideIds covers that), or if it got here via the OTHER compact set somehow.
     window.collapsedInstanceIds.delete(key);
+    window.compactVisibleIds.delete(key);
     window.expandedOverrideIds.add(key);
   } else {
     window.expandedOverrideIds.delete(key);
-    window.collapsedInstanceIds.add(key);
+    window.compactVisibleIds.add(key);
   }
   await recalculateWithPanAnchor(e);
 }
@@ -2600,39 +2621,50 @@ function markCollapseExpandSeen() {
   if (btn) btn.classList.remove('community-btn-pulse');
 }
 
-function collapseAllNodes() {
+// Wrapped in withRootPanAnchor (app.js) like every other sidebar button - reported directly: this
+// (and Expand All/Compact All below) used to always recenter the camera on the root via
+// centerOnRootNode() afterward, which is exactly the kind of unrequested camera move that was
+// already fixed for Build All/Buy All/the Layer buttons/the optimizers - the rule is the camera only
+// ever moves for an action that's explicitly ABOUT the camera (F, right-click drag, scroll), never
+// as a side effect of a state-changing button. Root now just stays pinned where it already was.
+async function collapseAllNodes() {
   if (!window.recipeTreeRoot) return;
   markCollapseExpandSeen();
   window.compactAllMode = false; // a real hide, not the "shrink but keep everything visible" mode
   function walk(node, isRoot) {
     if (!node) return;
     if (!isRoot) {
-      window.collapsedInstanceIds.add(nodeStableKey(node));
-      window.expandedOverrideIds.delete(nodeStableKey(node));
+      const key = nodeStableKey(node);
+      window.collapsedInstanceIds.add(key);
+      window.expandedOverrideIds.delete(key);
+      window.compactVisibleIds.delete(key);
     }
     if (node.children) node.children.forEach(c => walk(c, false));
   }
   walk(window.recipeTreeRoot, true);
-  if (typeof window.recalculate === 'function') window.recalculate();
-  centerOnRootNode();
+  await window.withRootPanAnchor(async () => {
+    if (typeof window.recalculate === 'function') window.recalculate();
+  });
 }
 window.collapseAllNodes = collapseAllNodes;
 
 // Forces every node full-size right now, including anything that would otherwise auto-compact for
 // being in an oversized column - a snapshot action (like Collapse All), not a standing "never
 // auto-compact again" mode, so a later switch to an even bigger build still auto-compacts normally.
-function expandAllNodes() {
+async function expandAllNodes() {
   markCollapseExpandSeen();
   window.compactAllMode = false;
   window.collapsedInstanceIds.clear();
+  window.compactVisibleIds.clear();
   function walk(node, isRoot) {
     if (!node) return;
     if (!isRoot) window.expandedOverrideIds.add(nodeStableKey(node));
     if (node.children) node.children.forEach(c => walk(c, false));
   }
   if (window.recipeTreeRoot) walk(window.recipeTreeRoot, true);
-  if (typeof window.recalculate === 'function') window.recalculate();
-  centerOnRootNode();
+  await window.withRootPanAnchor(async () => {
+    if (typeof window.recalculate === 'function') window.recalculate();
+  });
 }
 window.expandAllNodes = expandAllNodes;
 
@@ -2644,14 +2676,16 @@ window.expandAllNodes = expandAllNodes;
 // All, not instead of it. See renderSubtreeColumns' own compactAllMode branch (right above
 // markDescendantsHidden) for the render-side half of this - that's the part that actually skips
 // hiding descendants when this mode is active.
-function compactAllNodes() {
+async function compactAllNodes() {
   if (!window.recipeTreeRoot) return;
   markCollapseExpandSeen();
   window.compactAllMode = true;
   window.collapsedInstanceIds = new Set();
   window.expandedOverrideIds = new Set();
-  if (typeof window.recalculate === 'function') window.recalculate();
-  centerOnRootNode();
+  window.compactVisibleIds = new Set();
+  await window.withRootPanAnchor(async () => {
+    if (typeof window.recalculate === 'function') window.recalculate();
+  });
 }
 window.compactAllNodes = compactAllNodes;
 
@@ -2799,7 +2833,7 @@ function createNodeCard(node, autoCompact) {
   // (nothing to hide - raw materials, "Buy" items) can still be compacted purely to save space, it
   // just has nothing to reveal on expand. The isolated card is excluded even if it would otherwise
   // be compact - isolating a card means you specifically want to see its own detail, not a chip.
-  if (!isRoot && !isIsolated && (window.collapsedInstanceIds.has(nodeStableKey(node)) || (autoCompact && !window.expandedOverrideIds.has(nodeStableKey(node))))) {
+  if (!isRoot && !isIsolated && (window.collapsedInstanceIds.has(nodeStableKey(node)) || window.compactVisibleIds.has(nodeStableKey(node)) || (autoCompact && !window.expandedOverrideIds.has(nodeStableKey(node))))) {
     const compactDisplayName = node.productName || node.name.replace(/ Blueprint$/i, '').replace(/ Reaction Formula$/i, '').replace(/ Formula$/i, '').trim();
     const hiddenCount = countDescendants(node);
 
@@ -2971,20 +3005,9 @@ function createNodeCard(node, autoCompact) {
 
   card.className = `diagram-node glass-card p-2.5 shadow-lg transition-all relative ${cardStyle}`;
   if (borderAccent) card.setAttribute('style', borderAccent);
-  // The compact chip's whole card is one big "click anywhere to expand" target (card.onclick above),
-  // but the expanded card's own body click just selects/highlights (onNodeClick) - reported directly
-  // as "I click it, it expands, but there's no way to compact it back individually" (the small
-  // "Hide"/"Compact" button below IS the way, but nothing about the expanded card itself hints at
-  // it). Making the icon specifically clickable-to-recompact restores that same one-click symmetry
-  // without touching the rest of the card's many other interactive controls (buttons, inputs, the
-  // name's own copy-to-clipboard click) - none of which sit on the icon, so nothing else needs a
-  // stopPropagation added to keep working.
-  const iconCollapseAttrs = (!isRoot && !isIsolated)
-    ? ` onclick="toggleNodeCollapse(event, ${node.instanceId}, '${node.pathKey}')" style="cursor:pointer;" title="Click to collapse to a compact chip"`
-    : '';
   card.innerHTML = `
     <div class="flex items-start space-x-3 border-b border-[#3a3025] pb-2.5 mb-2.5">
-      <img src="${iconUrl}" alt="${window.esc(node.productName || node.name)}" class="w-10 h-10 rounded-md border border-white/10 bg-black/40 flex-shrink-0"${iconCollapseAttrs} onerror="this.onerror=function(){window.handleItemIconLoadError(this);}; this.src='https://images.evetech.net/types/${productTypeId}/icon?size=64';">
+      <img src="${iconUrl}" alt="${window.esc(node.productName || node.name)}" class="w-10 h-10 rounded-md border border-white/10 bg-black/40 flex-shrink-0" onerror="this.onerror=function(){window.handleItemIconLoadError(this);}; this.src='https://images.evetech.net/types/${productTypeId}/icon?size=64';">
       <div class="min-w-0 flex-1">
         <div class="flex items-center justify-between gap-1.5">
           <span class="font-bold text-sm text-white truncate min-w-0 cursor-pointer hover:text-orange-300 hover:underline transition" onclick="copyMaterialNameToClipboard(event, this, '${window.esc(node.productName || node.name.replace(/ Blueprint$/i, '').replace(/ Reaction Formula$/i, '').replace(/ Formula$/i, '').trim()).replace(/'/g, "\\'")}')" title="Click to copy this item's exact name to your clipboard, ready to paste into EVE's search/market">${node.productName || node.name.replace(/ Blueprint$/i, '').replace(/ Reaction Formula$/i, '').replace(/ Formula$/i, '').trim()}</span>${mergedBadge}
@@ -3016,19 +3039,11 @@ function createNodeCard(node, autoCompact) {
                 </div>
               </div>
             ` : ''}
-            ${!isRoot ? (() => {
-              const hasChildren = node.children && node.children.length > 0;
-              // Fixed width sized for "Compact" (the longer of the two labels, measured at
-              // ~87px) - reported directly: switching a component between Build (children
-              // present, "Hide") and Buy (no children, "Compact") made this specific button
-              // visibly resize, which was making the whole card layout feel unstable on top of
-              // the actual pan-compensation work. Both labels now render at the identical width.
-              return `
-              <button onclick="toggleNodeCollapse(event, ${node.instanceId}, '${node.pathKey}')" class="toggle-btn" style="min-width:88px;justify-content:center;" title="Collapse to a compact chip">
-                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6,9 12,15 18,9"/></svg>${hasChildren ? ' Hide' : ' Compact'}
+            ${!isRoot ? `
+              <button onclick="toggleNodeCollapse(event, ${node.instanceId}, '${node.pathKey}')" class="toggle-btn" style="min-width:88px;justify-content:center;" title="Shrink to a compact chip - whatever's underneath stays visible and connected, nothing gets hidden">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6,9 12,15 18,9"/></svg> Compact
               </button>
-            `;
-            })() : ''}
+            ` : ''}
             ${isIsolated ? `
               <button onclick="exitIsolation(event)" class="icon-btn" style="width:26px;height:26px;" title="Exit isolation view">
                 <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" style="width:14px;height:14px;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
