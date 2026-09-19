@@ -2222,6 +2222,20 @@ function recalculate() {
   } else { renderTreeDiagram(window.recipeTreeRoot, priceStrategy, profitSell, roiSell); }
   
   renderBillOfMaterials(window.recipeTreeRoot, brokerFee);
+  // Cleared synchronously, right here, not just left for drawConnectingLines' own svg.innerHTML =
+  // '' 50ms from now - the cards above just got torn down and rebuilt (and, for anything wrapped in
+  // withRootPanAnchor/recalculateWithPanAnchor, panX/panY just jumped to compensate), which moves
+  // every card INSTANTLY via the CSS transform, but the SVG lines are a separate overlay that only
+  // gets its coordinates from drawConnectingLines - so without this, the OLD lines (computed for the
+  // OLD layout) stayed on screen, now visibly misaligned against the ALREADY-MOVED cards, for the
+  // full 50ms gap. Reported directly as connecting lines jumping "a quarter of a screen" to the
+  // right for a split second on Collapse specifically, right after root stopped being measured off
+  // its content-visibility placeholder size (previous fix) - that made the pan correction bigger and
+  // more accurate, which just made this pre-existing 50ms gap far more noticeable than it used to be
+  // by coincidence. An empty beat with no lines for 50ms reads as normal loading; visibly wrong ones
+  // read as broken - same fix either way, just makes the (correct) blank gap the one that's visible.
+  const treeSvgEl = document.getElementById('tree-svg');
+  if (treeSvgEl) treeSvgEl.innerHTML = '';
   setTimeout(drawConnectingLines, 50);
   if (typeof window.updateMissingSkillsUI === 'function') window.updateMissingSkillsUI();
 
