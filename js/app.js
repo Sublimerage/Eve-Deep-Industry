@@ -1985,6 +1985,7 @@ function saveActiveState() {
     // (both saved right alongside these), which is exactly what loadSavedState restores first.
     localStorage.setItem('eve_collapsed_instance_ids', JSON.stringify(Array.from(window.collapsedInstanceIds || [])));
     localStorage.setItem('eve_expanded_override_ids', JSON.stringify(Array.from(window.expandedOverrideIds || [])));
+    localStorage.setItem('eve_compact_all_mode', window.compactAllMode ? '1' : '0');
   } catch (e) { console.warn('[App] Failed to save the current build state - it will be lost on reload:', e); }
 }
 
@@ -2002,6 +2003,7 @@ function loadSavedState() {
     window.rootCustomPrice = parseFloat(localStorage.getItem('eve_root_custom_price')) || 0;
     window.collapsedInstanceIds = new Set(window.safeParseJSON(localStorage.getItem('eve_collapsed_instance_ids'), []));
     window.expandedOverrideIds = new Set(window.safeParseJSON(localStorage.getItem('eve_expanded_override_ids'), []));
+    window.compactAllMode = localStorage.getItem('eve_compact_all_mode') === '1';
 
     const savedProduct = window.safeParseJSON(localStorage.getItem('eve_active_product'), null);
     if (savedProduct && savedProduct.id && savedProduct.name) {
@@ -2228,6 +2230,27 @@ const AUTO_COMPACT_SIBLING_THRESHOLD = 8;
 // node that never went through buildRecursiveRecipeTree (an LP Store synthetic root/redemption node).
 function nodeStableKey(node) { return (node && node.pathKey) || (node && node.instanceId); }
 
+// Rescales a node's ALREADY-FETCHED subtree (children, grandchildren, ...) to a new target quantity
+// and recomputes everything that depends on quantity - runs, EIV, cost, job fee - to match. This is
+// the shared "resize this branch to one combined batch" primitive behind both the same-tier diagram
+// merge (renderSubtreeColumns, below) and the Ledger's own job-queue merge
+// (resolveStockAwareSubBuilds) - both need the SAME real EVE mechanic (ME rounds up once for the
+// WHOLE batch, not once per separate smaller job - confirmed directly: 5 separate 5-run jobs at 3%
+// ME need 245 total material, one combined 25-run job needs only 243) applied the same way, so they
+// can never disagree with each other about what "combined" means. Mutates node in place - callers
+// that need the original values back (like resolveStockAwareSubBuilds' existing save/restore dance
+// around a single node) are responsible for restoring them themselves afterward.
+function rescaleNodeToQuantity(node, qty, facility) {
+  node.qtyNeeded = qty;
+  if (typeof window.scaleTreeQuantities === 'function') window.scaleTreeQuantities(node, facility);
+  if (typeof window.calculateNodeEIV === 'function') window.calculateNodeEIV(node);
+  if (typeof window.calculateTreeNodeCost === 'function') window.calculateTreeNodeCost(node);
+  const feeInputs = typeof window.getActiveFeeInputs === 'function' ? window.getActiveFeeInputs() : { facilityTax: 0, sccSurcharge: 0 };
+  const structureType = typeof window.getActiveStructureType === 'function' ? window.getActiveStructureType() : { costBonus: 0 };
+  if (typeof window.calculateNodeJobFee === 'function') window.calculateNodeJobFee(node, feeInputs.facilityTax, feeInputs.sccSurcharge, (structureType.costBonus || 0) / 100);
+}
+window.rescaleNodeToQuantity = rescaleNodeToQuantity;
+
 // The traverse/merge/auto-compact/column-render pipeline, factored out of renderTreeDiagram so
 // renderIsolatedDiagram can reuse it unchanged for just a subtree - isolating a component used to
 // show only its direct children and direct parent (one level each way), which meant it could never
@@ -2262,26 +2285,38 @@ function renderSubtreeColumns(container, rootNode) {
 
   // Second pass: merge same-tier duplicates of the same material - e.g. five different components
   // in one column all separately needing Tritanium used to render as five near-identical cards.
-  // Scoped deliberately narrow: only TRUE leaves (no children at all, not just currently-hidden
-  // ones) get merged, and only against others in the exact same column. That sidesteps the much
-  // harder question of what a merged BRANCH node's own children would even mean (two consumers
-  // needing different quantities of the same sub-assembly would need different quantities of
-  // THAT node's own inputs too, recursively) - raw materials are the common, high-value case and
-  // have no such problem, since there's nothing beneath them to reconcile.
+  // Two eligible cases: a true leaf (nothing beneath it, so there's nothing to reconcile - raw/
+  // bought materials, the common case), or a Build-mode branch with its own children. The branch
+  // case used to be excluded entirely (a merged branch's own children would need different
+  // quantities of ITS OWN inputs too, recursively) - resolved by actually recomputing them:
+  // rescaleNodeToQuantity (above) resizes the survivor's WHOLE already-fetched subtree to the
+  // combined total using the same real EVE mechanic (ME rounds once for the whole batch, not once
+  // per separate smaller job), and the other branches' entire subtrees are dropped from rendering
+  // via markSubtreeAsLoser below - their real tree data is untouched (BOM/cost totals elsewhere
+  // still sum every individual instance correctly), only what the diagram draws changes. Connecting
+  // lines need no extra work either way: every one of the original consumers still iterates its own
+  // real child node object when drawing lines (drawConnectingLinesForTree), and mergeRedirect
+  // already sends every one of those - survivor's own instanceId included, via the `|| child.
+  // instanceId` fallback - to the one surviving card's id, so they naturally fan in on it.
   // Runs before auto-compact (below) so the sibling-count threshold judges the column AFTER
   // dedup, not before - a tier that looks like 15 siblings but is really 3 duplicate materials +
   // 9 unique ones should be judged as 9-ish wide, not 15.
   const mergeRedirect = {};
+  const loserInstanceIds = new Set();
+  const facilityForMerge = (window.getActiveStructureType ? window.getActiveStructureType().meBonus : 1.0) / 100;
+  function markSubtreeAsLoser(node) {
+    if (!node) return;
+    loserInstanceIds.add(node.instanceId);
+    (node.children || []).forEach(markSubtreeAsLoser);
+  }
   levels.forEach((nodesAtDepth, depth) => {
     if (!nodesAtDepth || depth === 0) return;
     const groups = new Map();
     nodesAtDepth.forEach(node => {
-      // isBuildingSelf excluded even when childless (max-depth/circular cutoff can leave a
-      // manufactured node with no rendered children) - its own runsNeeded/batchYield surplus and
-      // EIV figures are per-instance and merging would make those numbers wrong, so only true
-      // bought/raw materials (nothing beneath them to reconcile, ever) are eligible.
+      if (loserInstanceIds.has(node.instanceId)) return; // subtree of an earlier (shallower) merge this same pass - already spoken for
       const isTrueLeaf = (!node.children || node.children.length === 0) && !node.isBuildingSelf;
-      if (!isTrueLeaf) return;
+      const isBuildableBranch = node.isBuildingSelf && node.isManufacturable && node.children && node.children.length > 0;
+      if (!isTrueLeaf && !isBuildableBranch) return;
       const pid = node.productTypeId || node.typeId;
       if (!groups.has(pid)) groups.set(pid, []);
       groups.get(pid).push(node);
@@ -2299,7 +2334,13 @@ function renderSubtreeColumns(container, rootNode) {
         return { instanceId: n.instanceId, qtyNeeded: n.qtyNeeded, parentName };
       });
       survivor._mergedQtyNeeded = group.reduce((sum, n) => sum + (n.qtyNeeded || 0), 0);
-      survivor._mergedCost = group.reduce((sum, n) => sum + (n.calculatedCost || 0), 0);
+      if (survivor.isBuildingSelf) {
+        rescaleNodeToQuantity(survivor, survivor._mergedQtyNeeded, facilityForMerge);
+        survivor._mergedCost = survivor.calculatedCost; // the real recomputed combined-batch cost, not a sum of separately-rounded parts
+        for (let i = 1; i < group.length; i++) markSubtreeAsLoser(group[i]);
+      } else {
+        survivor._mergedCost = group.reduce((sum, n) => sum + (n.calculatedCost || 0), 0);
+      }
       for (let i = 1; i < group.length; i++) {
         mergeRedirect[group[i].instanceId] = survivor.instanceId;
         mergedAwayIds.add(group[i].instanceId);
@@ -2309,6 +2350,15 @@ function renderSubtreeColumns(container, rootNode) {
       levels[depth] = nodesAtDepth.filter(n => !mergedAwayIds.has(n.instanceId));
     }
   });
+  // A Build-mode merge's losing branches are dropped entirely, not just at the depth they were
+  // found - their whole subtree (already collected into deeper levels by the traverse pass above)
+  // needs to go too, or their now-superseded, never-rescaled children would render as orphaned
+  // duplicates of the survivor's own freshly-rescaled ones.
+  if (loserInstanceIds.size > 0) {
+    for (let d = 0; d < levels.length; d++) {
+      if (levels[d]) levels[d] = levels[d].filter(n => !loserInstanceIds.has(n.instanceId));
+    }
+  }
   // drawConnectingLinesForTree reads this to redirect a merged-away child's line endpoint to the
   // surviving card - every original parent still iterates its own real child node objects (the
   // tree's actual parent/child relationships are untouched, only which nodes get their own
@@ -2335,6 +2385,15 @@ function renderSubtreeColumns(container, rootNode) {
     if (!nodesAtDepth || depth === 0) return;
     const overCap = nodesAtDepth.length > AUTO_COMPACT_SIBLING_THRESHOLD;
     nodesAtDepth.forEach(node => {
+      // Compact All (compactAllNodes, below) is a different thing from Collapse All/auto-compact -
+      // it renders every card as a small chip WITHOUT hiding what's under it, so the whole tree
+      // stays visible and every chip still connects to the next layer, just shrunk. Deliberately
+      // skips markDescendantsHidden below - that's the one call that actually hides anything, and
+      // this mode's whole point is not to.
+      if (window.compactAllMode) {
+        autoCompactIds.add(node.instanceId);
+        return;
+      }
       const effectivelyCompact = window.collapsedInstanceIds.has(nodeStableKey(node))
         || (overCap && !window.expandedOverrideIds.has(nodeStableKey(node)));
       if (effectivelyCompact) {
@@ -2534,6 +2593,7 @@ function markCollapseExpandSeen() {
 function collapseAllNodes() {
   if (!window.recipeTreeRoot) return;
   markCollapseExpandSeen();
+  window.compactAllMode = false; // a real hide, not the "shrink but keep everything visible" mode
   function walk(node, isRoot) {
     if (!node) return;
     if (!isRoot) {
@@ -2553,6 +2613,7 @@ window.collapseAllNodes = collapseAllNodes;
 // auto-compact again" mode, so a later switch to an even bigger build still auto-compacts normally.
 function expandAllNodes() {
   markCollapseExpandSeen();
+  window.compactAllMode = false;
   window.collapsedInstanceIds.clear();
   function walk(node, isRoot) {
     if (!node) return;
@@ -2564,6 +2625,25 @@ function expandAllNodes() {
   centerOnRootNode();
 }
 window.expandAllNodes = expandAllNodes;
+
+// Compact All - deliberately different from Collapse All: that one (and plain auto-compact) hides
+// every descendant of whatever it compacts, which is what actually shrinks a runaway-tall build,
+// but also means you lose the ability to see how anything deeper connects. This shrinks EVERY card
+// in the whole tree down to a small chip WITHOUT hiding anything - the full structure, every layer,
+// stays visible and connected, just much smaller - reported directly as wanted alongside Collapse
+// All, not instead of it. See renderSubtreeColumns' own compactAllMode branch (right above
+// markDescendantsHidden) for the render-side half of this - that's the part that actually skips
+// hiding descendants when this mode is active.
+function compactAllNodes() {
+  if (!window.recipeTreeRoot) return;
+  markCollapseExpandSeen();
+  window.compactAllMode = true;
+  window.collapsedInstanceIds = new Set();
+  window.expandedOverrideIds = new Set();
+  if (typeof window.recalculate === 'function') window.recalculate();
+  centerOnRootNode();
+}
+window.compactAllNodes = compactAllNodes;
 
 // Stops the Collapse button's pulse before it ever plays for a returning visitor - same reasoning
 // as initCommunityMenuButton (the static HTML always starts with the class present, so a fresh
@@ -3203,7 +3283,63 @@ function resolveStockAwareSubBuilds(root, facility) {
 
   const rootMaterials = extractJobMaterialsForNode(root);
   resolveLevel(rootMaterials, root);
-  return { rootMaterials, subBuilds };
+  return { rootMaterials, subBuilds: mergeDuplicateSubBuilds(subBuilds, facility) };
+}
+
+// Same material needed by several different branches (e.g. a capital component used by many
+// different modules) used to queue one separate small job per branch - no point building the same
+// thing 5 separate times when it's really one thing needed 5x over. Groups subBuilds by product,
+// and for any group of 2+, discards the individual entries for one combined one: sums their net
+// quantities, rounds up to combined whole runs (same "round once for the whole batch" real EVE
+// mechanic as rescaleNodeToQuantity, js/app.js's diagram merge, and the direct comparison this was
+// built from - 5 separate 5-run jobs at 3% ME need 245 material total, one combined 25-run job
+// needs only 243), and recomputes materials/cost/time for that combined job fresh rather than
+// summing 5 separately-rounded results. Reuses one representative real node (temporarily resized
+// and restored after, same as resolveLevel's own single-node dance above) rather than any of the
+// others - which specific one is arbitrary, they're all the same product.
+function mergeDuplicateSubBuilds(subBuilds, facility) {
+  const groups = new Map();
+  subBuilds.forEach(sb => {
+    const pid = sb.node.productTypeId || sb.node.typeId;
+    if (!groups.has(pid)) groups.set(pid, []);
+    groups.get(pid).push(sb);
+  });
+
+  const merged = [];
+  groups.forEach(group => {
+    if (group.length < 2) { merged.push(group[0]); return; }
+
+    const representative = group[0].node;
+    const combinedNetQty = group.reduce((sum, sb) => sum + sb.netQtyNeeded, 0);
+    const combinedStockConsumed = group.reduce((sum, sb) => sum + (sb.stockConsumed || 0), 0);
+    const batchYield = representative.batchYield || 1;
+    const combinedNetRuns = Math.ceil(combinedNetQty / batchYield);
+
+    const originalRunsNeeded = representative.runsNeeded;
+    const originalQtyNeeded = representative.qtyNeeded;
+    representative.runsNeeded = combinedNetRuns;
+    representative.qtyNeeded = combinedNetRuns * batchYield;
+    if (typeof window.scaleTreeQuantities === 'function') window.scaleTreeQuantities(representative, facility);
+
+    const materials = extractJobMaterialsForNode(representative);
+    const calculatedCost = typeof window.calculateTreeNodeCost === 'function' ? window.calculateTreeNodeCost(representative) : 0;
+    const totalBuildSeconds = typeof calculateTotalBuildSeconds === 'function' ? calculateTotalBuildSeconds(representative) : 0;
+
+    merged.push({
+      node: representative,
+      stockConsumed: combinedStockConsumed,
+      netQtyNeeded: combinedNetRuns * batchYield,
+      netRunsNeeded: combinedNetRuns,
+      materials,
+      calculatedCost,
+      totalBuildSeconds
+    });
+
+    representative.runsNeeded = originalRunsNeeded;
+    representative.qtyNeeded = originalQtyNeeded;
+    if (typeof window.scaleTreeQuantities === 'function') window.scaleTreeQuantities(representative, facility);
+  });
+  return merged;
 }
 
 function addCurrentJobToLedger(e) {
@@ -4146,6 +4282,7 @@ if (viewport) {
       window.startX = e.clientX - window.panX;
       window.startY = e.clientY - window.panY;
       viewport.style.cursor = 'grabbing';
+      suspendCardBlurDuringPanZoom();
     }
   });
 
@@ -4164,6 +4301,7 @@ if (viewport) {
     try { viewport.releasePointerCapture(window.panPointerId); } catch (err) {}
     window.panPointerId = null;
     viewport.style.cursor = 'grab';
+    resumeCardBlurAfterPanZoom(0);
   }
   window.addEventListener('pointerup', endViewportPan);
   window.addEventListener('pointercancel', endViewportPan);
@@ -4186,7 +4324,35 @@ if (viewport) {
 
     updateTransform();
     drawConnectingLines();
+    // No pointerup-equivalent for a wheel gesture, so debounce it instead - each tick pushes the
+    // resume back out, and it only actually fires once scrolling has genuinely stopped for a beat.
+    suspendCardBlurDuringPanZoom();
+    resumeCardBlurAfterPanZoom(150);
   }, { passive: false });
+}
+
+// Every tree card has backdrop-filter: blur() for the "glass" look (see .glass-card's own comment
+// on why that's kept even though it's expensive) - fine for a static card, but reported directly
+// as "the canvas navigation becomes quite laggy" on a big capital ship build, and measured directly:
+// a stress test at ~1500 rendered cards (a fully-expanded capital ship after Build All easily
+// reaches this - merged materials and auto-compact both help, but a wide-and-shallow tree, or one
+// that's had Expand All used on it, can still land here) went from ~11ms/frame with blur off to
+// ~2000ms/frame with it on, while panning - the browser has to re-sample the blur for every single
+// card on every frame the content moves under it. Suspending it for the exact duration of an active
+// pan or zoom gesture (never permanently - see resume below) keeps the identical look the rest of
+// the time, since a still card costs nothing extra, while eliminating the actual laggy moment. Scoped
+// to just #pan-zoom-content's own cards via the CSS selector (css/styles.css) - the header/sidebar/
+// BOM panel have a small, fixed element count regardless of tree size and were never the problem.
+let cardBlurResumeTimeout = null;
+function suspendCardBlurDuringPanZoom() {
+  if (content) content.classList.add('pan-zoom-active');
+  clearTimeout(cardBlurResumeTimeout);
+}
+function resumeCardBlurAfterPanZoom(delayMs) {
+  clearTimeout(cardBlurResumeTimeout);
+  cardBlurResumeTimeout = setTimeout(() => {
+    if (content) content.classList.remove('pan-zoom-active');
+  }, delayMs);
 }
 
 function updateTransform() {
