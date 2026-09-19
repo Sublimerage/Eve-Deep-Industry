@@ -211,6 +211,11 @@ img {
   content-visibility: auto;
   contain-intrinsic-size: 352px 280px;
 }
+/* Opted out of content-visibility:auto above - see createNodeCard's own comment (js/app.js) on why
+   the one card every pan-anchor correction measures needs to always report its true, real size. */
+.diagram-node.diagram-node-root {
+  content-visibility: visible;
+}
 .diagram-node.diagram-node-compact {
   content-visibility: visible;
 }
