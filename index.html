@@ -10,7 +10,7 @@
 <title>Eve Deep Industry — Calculator</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23d3915a' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='5' r='2.6'/%3E%3Ccircle cx='6' cy='18.5' r='2.6'/%3E%3Ccircle cx='12' cy='18.5' r='2.6'/%3E%3Ccircle cx='18' cy='18.5' r='2.6'/%3E%3Cpath d='M12 7.6v2.6M12 10.2L6 15.9M12 10.2v5.7M12 10.2l6 5.7'/%3E%3C/svg%3E">
 <link class="cache-bust" rel="stylesheet" href="css/tailwind-build.css?v=1.0.16">
-<link class="cache-bust" rel="stylesheet" href="css/styles.css?v=27.88.0">
+<link class="cache-bust" rel="stylesheet" href="css/styles.css?v=27.90.0">
 <script>(function(){try{var t=localStorage.getItem('eve_color_theme');if(t&&t!=='lime')document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
 <!-- GoatCounter - privacy-friendly page-view analytics, no cookies/consent banner needed -->
 <script data-goatcounter="https://sublimerage.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
@@ -611,6 +611,10 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;"><polyline points="7,4 12,9 17,4"/><polyline points="7,20 12,15 17,20"/></svg>
           Collapse
         </button>
+        <button onclick="compactAllNodes()" id="compact-all-btn" class="btn-glass btn-glass-muted px-2.5 py-1.5 text-[11px] flex items-center gap-1" title="Shrink every card in the whole tree to a small chip, without hiding anything - unlike Collapse, every layer stays visible and connected, just much smaller">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;"><polyline points="4,14 10,14 10,20"/><polyline points="20,10 14,10 14,4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+          Compact All
+        </button>
         <button onclick="expandAllNodes()" id="expand-all-btn" class="btn-glass btn-glass-muted px-2.5 py-1.5 text-[11px] flex items-center gap-1" title="Expand every collapsed branch">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;"><polyline points="7,9 12,4 17,9"/><polyline points="7,15 12,20 17,15"/></svg>
           Expand
@@ -875,7 +879,7 @@
   <script src="js/esi.js?v=15.8.30" defer></script>
   <script src="js/tree.js?v=15.1.5" defer></script>
   <script src="js/optimizers.js?v=15.4.15" defer></script>
-  <script src="js/app.js?v=15.88.0" defer></script>
+  <script src="js/app.js?v=15.91.0" defer></script>
   <script src="js/custom-select.js?v=1.5.0" defer></script>
 </body>
 </html>
