@@ -3753,9 +3753,13 @@ function highlightNodeByTypeId(typeId) {
     targetNode = resolveRenderedNode(targetNode);
     const needsExpand = ensureNodeVisible(targetNode);
     window.selectedInstanceId = targetNode.instanceId;
+    // scheduleConnectingLinesRedraw, not a direct call - when needsExpand is true, the
+    // recalculate() just above already scheduled its own pending redraw (see its own comment); a
+    // direct call here would draw correctly immediately and then get clobbered by a flicker a frame
+    // later once that still-pending one fires too. Going through the scheduler cancels it instead.
     if (needsExpand && typeof window.recalculate === 'function') window.recalculate();
     applyNodeHighlightClasses();
-    drawConnectingLines();
+    window.scheduleConnectingLinesRedraw();
     centerOnSelectedNode();
   }
 }
@@ -3799,7 +3803,10 @@ function exitIsolation(e) {
   setTimeout(() => {
     window.selectedInstanceId = targetId;
     applyNodeHighlightClasses();
-    drawConnectingLines();
+    // scheduleConnectingLinesRedraw, not a direct call - same reasoning as highlightNodeByTypeId's
+    // own comment: recalculate() above already scheduled its own pending redraw, so a direct call
+    // here would race it instead of replacing it.
+    window.scheduleConnectingLinesRedraw();
     centerOnSelectedNode();
   }, 60);
 }
@@ -3875,7 +3882,13 @@ function centerOnInstanceId(targetId) {
   window.panY = (viewportRect.height / 2) - cardContentCenterY * window.zoomScale;
 
   updateTransform();
-  drawConnectingLines();
+  // scheduleConnectingLinesRedraw, not a direct call - centerOnInstanceId is the shared camera-move
+  // primitive behind F/centerOnRootNode/centerOnSelectedNode, any of which can run right after a
+  // recalculate() that already scheduled its own pending redraw (resetPanZoom's own comment covers
+  // the resetPanZoom -> centerOnRootNode case specifically). Camera just moved again here, so this
+  // redraw should always be the one that actually wins - the scheduler's own cancel-then-reschedule
+  // is exactly that, instead of an earlier still-pending call clobbering this correct one a frame later.
+  window.scheduleConnectingLinesRedraw();
 
   card.classList.add('ring-4', 'ring-orange-400');
   setTimeout(() => card.classList.remove('ring-4', 'ring-orange-400'), 800);
@@ -4544,7 +4557,16 @@ function resetPanZoom() {
   window.panX = 0;
   window.panY = 0;
   updateTransform();
-  drawConnectingLines();
+  // Routed through the same debounced scheduler recalculate() itself uses, not a direct call -
+  // resetPanZoom runs right after recalculate() on every fresh product load (selectItem's
+  // !preserveView branch), which had ALREADY scheduled its own rAF-based redraw a moment earlier.
+  // Calling drawConnectingLines() directly here drew the lines correctly immediately, but that
+  // earlier scheduled redraw was still pending and fired anyway a frame later, clearing this
+  // already-correct SVG and redrawing the identical content again - a real, guaranteed clear-then-
+  // redraw flicker on every single page load, not just an occasional one. Going through the
+  // scheduler here cancels that pending call instead of racing it, so only the last one (this one)
+  // actually runs.
+  window.scheduleConnectingLinesRedraw();
   centerOnRootNode();
 }
 
