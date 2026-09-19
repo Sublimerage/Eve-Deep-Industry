@@ -258,6 +258,17 @@
                 <button id="build-all-btn" onclick="buildAllComponents()" class="btn-glass py-2 px-3 text-xs">Build All</button>
                 <button onclick="buyAllSubComponents()" class="btn-glass btn-glass-muted py-2 px-3 text-xs">Buy All</button>
               </div>
+              <div class="fo-card-note">Or step through it gradually, one tier at a time, instead of jumping straight to everything:</div>
+              <div class="fo-btn-row">
+                <button onclick="buildOneLayerDeeper()" class="btn-glass py-2 px-3 text-xs flex items-center justify-center gap-1" title="Sets every component one tier below whatever's already Build to Build too - click again to go another layer deeper.">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;flex-shrink:0;"><polyline points="12,5 12,19"/><polyline points="5,12 12,19 19,12"/><line x1="4" y1="21" x2="20" y2="21"/></svg>
+                  +1 Layer
+                </button>
+                <button onclick="buildOneLayerShallower()" class="btn-glass btn-glass-muted py-2 px-3 text-xs flex items-center justify-center gap-1" title="Switches the deepest tier you're currently building back to Buy - the reverse of +1 Layer, one step at a time.">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;flex-shrink:0;"><polyline points="12,19 12,5"/><polyline points="5,12 12,5 19,12"/><line x1="4" y1="3" x2="20" y2="3"/></svg>
+                  -1 Layer
+                </button>
+              </div>
             </div>
 
             <div class="fo-card">
@@ -863,7 +874,7 @@
   <script src="js/config.js?v=15.8.37" defer></script>
   <script src="js/esi.js?v=15.8.30" defer></script>
   <script src="js/tree.js?v=15.1.5" defer></script>
-  <script src="js/optimizers.js?v=15.4.13" defer></script>
+  <script src="js/optimizers.js?v=15.4.14" defer></script>
   <script src="js/app.js?v=15.87.0" defer></script>
   <script src="js/custom-select.js?v=1.5.0" defer></script>
 </body>
