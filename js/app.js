@@ -2455,6 +2455,38 @@ async function recalculateWithPanAnchor(e) {
 }
 window.recalculateWithPanAnchor = recalculateWithPanAnchor;
 
+// Anchors on the root card through an arbitrary async action, regardless of page - for bulk
+// sidebar buttons (Build All, Buy All, +1/-1 Layer) that have no single clicked card to pin the
+// way per-card controls do (selectItem's own anchorInstanceId, recalculateWithPanAnchor's
+// e.target lookup): they're triggered from the Build flyout panel, not a diagram card, and can
+// insert or remove any number of columns anywhere in the tree at once. Root (and whatever's
+// rendered right after it) is what you're actually watching to see the overall effect of a bulk
+// change, same reasoning as recalculateWithPanAnchor's own LP Store branch - just generalized to
+// every page and every bulk action instead of one page's per-card clicks. Reported directly: Build
+// All, Buy All, and the two Layer buttons all visibly moved the camera, unlike every other control.
+// Measures root ONCE before and ONCE after the whole action (not per intermediate rebuild inside
+// it, e.g. Build All's own mark-then-rebuild loop) via pathKey, which survives a rebuild's fresh
+// instanceIds the same way every other anchor lookup here already relies on.
+async function withRootPanAnchor(action) {
+  const rootBefore = window.recipeTreeRoot;
+  const anchorElBefore = rootBefore ? document.getElementById(`node-card-${rootBefore.instanceId}`) : null;
+  const rectBefore = anchorElBefore ? anchorElBefore.getBoundingClientRect() : null;
+  const anchorPathKey = rootBefore ? rootBefore.pathKey : null;
+
+  await action();
+
+  if (!rectBefore || !anchorPathKey || !window.recipeTreeRoot) return;
+  const anchorNodeAfter = findNodeByPathKey(window.recipeTreeRoot, anchorPathKey);
+  const anchorElAfter = anchorNodeAfter ? document.getElementById(`node-card-${anchorNodeAfter.instanceId}`) : null;
+  if (anchorElAfter) {
+    const rectAfter = anchorElAfter.getBoundingClientRect();
+    window.panX -= (rectAfter.left - rectBefore.left);
+    window.panY -= (rectAfter.top - rectBefore.top);
+    updateTransform();
+  }
+}
+window.withRootPanAnchor = withRootPanAnchor;
+
 // A node can be compact for two different reasons - explicitly collapsed, or auto-compacted for
 // sitting in an oversized column (renderTreeDiagram) - and a click always means "flip whatever
 // it's actually showing right now," not "toggle the explicit flag specifically" (which would be a

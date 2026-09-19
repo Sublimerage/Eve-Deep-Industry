@@ -246,64 +246,73 @@ function markAllBuild(node) {
 }
 window.markAllBuild = markAllBuild;
 
+// Wrapped in withRootPanAnchor (app.js) - a sidebar button, not a diagram card, so there's no
+// single clicked card to pin the way per-card Build/Buy toggles do, and this can insert new
+// columns anywhere in the tree at once. Reported directly: the camera visibly jumped on every
+// click here (and on Buy All, +1 Layer, -1 Layer) with no compensation at all.
 async function buildAllComponents() {
   if (!window.recipeTreeRoot) return;
-  const root = window.recipeTreeRoot;
+  await window.withRootPanAnchor(async () => {
+    const root = window.recipeTreeRoot;
 
-  // An LP Store isolated direct-sell offer's root is a hand-built synthetic node with no real
-  // recipe of its own (see toggleBuildSelf's own comment for the full explanation) - selectItem()
-  // would destroy it, so this path only ever needs a flag sync + recalculate, same as before.
-  const isLPSynthetic = root.isLPIsolatedRoot && !root.recipe;
-  if (isLPSynthetic || !window.currentProduct) {
-    markAllBuild(root);
-    syncTreeBuildStates(root);
-    if (typeof window.recalculate === 'function') window.recalculate();
-    return;
-  }
+    // An LP Store isolated direct-sell offer's root is a hand-built synthetic node with no real
+    // recipe of its own (see toggleBuildSelf's own comment for the full explanation) - selectItem()
+    // would destroy it, so this path only ever needs a flag sync + recalculate, same as before.
+    const isLPSynthetic = root.isLPIsolatedRoot && !root.recipe;
+    if (isLPSynthetic || !window.currentProduct) {
+      markAllBuild(root);
+      syncTreeBuildStates(root);
+      if (typeof window.recalculate === 'function') window.recalculate();
+      return;
+    }
 
-  const btn = document.getElementById('build-all-btn');
-  const originalLabel = btn ? btn.innerHTML : null;
-  if (btn) btn.disabled = true;
+    const btn = document.getElementById('build-all-btn');
+    const originalLabel = btn ? btn.innerHTML : null;
+    if (btn) btn.disabled = true;
 
-  let changed = markAllBuild(root);
-  let guard = 0;
-  while (changed && guard < 25) {
-    if (btn) btn.innerHTML = `Building all${'.'.repeat((guard % 3) + 1)}`;
-    await window.selectItem(window.currentProduct.id, window.currentProduct.name, true);
-    changed = markAllBuild(window.recipeTreeRoot);
-    guard++;
-  }
-  if (guard === 0 && typeof window.recalculate === 'function') window.recalculate();
+    let changed = markAllBuild(root);
+    let guard = 0;
+    while (changed && guard < 25) {
+      if (btn) btn.innerHTML = `Building all${'.'.repeat((guard % 3) + 1)}`;
+      await window.selectItem(window.currentProduct.id, window.currentProduct.name, true);
+      changed = markAllBuild(window.recipeTreeRoot);
+      guard++;
+    }
+    if (guard === 0 && typeof window.recalculate === 'function') window.recalculate();
 
-  if (btn) {
-    btn.disabled = false;
-    btn.innerHTML = originalLabel;
-  }
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = originalLabel;
+    }
+  });
 }
 
 // --- Action: +1 Layer of Build ---
 // Exactly ONE mark-then-rebuild pass of Build All's own loop, instead of looping to convergence -
 // each click reveals and builds precisely the next tier down (root's own direct components first,
 // then what was underneath THOSE, and so on), instead of jumping straight to the full depth.
+// Wrapped in withRootPanAnchor (app.js) for the same reason as buildAllComponents above.
 async function buildOneLayerDeeper() {
   if (!window.recipeTreeRoot) return;
-  const root = window.recipeTreeRoot;
+  await window.withRootPanAnchor(async () => {
+    const root = window.recipeTreeRoot;
 
-  const isLPSynthetic = root.isLPIsolatedRoot && !root.recipe;
-  if (isLPSynthetic || !window.currentProduct) {
+    const isLPSynthetic = root.isLPIsolatedRoot && !root.recipe;
+    if (isLPSynthetic || !window.currentProduct) {
+      const changed = markAllBuild(root);
+      syncTreeBuildStates(root);
+      if (typeof window.recalculate === 'function') window.recalculate();
+      if (!changed && typeof window.showToast === 'function') window.showToast('Already fully built - nothing deeper to reveal.', 'info');
+      return;
+    }
+
     const changed = markAllBuild(root);
-    syncTreeBuildStates(root);
-    if (typeof window.recalculate === 'function') window.recalculate();
-    if (!changed && typeof window.showToast === 'function') window.showToast('Already fully built - nothing deeper to reveal.', 'info');
-    return;
-  }
-
-  const changed = markAllBuild(root);
-  if (!changed) {
-    if (typeof window.showToast === 'function') window.showToast('Already fully built - nothing deeper to reveal.', 'info');
-    return;
-  }
-  await window.selectItem(window.currentProduct.id, window.currentProduct.name, true);
+    if (!changed) {
+      if (typeof window.showToast === 'function') window.showToast('Already fully built - nothing deeper to reveal.', 'info');
+      return;
+    }
+    await window.selectItem(window.currentProduct.id, window.currentProduct.name, true);
+  });
 }
 window.buildOneLayerDeeper = buildOneLayerDeeper;
 
@@ -327,36 +336,44 @@ function findBuildFrontier(node, isRoot, frontier) {
 // branch's own deepest built tier by exactly one step. Symmetric with +1 Layer for the common case
 // of clicking them back and forth, but computed fresh from whatever the tree actually looks like
 // right now rather than a separate click-counter - so it stays correct even if some cards were
-// toggled by hand in between, instead of just undoing "the last click" blindly.
+// toggled by hand in between, instead of just undoing "the last click" blindly. Wrapped in
+// withRootPanAnchor (app.js) for the same reason as buildAllComponents above.
 async function buildOneLayerShallower() {
   if (!window.recipeTreeRoot) return;
-  const root = window.recipeTreeRoot;
-  const frontier = [];
-  findBuildFrontier(root, true, frontier);
-  if (frontier.length === 0) {
-    if (typeof window.showToast === 'function') window.showToast('Nothing to retract - only the main item itself is set to Build.', 'info');
-    return;
-  }
-  frontier.forEach(node => {
-    window.buildSelfOverrides[node.typeId] = false;
-    if (node.displayTypeId) window.buildSelfOverrides[node.displayTypeId] = false;
-  });
+  await window.withRootPanAnchor(async () => {
+    const root = window.recipeTreeRoot;
+    const frontier = [];
+    findBuildFrontier(root, true, frontier);
+    if (frontier.length === 0) {
+      if (typeof window.showToast === 'function') window.showToast('Nothing to retract - only the main item itself is set to Build.', 'info');
+      return;
+    }
+    frontier.forEach(node => {
+      window.buildSelfOverrides[node.typeId] = false;
+      if (node.displayTypeId) window.buildSelfOverrides[node.displayTypeId] = false;
+    });
 
-  const isLPSynthetic = root.isLPIsolatedRoot && !root.recipe;
-  if (isLPSynthetic || !window.currentProduct) {
-    syncTreeBuildStates(root);
-    if (typeof window.recalculate === 'function') window.recalculate();
-    return;
-  }
-  await window.selectItem(window.currentProduct.id, window.currentProduct.name, true);
+    const isLPSynthetic = root.isLPIsolatedRoot && !root.recipe;
+    if (isLPSynthetic || !window.currentProduct) {
+      syncTreeBuildStates(root);
+      if (typeof window.recalculate === 'function') window.recalculate();
+      return;
+    }
+    await window.selectItem(window.currentProduct.id, window.currentProduct.name, true);
+  });
 }
 window.buildOneLayerShallower = buildOneLayerShallower;
 
 // --- Action: Buy All Sub-Components ---
+// Wrapped in withRootPanAnchor (app.js) for the same reason as buildAllComponents above - also
+// fixes applyComponentSpreadOptimizer() not being awaited here, which meant the anchor (had one
+// existed before this) would've measured "after" while that async work was still mid-flight.
 async function buyAllSubComponents() {
-  window.buildSelfOverrides = {};
-  syncTreeBuildStates(window.recipeTreeRoot);
-  window.applyComponentSpreadOptimizer();
+  await window.withRootPanAnchor(async () => {
+    window.buildSelfOverrides = {};
+    syncTreeBuildStates(window.recipeTreeRoot);
+    await window.applyComponentSpreadOptimizer();
+  });
 }
 
 // --- Action: Reset Smart Buy Override Modes ---
