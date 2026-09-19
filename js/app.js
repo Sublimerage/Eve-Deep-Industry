@@ -1947,7 +1947,7 @@ async function selectItem(typeId, name, preserveView = false, anchorInstanceId =
     }
   }
 
-  if (!preserveView) { resetPanZoom(); } else { setTimeout(drawConnectingLines, 50); }
+  if (!preserveView) { resetPanZoom(); } else { window.scheduleConnectingLinesRedraw(); }
 
   const statusText = document.getElementById('status-text');
   const statusDot = document.getElementById('status-dot');
@@ -2223,20 +2223,21 @@ function recalculate() {
   
   renderBillOfMaterials(window.recipeTreeRoot, brokerFee);
   // Cleared synchronously, right here, not just left for drawConnectingLines' own svg.innerHTML =
-  // '' 50ms from now - the cards above just got torn down and rebuilt (and, for anything wrapped in
-  // withRootPanAnchor/recalculateWithPanAnchor, panX/panY just jumped to compensate), which moves
-  // every card INSTANTLY via the CSS transform, but the SVG lines are a separate overlay that only
-  // gets its coordinates from drawConnectingLines - so without this, the OLD lines (computed for the
-  // OLD layout) stayed on screen, now visibly misaligned against the ALREADY-MOVED cards, for the
-  // full 50ms gap. Reported directly as connecting lines jumping "a quarter of a screen" to the
-  // right for a split second on Collapse specifically, right after root stopped being measured off
-  // its content-visibility placeholder size (previous fix) - that made the pan correction bigger and
-  // more accurate, which just made this pre-existing 50ms gap far more noticeable than it used to be
-  // by coincidence. An empty beat with no lines for 50ms reads as normal loading; visibly wrong ones
-  // read as broken - same fix either way, just makes the (correct) blank gap the one that's visible.
+  // '' whenever its own scheduled redraw finally runs - the cards above just got torn down and
+  // rebuilt (and, for anything wrapped in withRootPanAnchor/recalculateWithPanAnchor, panX/panY just
+  // jumped to compensate), which moves every card INSTANTLY via the CSS transform, but the SVG lines
+  // are a separate overlay that only gets its coordinates from drawConnectingLines - so without this,
+  // the OLD lines (computed for the OLD layout) stayed on screen, visibly misaligned against the
+  // ALREADY-MOVED cards, until the redraw caught up. Reported directly as connecting lines jumping "a
+  // quarter of a screen" to the right for a split second on Collapse specifically, right after root
+  // stopped being measured off its content-visibility placeholder size (previous fix) - that made the
+  // pan correction bigger and more accurate, which just made this pre-existing gap far more
+  // noticeable than it used to be by coincidence. scheduleConnectingLinesRedraw's own comment covers
+  // the other half of this - why the redraw itself is rAF-based now, not a flat setTimeout, after
+  // clearing synchronously here turned out to introduce its own brief blank flicker on a flat delay.
   const treeSvgEl = document.getElementById('tree-svg');
   if (treeSvgEl) treeSvgEl.innerHTML = '';
-  setTimeout(drawConnectingLines, 50);
+  window.scheduleConnectingLinesRedraw();
   if (typeof window.updateMissingSkillsUI === 'function') window.updateMissingSkillsUI();
 
   saveActiveState();
@@ -3784,7 +3785,7 @@ function isolateComponent(e, instanceId) {
   window.isolatedPathKey = node ? node.pathKey : null;
   window.selectedInstanceId = instanceId;
   renderIsolatedDiagram();
-  setTimeout(drawConnectingLines, 50);
+  window.scheduleConnectingLinesRedraw();
   setTimeout(centerOnSelectedNode, 60);
 }
 
@@ -3893,6 +3894,32 @@ function centerOnSelectedNode() {
 
   centerOnInstanceId(targetId);
 }
+
+// Replaces every plain setTimeout(drawConnectingLines, 50) elsewhere in this file - reported directly as a brief
+// flicker (blank, then lines) right after a page load or a Collapse/Expand click. Direct side effect
+// of the fix just above: clearing the SVG the instant the cards move (instead of only when the
+// redraw itself runs, 50ms later) is what fixed the worse bug - stale, visibly-misaligned old lines
+// - but a flat 50ms wall-clock delay is both slower than it needs to be (the browser is usually
+// done painting the new layout well before that) and, more importantly, un-coalesced: page load in
+// particular can trigger several recalculate() calls in quick succession (the initial render, then
+// the price-fetch completion a moment later, sometimes more) - each one clearing the SVG again the
+// instant it starts, independently of whether the PREVIOUS one's own redraw had even landed yet,
+// which is exactly what a multi-clear-then-redraw flicker looks like. Cancelling any still-pending
+// redraw before scheduling a new one means only the LAST of several rapid recalculate() calls ever
+// actually redraws - and a double requestAnimationFrame (wait for the browser to have already
+// painted the current, just-cleared frame, then draw on the next one) lands far sooner than 50ms
+// while still giving layout every chance to have fully settled first.
+let _pendingLinesRedrawFrame = null;
+function scheduleConnectingLinesRedraw() {
+  if (_pendingLinesRedrawFrame) cancelAnimationFrame(_pendingLinesRedrawFrame);
+  _pendingLinesRedrawFrame = requestAnimationFrame(() => {
+    _pendingLinesRedrawFrame = requestAnimationFrame(() => {
+      _pendingLinesRedrawFrame = null;
+      drawConnectingLines();
+    });
+  });
+}
+window.scheduleConnectingLinesRedraw = scheduleConnectingLinesRedraw;
 
 function drawConnectingLines() {
   const svg = document.getElementById('tree-svg');
