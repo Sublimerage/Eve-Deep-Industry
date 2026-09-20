@@ -311,10 +311,17 @@ function slIsDeductingStock() {
 }
 
 // ── PRICE / VOLUME HELPERS ──────────────────────────────────────────────────────
+// Per-item buy-strategy override set by the Market Spread optimizer below - same idea as the
+// Calculator's own window.customBuyModes, just scoped to this page's own item set. Empty until
+// Optimize is actually run; slSetPriceMode (the plain SELL/BUY toggle) clears it, since picking a
+// single global mode by hand should mean exactly that - not leave stale per-item overrides mixed
+// in from an earlier optimizer run.
+let slBuyModes = {};
 function slPrice(typeId) {
   const p = window.priceCache && window.priceCache[typeId];
   if (!p) return 0;
-  return (slPriceMode === 'buy' ? p.buy : p.sell) || 0;
+  const mode = slBuyModes[typeId] || slPriceMode;
+  return (mode === 'buy' ? p.buy : p.sell) || 0;
 }
 function slFmtVol(v) {
   if (!v) return '0';
@@ -344,6 +351,16 @@ function slFavoriteRowBtnHTML(typeId, name) {
 // columns - reported directly (repeatedly) that the row was overflowing/getting clipped on the
 // right at normal window widths. Fewer, wider-breathing columns fixes that at the source instead
 // of relying on horizontal scroll to see the rest of a row.
+// Small badge showing what the Market Spread optimizer decided for this item, if it's been run -
+// silent (empty string) until then, since an unset item is just following the plain global
+// SELL/BUY toggle and doesn't need its own label.
+function slSpreadBadgeHTML(typeId) {
+  const mode = slBuyModes[typeId];
+  if (!mode) return '';
+  return mode === 'buy'
+    ? `<span class="ship-badge" style="color:var(--cost);" title="Spread wide enough that a Buy Order is worth waiting for">BUY ORDER</span>`
+    : `<span class="ship-badge" style="color:var(--green);" title="Spread too narrow to bother with a Buy Order - buy instantly">INSTANT</span>`;
+}
 function slStandaloneItemRowHTML(it, idx) {
   const stockQty = slStockFor(it.typeId);
   const deduct = slIsDeductingStock();
@@ -354,7 +371,7 @@ function slStandaloneItemRowHTML(it, idx) {
   return `
     <tr>
       <td><img src="${window.getItemIconUrl(it.typeId, it.name, 64)}" style="width:36px;height:36px;border-radius:5px;" onerror="this.style.opacity=.15" loading="lazy"></td>
-      <td><div class="tn" title="${window.esc(it.name)}">${window.esc(it.name)}</div><div class="tm">${slFmtVol(it.volume)} m&sup3;/unit &middot; ${unitPrice > 0 ? window.formatISKCompact(unitPrice) : 'N/A'}/unit</div></td>
+      <td><div class="tn" title="${window.esc(it.name)}">${window.esc(it.name)}${slSpreadBadgeHTML(it.typeId)}</div><div class="tm">${slFmtVol(it.volume)} m&sup3;/unit &middot; ${unitPrice > 0 ? window.formatISKCompact(unitPrice) : 'N/A'}/unit</div></td>
       <td style="text-align:center;">
         <div class="qty qty-sm" style="display:inline-flex;">
           <button onclick="slItemQtyStep(${idx}, -1)" type="button">&minus;</button>
@@ -379,7 +396,7 @@ function slFitItemRowHTML(it, fit, isShip) {
   return `
     <tr${isShip ? ' class="ship-row"' : ''}>
       <td><img src="${window.getItemIconUrl(it.typeId, it.name, 64)}" style="width:36px;height:36px;border-radius:5px;" onerror="this.style.opacity=.15" loading="lazy"></td>
-      <td><div class="tn" title="${window.esc(it.name)}">${window.esc(it.name)}${isShip ? '<span class="ship-badge">SHIP</span>' : ''}</div><div class="tm">${it.qty}&times;/fit &middot; ${slFmtVol(it.volume)} m&sup3;/unit &middot; ${unitPrice > 0 ? window.formatISKCompact(unitPrice) : 'N/A'}/unit</div></td>
+      <td><div class="tn" title="${window.esc(it.name)}">${window.esc(it.name)}${isShip ? '<span class="ship-badge">SHIP</span>' : ''}${slSpreadBadgeHTML(it.typeId)}</div><div class="tm">${it.qty}&times;/fit &middot; ${slFmtVol(it.volume)} m&sup3;/unit &middot; ${unitPrice > 0 ? window.formatISKCompact(unitPrice) : 'N/A'}/unit</div></td>
       <td style="text-align:center; font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--jsl-bright);">${tq.toLocaleString()}</td>
       ${hasStockData ? `<td class="tv"><div style="color:${netQty > 0 ? 'var(--jsl-red)' : 'var(--green)'};">${netQty.toLocaleString()}</div><div class="tm" style="text-align:right;">own: ${stockQty.toLocaleString()}</div></td>` : ''}
       <td class="tp">${unitPrice > 0 ? window.formatISKCompact(totalPrice) : '—'}</td>
@@ -415,10 +432,12 @@ function slRenderList() {
   // name subtitle instead of two dedicated columns, and Have+Buy Qty collapsed into one column
   // (Buy Qty as the primary number, "own: N" as a small subtitle) - the previous 8-column layout
   // was what kept overflowing/clipping its right edge at normal window widths.
+  const isOptimized = Object.keys(slBuyModes).length > 0;
+  const totalHeaderLabel = isOptimized ? 'Total (Optimized)' : `Total (${slPriceMode === 'buy' ? 'Buy' : 'Sell'})`;
   const headCols = `
     <th style="width:60px;"></th><th>Item</th><th style="text-align:center;width:118px;">Qty</th>
     ${hasStockData ? `<th style="text-align:right;width:100px;" title="What you still need to buy after subtracting what you already own (shown below it)">Buy Qty</th>` : ''}
-    <th style="text-align:right;width:100px;" title="${slPriceMode === 'buy' ? 'Buy' : 'Sell'} price &times; quantity">Total (${slPriceMode === 'buy' ? 'Buy' : 'Sell'})</th><th style="width:82px;"></th>
+    <th style="text-align:right;width:100px;" title="${isOptimized ? 'Each item priced by its own Market Spread recommendation - see the badge next to its name' : (slPriceMode === 'buy' ? 'Buy' : 'Sell') + ' price × quantity'}">${totalHeaderLabel}</th><th style="width:82px;"></th>
   `;
   let html = '';
   slFits.forEach(fit => {
@@ -533,7 +552,7 @@ function slUpdateTotals() {
   if (typeCountEl) typeCountEl.textContent = `${typeCount} Type${typeCount !== 1 ? 's' : ''}`;
   const tv = document.getElementById('sl-tv'); if (tv) tv.textContent = slFmtVol(vol);
   const tp = document.getElementById('sl-tp'); if (tp) tp.textContent = price > 0 ? window.formatISKCompact(price) : '—';
-  const tpMode = document.getElementById('sl-tp-mode'); if (tpMode) tpMode.textContent = slPriceMode.toUpperCase();
+  const tpMode = document.getElementById('sl-tp-mode'); if (tpMode) tpMode.textContent = Object.keys(slBuyModes).length > 0 ? 'OPTIMIZED (MIXED)' : slPriceMode.toUpperCase();
   const tq = document.getElementById('sl-tq'); if (tq) tq.textContent = qty.toLocaleString();
   const tu = document.getElementById('sl-tu'); if (tu) tu.textContent = `${typeCount} unique type${typeCount !== 1 ? 's' : ''}`;
   const cap = parseFloat(document.getElementById('sl-hauler-capacity')?.value) || 0;
@@ -549,6 +568,7 @@ function slUpdateTotals() {
 }
 function slSetPriceMode(mode) {
   slPriceMode = mode;
+  slBuyModes = {};
   const sellBtn = document.getElementById('sl-btn-sell'), buyBtn = document.getElementById('sl-btn-buy');
   if (sellBtn) sellBtn.classList.toggle('on', mode === 'sell');
   if (buyBtn) buyBtn.classList.toggle('on', mode === 'buy');
@@ -559,6 +579,31 @@ function slRefreshAllPrices() {
   if (!ids.length) { window.showToast('Nothing to refresh.', 'info'); return; }
   ids.forEach(id => { delete window.priceCache[id]; });
   window.fetchMarketPrices(ids).then(() => { slRenderAll(); window.showToast('Prices refreshed.', 'success'); });
+}
+// Same formula as the Calculator's own Market Spread optimizer (js/optimizers.js's
+// applyComponentSpreadOptimizer): spreadPct = (sell - buy) / sell * 100. Above the threshold, an
+// item is cheap enough as a Buy Order (place it and wait) to be worth it over paying the full ask
+// price on existing Sell Orders; below it, or if either side of the book is missing, instant-buy
+// stays the better call. Per item, not a global switch - overrides the plain SELL/BUY toggle for
+// exactly the items it touches, same "smart per-leaf strategy" idea as the Calculator's version,
+// just applied to a flat shopping list instead of a recipe tree.
+function slApplySpreadOptimizer() {
+  const threshold = parseFloat(document.getElementById('sl-spread-threshold').value) || 0;
+  const typeIds = [...new Set([...slItems.map(i => i.typeId), ...slFits.flatMap(f => f.baseItems.map(i => i.typeId))])];
+  if (!typeIds.length) { window.showToast('Nothing to optimize yet.', 'info'); return; }
+  let buyCount = 0;
+  typeIds.forEach(typeId => {
+    const p = (window.priceCache && window.priceCache[typeId]) || { sell: 0, buy: 0 };
+    if (p.sell > 0 && p.buy > 0 && p.sell > p.buy) {
+      const spreadPct = ((p.sell - p.buy) / p.sell) * 100;
+      slBuyModes[typeId] = spreadPct >= threshold ? 'buy' : 'sell';
+    } else {
+      slBuyModes[typeId] = 'sell';
+    }
+    if (slBuyModes[typeId] === 'buy') buyCount++;
+  });
+  slRenderAll();
+  window.showToast(`Optimized ${typeIds.length} item${typeIds.length !== 1 ? 's' : ''}: ${buyCount} recommended as Buy Order${buyCount !== 1 ? 's' : ''}, ${typeIds.length - buyCount} as instant-buy.`, 'success');
 }
 
 // Multibuy is a "what do I still need to buy" list, so it has to honor the same deduct-stock
