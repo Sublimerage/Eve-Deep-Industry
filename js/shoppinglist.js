@@ -132,9 +132,9 @@ function slRenderSearchDropdown(kind, inputEl, resultsEl, hits) {
   resultsEl.style.top = (r.bottom + 4) + 'px';
   resultsEl.style.width = r.width + 'px';
   resultsEl.innerHTML = hits.map((it, i) => `
-    <div class="lp-list-item sl-ac-row" data-kind="${kind}" data-idx="${i}" style="cursor:pointer;">
-      <img src="${window.getItemIconUrl(it.id, it.name, 32)}" style="width:24px;height:24px;border-radius:4px;flex-shrink:0;" onerror="this.style.opacity=.15" loading="lazy">
-      <span class="truncate" style="color:var(--text);">${window.esc(it.name)}</span>
+    <div class="acr sl-ac-row" data-kind="${kind}" data-idx="${i}">
+      <img src="${window.getItemIconUrl(it.id, it.name, 32)}" loading="lazy" onerror="this.style.opacity=.15">
+      <span class="acn">${window.esc(it.name)}</span>
     </div>
   `).join('');
   resultsEl.classList.remove('hidden');
@@ -321,20 +321,21 @@ function slStandaloneItemRowHTML(it, idx) {
   const totalPrice = unitPrice * netQty;
   return `
     <tr>
-      <td style="width:30px;"><img src="${window.getItemIconUrl(it.typeId, it.name, 32)}" style="width:24px;height:24px;border-radius:4px;" onerror="this.style.opacity=.15" loading="lazy"></td>
-      <td class="truncate" style="color:var(--text);" title="${window.esc(it.name)}">${window.esc(it.name)}<div class="text-xs mono" style="color:var(--text-mute);">${slFmtVol(it.volume * it.qty)} m&sup3; total</div></td>
-      <td style="width:104px;">
-        <div class="sl-qty">
-          <button onclick="slItemQtyStep(${idx}, -1)">&minus;</button>
-          <input type="number" min="0" value="${it.qty}" class="mono num-no-spin" onchange="slSetItemQty(${idx}, this.value)">
-          <button onclick="slItemQtyStep(${idx}, 1)">+</button>
+      <td><img src="${window.getItemIconUrl(it.typeId, it.name, 32)}" style="width:24px;height:24px;border-radius:3px;" onerror="this.style.opacity=.15" loading="lazy"></td>
+      <td><div class="tn" title="${window.esc(it.name)}">${window.esc(it.name)}</div><div class="tm">${slFmtVol(it.volume * it.qty)} m&sup3; total</div></td>
+      <td style="text-align:center;">
+        <div class="qty qty-sm" style="display:inline-flex;">
+          <button onclick="slItemQtyStep(${idx}, -1)" type="button">&minus;</button>
+          <input type="number" min="0" value="${it.qty}" onchange="slSetItemQty(${idx}, this.value)">
+          <button onclick="slItemQtyStep(${idx}, 1)" type="button">+</button>
         </div>
       </td>
-      ${hasStockData ? `<td class="text-right mono text-xs" style="width:70px; color:${stockQty > 0 ? 'var(--green)' : 'var(--text-mute)'};">${stockQty.toLocaleString()}</td>
-      <td class="text-right mono text-xs" style="width:80px; color:${netQty > 0 ? 'var(--red)' : 'var(--green)'};">${netQty.toLocaleString()}</td>` : ''}
-      <td class="text-right mono text-xs" style="width:70px; color:var(--text-mute);">${slFmtVol(it.volume)} m&sup3;</td>
-      <td class="text-right mono text-xs" style="width:90px; color:var(--cost);">${unitPrice > 0 ? window.formatISKCompact(totalPrice) : '—'}</td>
-      <td style="width:28px;"><button onclick="slRemoveItem(${idx})" class="lp-chip-btn" style="padding:2px 6px;" title="Remove"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:11px;height:11px;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></td>
+      ${hasStockData ? `<td class="tv" style="color:${stockQty > 0 ? 'var(--jsl-green)' : 'var(--jsl-dim)'};">${stockQty.toLocaleString()}</td>
+      <td class="tv" style="color:${netQty > 0 ? 'var(--jsl-red)' : 'var(--jsl-green)'};">${netQty.toLocaleString()}</td>` : ''}
+      <td class="tv">${slFmtVol(it.volume)} m&sup3;</td>
+      <td class="tp">${unitPrice > 0 ? window.formatISKCompact(unitPrice) : 'N/A'}</td>
+      <td class="tp">${unitPrice > 0 ? window.formatISKCompact(totalPrice) : '—'}</td>
+      <td style="text-align:right;"><button onclick="slRemoveItem(${idx})" class="btn-g" title="Remove"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></td>
     </tr>
   `;
 }
@@ -347,34 +348,34 @@ function slFitItemRowHTML(it, fit, isShip) {
   const unitPrice = slPrice(it.typeId);
   const totalPrice = unitPrice * netQty;
   return `
-    <tr${isShip ? ' class="sl-fit-card-ship-row"' : ''}>
-      <td style="width:30px;"><img src="${window.getItemIconUrl(it.typeId, it.name, 32)}" style="width:24px;height:24px;border-radius:4px;" onerror="this.style.opacity=.15" loading="lazy"></td>
-      <td class="truncate" style="color:${isShip ? 'var(--cost)' : 'var(--text)'};" title="${window.esc(it.name)}">
-        ${window.esc(it.name)}${isShip ? ' <span class="text-[8px] mono" style="color:var(--cost); letter-spacing:0.08em;">SHIP</span>' : ''}
-        <div class="text-xs mono" style="color:var(--text-mute);">${it.qty}&times; per fit &middot; ${slFmtVol(it.volume * tq)} m&sup3;</div>
-      </td>
-      <td class="text-right mono text-xs" style="width:60px; color:var(--text);">${tq.toLocaleString()}</td>
-      ${hasStockData ? `<td class="text-right mono text-xs" style="width:70px; color:${stockQty > 0 ? 'var(--green)' : 'var(--text-mute)'};">${stockQty.toLocaleString()}</td>
-      <td class="text-right mono text-xs" style="width:80px; color:${netQty > 0 ? 'var(--red)' : 'var(--green)'};">${netQty.toLocaleString()}</td>` : ''}
-      <td class="text-right mono text-xs" style="width:70px; color:var(--text-mute);">${slFmtVol(it.volume)} m&sup3;</td>
-      <td class="text-right mono text-xs" style="width:90px; color:var(--cost);">${unitPrice > 0 ? window.formatISKCompact(totalPrice) : '—'}</td>
-      <td style="width:28px;"><button onclick="slRemoveFitItem(${fit.fitId}, ${it.typeId})" class="lp-chip-btn" style="padding:2px 6px;" title="Remove"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:11px;height:11px;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></td>
+    <tr${isShip ? ' class="ship-row"' : ''}>
+      <td><img src="${window.getItemIconUrl(it.typeId, it.name, 32)}" style="width:24px;height:24px;border-radius:3px;" onerror="this.style.opacity=.15" loading="lazy"></td>
+      <td><div class="tn" title="${window.esc(it.name)}">${window.esc(it.name)}${isShip ? '<span class="ship-badge">SHIP</span>' : ''}</div><div class="tm">${it.qty}&times; per fit &middot; ${slFmtVol(it.volume * tq)} m&sup3;</div></td>
+      <td style="text-align:center; font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--jsl-bright);">${tq.toLocaleString()}</td>
+      ${hasStockData ? `<td class="tv" style="color:${stockQty > 0 ? 'var(--jsl-green)' : 'var(--jsl-dim)'};">${stockQty.toLocaleString()}</td>
+      <td class="tv" style="color:${netQty > 0 ? 'var(--jsl-red)' : 'var(--jsl-green)'};">${netQty.toLocaleString()}</td>` : ''}
+      <td class="tv">${slFmtVol(it.volume)} m&sup3;</td>
+      <td class="tp">${unitPrice > 0 ? window.formatISKCompact(unitPrice) : 'N/A'}</td>
+      <td class="tp">${unitPrice > 0 ? window.formatISKCompact(totalPrice) : '—'}</td>
+      <td style="text-align:right;"><button onclick="slRemoveFitItem(${fit.fitId}, ${it.typeId})" class="btn-g" title="Remove"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></td>
     </tr>
   `;
 }
 
 function slRenderList() {
   const body = document.getElementById('sl-list-body');
+  const foot = document.getElementById('sl-list-foot');
   if (!body) return;
   if (!slFits.length && !slItems.length) {
-    body.innerHTML = `<div class="fo-card-note text-center" style="padding:24px 0;">No items yet — import a fit or search for an item in the sidebar.</div>`;
+    body.innerHTML = `<div class="empty"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1.6"/><circle cx="18.5" cy="21" r="1.6"/><path d="M2 3h3l2.4 12.2a1.8 1.8 0 0 0 1.77 1.45h9a1.8 1.8 0 0 0 1.77-1.45L23 7H6"/></svg></div><div>No items &mdash; import a fit or search above</div></div>`;
+    if (foot) foot.style.display = 'none';
     return;
   }
   const hasStockData = !!(window.userStockMap && Object.keys(window.userStockMap).length);
   const headCols = `
-    <th style="width:30px;"></th><th>Item</th><th class="text-right" style="width:60px;">Qty</th>
-    ${hasStockData ? '<th class="text-right" style="width:70px;">Have</th><th class="text-right" style="width:80px;">Buy Qty</th>' : ''}
-    <th class="text-right" style="width:70px;">Volume</th><th class="text-right" style="width:90px;">${slPriceMode === 'buy' ? 'Buy' : 'Sell'} Total</th><th style="width:28px;"></th>
+    <th style="width:30px;"></th><th>Item</th><th style="text-align:center;width:70px;">Qty</th>
+    ${hasStockData ? '<th style="text-align:right;width:60px;">Have</th><th style="text-align:right;width:70px;">Buy Qty</th>' : ''}
+    <th style="text-align:right;width:70px;">Vol/Unit</th><th style="text-align:right;width:80px;">${slPriceMode === 'buy' ? 'Buy' : 'Sell'}</th><th style="text-align:right;width:90px;">Total</th><th style="width:28px;"></th>
   `;
   let html = '';
   slFits.forEach(fit => {
@@ -385,41 +386,43 @@ function slRenderList() {
     const moduleItems = fit.baseItems.filter(i => i.typeId !== fit.shipTypeId);
     const orderedItems = shipItem ? [shipItem, ...moduleItems] : moduleItems;
     html += `
-      <div class="sl-fit-card">
-        <div class="sl-fit-card-head flex items-center gap-2 px-3 py-2.5" onclick="slToggleFit(${fit.fitId})">
-          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px; transform:rotate(${fit.collapsed ? '-90' : '0'}deg); transition:transform .15s; flex-shrink:0; color:var(--cost);"><polyline points="6 9 12 15 18 9"/></svg>
-          <span class="font-bold text-sm truncate rajdhani tracking-wide" style="color:var(--cost);">${window.esc(fit.name)}</span>
-          ${fit.shipName ? `<span class="text-xs truncate" style="color:var(--text-mute);">[${window.esc(fit.shipName)}]</span>` : ''}
-          <span class="text-xs mono flex-shrink-0 hidden sm:inline" style="color:var(--text-mute); margin-left:auto;">${slFmtVol(fv)} m&sup3; &middot; ${fp > 0 ? window.formatISKCompact(fp) : '—'} &middot; ${moduleCount} module${moduleCount !== 1 ? 's' : ''}</span>
-          <div class="flex items-center gap-1.5 flex-shrink-0" style="margin-left:${fit.shipName ? 'auto' : '0'};" onclick="event.stopPropagation()">
-            <span class="text-[9px] mono" style="color:var(--text-mute);">COPIES</span>
-            <div class="sl-qty sl-qty-sm">
-              <button onclick="slFitCopiesStep(${fit.fitId}, -1)">&minus;</button>
-              <input type="number" min="1" value="${fit.copies}" class="mono num-no-spin" onchange="slSetFitCopies(${fit.fitId}, this.value)">
-              <button onclick="slFitCopiesStep(${fit.fitId}, 1)">+</button>
+      <div class="fb${fit.collapsed ? ' collapsed' : ''}">
+        <div class="fh" onclick="slToggleFit(${fit.fitId})">
+          <div class="fl"></div>
+          <span class="collapse-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+          <span class="fn">${window.esc(fit.name)}</span>
+          ${fit.shipName ? `<span class="fs">[${window.esc(fit.shipName)}]</span>` : ''}
+          <span class="fs">${slFmtVol(fv)} m&sup3; &middot; ${fp > 0 ? window.formatISKCompact(fp) : '—'} &middot; ${moduleCount} module${moduleCount !== 1 ? 's' : ''}</span>
+          <div style="margin-left:auto; display:flex; align-items:center; gap:8px;" onclick="event.stopPropagation()">
+            <span class="fs">COPIES</span>
+            <div class="qty qty-sm">
+              <button onclick="slFitCopiesStep(${fit.fitId}, -1)" type="button">&minus;</button>
+              <input type="number" min="1" value="${fit.copies}" onchange="slSetFitCopies(${fit.fitId}, this.value)">
+              <button onclick="slFitCopiesStep(${fit.fitId}, 1)" type="button">+</button>
             </div>
-            <button onclick="slCopyFitMultibuy(${fit.fitId})" class="lp-chip-btn" style="font-size:10px;">EFT</button>
-            <button onclick="slRemoveFit(${fit.fitId})" class="lp-chip-btn" style="font-size:10px; color:var(--red);">Remove</button>
+            <button class="btn-g" onclick="slCopyFitMultibuy(${fit.fitId})" title="Copy as EFT fitting">EFT</button>
+            <button class="btn-g" style="color:var(--jsl-red);" onclick="slRemoveFit(${fit.fitId})">Remove</button>
           </div>
         </div>
-        ${!fit.collapsed ? `
-        <table class="sl-item-table">
-          <thead><tr>${headCols}</tr></thead>
-          <tbody>${orderedItems.map(it => slFitItemRowHTML(it, fit, it.typeId === fit.shipTypeId)).join('')}</tbody>
-        </table>` : ''}
+        <div class="fb-body">
+          <table class="jtable">
+            <tbody>${orderedItems.map(it => slFitItemRowHTML(it, fit, it.typeId === fit.shipTypeId)).join('')}</tbody>
+          </table>
+        </div>
       </div>
     `;
   });
   if (slItems.length) {
-    if (slFits.length) html += `<div class="sl-divider-label">Individual Items</div>`;
+    if (slFits.length) html += `<div class="divider-label">Individual Items</div>`;
     html += `
-      <table class="sl-item-table sl-list-items-table">
+      <table class="jtable">
         <thead><tr>${headCols}</tr></thead>
         <tbody>${slItems.map((it, idx) => slStandaloneItemRowHTML(it, idx)).join('')}</tbody>
       </table>
     `;
   }
   body.innerHTML = html;
+  if (foot) foot.style.display = 'block';
 }
 
 function slToggleFit(fid) { const f = slFits.find(f => f.fitId === fid); if (f) { f.collapsed = !f.collapsed; slRenderList(); } }
@@ -469,38 +472,49 @@ function slClearAll() {
 }
 
 function slUpdateTotals() {
-  const bar = document.getElementById('sl-totals-bar');
-  if (!bar) return;
-  if (!slItems.length && !slFits.length) { bar.classList.add('hidden'); bar.innerHTML = ''; return; }
+  const wrap = document.getElementById('sl-totals-wrap');
+  const typeCountEl = document.getElementById('sl-type-count');
+  if (!wrap) return;
+  if (!slItems.length && !slFits.length) {
+    wrap.style.display = 'none';
+    if (typeCountEl) typeCountEl.textContent = '0 Types';
+    return;
+  }
   let vol = 0, price = 0, qty = 0;
   slFits.forEach(f => f.baseItems.forEach(i => { vol += i.volume * i.qty * f.copies; price += slPrice(i.typeId) * i.qty * f.copies; qty += i.qty * f.copies; }));
   slItems.forEach(i => { vol += i.volume * i.qty; price += slPrice(i.typeId) * i.qty; qty += i.qty; });
-  const cap = parseFloat(document.getElementById('sl-hauler-capacity')?.value) || 0;
-  const pct = cap > 0 ? Math.min(100, (vol / cap) * 100) : 0;
-  const barColor = pct > 100 ? 'var(--red)' : pct > 70 ? 'var(--gold, #c8a84b)' : 'var(--accent)';
   const typeCount = slFits.reduce((s, f) => s + f.baseItems.length, 0) + slItems.length;
-  bar.classList.remove('hidden');
-  bar.innerHTML = `
-    <div class="grid grid-cols-3 gap-px lp-card p-0 overflow-hidden">
-      <div class="p-3">
-        <div class="text-[9px] uppercase tracking-wide" style="color:var(--text-mute);">Total Volume</div>
-        <div class="font-bold text-lg mono" style="color:var(--accent);">${slFmtVol(vol)} m&sup3;</div>
-        ${cap > 0 ? `<div style="height:3px;background:rgba(255,255,255,.08);margin-top:6px;border-radius:2px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:${barColor};"></div></div><div class="text-[9px] mono mt-1" style="color:var(--text-mute);">of ${cap.toLocaleString()} m&sup3; hauler</div>` : ''}
-      </div>
-      <div class="p-3">
-        <div class="text-[9px] uppercase tracking-wide" style="color:var(--text-mute);">Total Price (${slPriceMode})</div>
-        <div class="font-bold text-lg mono" style="color:var(--gold, var(--cost));">${price > 0 ? window.formatISKCompact(price) : '—'}</div>
-        <button onclick="slTogglePriceMode()" class="lp-chip-btn mt-1.5" style="font-size:9px;">Switch to ${slPriceMode === 'sell' ? 'Buy' : 'Sell'}</button>
-      </div>
-      <div class="p-3">
-        <div class="text-[9px] uppercase tracking-wide" style="color:var(--text-mute);">Total Quantity</div>
-        <div class="font-bold text-lg mono" style="color:var(--text);">${qty.toLocaleString()}</div>
-        <div class="text-[9px] mono mt-1" style="color:var(--text-mute);">${typeCount} unique type${typeCount !== 1 ? 's' : ''}</div>
-      </div>
-    </div>
-  `;
+  wrap.style.display = 'block';
+  if (typeCountEl) typeCountEl.textContent = `${typeCount} Type${typeCount !== 1 ? 's' : ''}`;
+  const tv = document.getElementById('sl-tv'); if (tv) tv.textContent = slFmtVol(vol);
+  const tp = document.getElementById('sl-tp'); if (tp) tp.textContent = price > 0 ? window.formatISKCompact(price) : '—';
+  const tpMode = document.getElementById('sl-tp-mode'); if (tpMode) tpMode.textContent = slPriceMode.toUpperCase();
+  const tq = document.getElementById('sl-tq'); if (tq) tq.textContent = qty.toLocaleString();
+  const tu = document.getElementById('sl-tu'); if (tu) tu.textContent = `${typeCount} unique type${typeCount !== 1 ? 's' : ''}`;
+  const cap = parseFloat(document.getElementById('sl-hauler-capacity')?.value) || 0;
+  const hf = document.getElementById('sl-hf'), tvs = document.getElementById('sl-tvs');
+  if (cap > 0) {
+    const pct = Math.min(vol / cap * 100, 100);
+    if (hf) { hf.style.width = pct + '%'; hf.className = 'hf' + (vol > cap ? ' over' : pct > 70 ? ' warn' : ''); }
+    if (tvs) tvs.textContent = `${vol.toLocaleString(undefined, { maximumFractionDigits: 2 })} / ${cap.toLocaleString()} m³`;
+  } else {
+    if (hf) hf.style.width = '0%';
+    if (tvs) tvs.textContent = 'm³';
+  }
 }
-function slTogglePriceMode() { slPriceMode = slPriceMode === 'sell' ? 'buy' : 'sell'; slRenderAll(); }
+function slSetPriceMode(mode) {
+  slPriceMode = mode;
+  const sellBtn = document.getElementById('sl-btn-sell'), buyBtn = document.getElementById('sl-btn-buy');
+  if (sellBtn) sellBtn.classList.toggle('on', mode === 'sell');
+  if (buyBtn) buyBtn.classList.toggle('on', mode === 'buy');
+  slRenderAll();
+}
+function slRefreshAllPrices() {
+  const ids = [...new Set([...slItems.map(i => i.typeId), ...slFits.flatMap(f => f.baseItems.map(i => i.typeId))])];
+  if (!ids.length) { window.showToast('Nothing to refresh.', 'info'); return; }
+  ids.forEach(id => { delete window.priceCache[id]; });
+  window.fetchMarketPrices(ids).then(() => { slRenderAll(); window.showToast('Prices refreshed.', 'success'); });
+}
 
 function slCopyMultibuy() {
   const combined = {};
@@ -530,9 +544,9 @@ function slCopyFitMultibuy(fid) {
 
 // ── TABS ────────────────────────────────────────────────────────────────────────
 function slSwitchTab(name) {
-  document.querySelectorAll('#sl-tabs [data-sl-tab]').forEach(btn => btn.classList.toggle('nav-tab-active-violet', btn.dataset.slTab === name));
-  document.querySelectorAll('.sl-tab-content').forEach(el => el.classList.add('hidden'));
-  document.getElementById('sl-tab-' + name).classList.remove('hidden');
+  document.querySelectorAll('#sl-tabs [data-sl-tab]').forEach(btn => btn.classList.toggle('active', btn.dataset.slTab === name));
+  document.querySelectorAll('.jtab-content').forEach(el => el.classList.remove('active'));
+  document.getElementById('sl-tab-' + name).classList.add('active');
 }
 
 // ── WISHLIST ─────────────────────────────────────────────────────────────────────
@@ -598,21 +612,21 @@ function slRenderWishlist() {
   const el = document.getElementById('sl-wishlist-body'); if (!el) return;
   const badge = document.getElementById('sl-wishlist-badge');
   if (badge) { badge.textContent = slWishlist.length; badge.classList.toggle('hidden', !slWishlist.length); }
-  if (!slWishlist.length) { el.innerHTML = `<div class="fo-card-note text-center" style="padding:20px 0;">No wishlist entries yet.</div>`; return; }
+  if (!slWishlist.length) { el.innerHTML = `<div class="empty" style="padding:20px;"><div>No wishlist entries yet.</div></div>`; return; }
   el.innerHTML = slWishlist.map((w, idx) => `
-    <div class="flex items-center gap-2 py-2" style="border-bottom:1px solid rgba(255,255,255,0.06);">
+    <div class="wl-entry ${w.kind === 'fit' ? 'wl-entry-fit' : 'wl-entry-item'}">
       ${w.kind === 'fit'
-        ? `<div style="cursor:pointer;flex-shrink:0;" onclick="slOpenFitPopup('wish', ${idx})">${w.shipTypeId ? `<img src="${window.getItemIconUrl(w.shipTypeId, w.shipName, 40)}" style="width:32px;height:32px;border-radius:4px;" onerror="this.style.opacity=.15">` : `<div style="width:32px;height:32px;border-radius:4px;background:rgba(200,168,75,.15);display:flex;align-items:center;justify-content:center;color:var(--gold,#c8a84b);">▶</div>`}</div>
-        <div class="flex-1 min-w-0"><div class="font-bold text-sm truncate" style="color:var(--gold, var(--accent));">${window.esc(w.fitName)}</div><div class="text-xs truncate" style="color:var(--text-mute);">${w.shipName ? window.esc(w.shipName) + ' · ' : ''}<span style="cursor:pointer;text-decoration:underline;" onclick="slOpenFitPopup('wish', ${idx})">view fit</span></div></div>`
-        : `<img src="${window.getItemIconUrl(w.typeId, w.name, 32)}" style="width:26px;height:26px;border-radius:4px;flex-shrink:0;" onerror="this.style.opacity=.15">
-        <span class="flex-1 truncate text-sm" style="color:var(--text);">${window.esc(w.name)}</span>`}
-      <div class="sl-qty sl-qty-sm flex-shrink-0">
-        <button onclick="slWishQtyAdjust(${idx}, -1)">&minus;</button>
-        <input type="number" min="1" value="${w.kind === 'item' ? (w.qty || 1) : (w.copies || 1)}" class="mono num-no-spin" onchange="slWishQtySet(${idx}, this.value)">
-        <button onclick="slWishQtyAdjust(${idx}, 1)">+</button>
+        ? `<div style="cursor:pointer;flex-shrink:0;" onclick="slOpenFitPopup('wish', ${idx})">${w.shipTypeId ? `<img src="${window.getItemIconUrl(w.shipTypeId, w.shipName, 40)}" style="width:32px;height:32px;border-radius:3px;" onerror="this.style.opacity=.15">` : `<div style="width:32px;height:32px;border-radius:3px;background:rgba(var(--jsl-gold-rgb),0.15);display:flex;align-items:center;justify-content:center;color:var(--jsl-gold);">&#9658;</div>`}</div>
+        <div style="flex:1; min-width:0;"><div class="fn" style="font-size:12px;">${window.esc(w.fitName)}</div><div class="fs">${w.shipName ? window.esc(w.shipName) + ' &middot; ' : ''}<span style="cursor:pointer;text-decoration:underline;" onclick="slOpenFitPopup('wish', ${idx})">view fit</span></div></div>`
+        : `<img src="${window.getItemIconUrl(w.typeId, w.name, 32)}" style="width:26px;height:26px;border-radius:3px;flex-shrink:0;" onerror="this.style.opacity=.15">
+        <span class="tn" style="flex:1;">${window.esc(w.name)}</span>`}
+      <div class="qty qty-sm">
+        <button onclick="slWishQtyAdjust(${idx}, -1)" type="button">&minus;</button>
+        <input type="number" min="1" value="${w.kind === 'item' ? (w.qty || 1) : (w.copies || 1)}" onchange="slWishQtySet(${idx}, this.value)">
+        <button onclick="slWishQtyAdjust(${idx}, 1)" type="button">+</button>
       </div>
-      <button onclick="slWishAddOne(${idx})" class="lp-chip-btn flex-shrink-0" style="font-size:10px;">+ Add</button>
-      <button onclick="slRemoveWishEntry(${idx})" class="lp-chip-btn flex-shrink-0" style="font-size:10px; color:var(--red);">✕</button>
+      <button onclick="slWishAddOne(${idx})" class="btn-g wl-add-btn">+ Add</button>
+      <button onclick="slRemoveWishEntry(${idx})" class="btn-g" style="color:var(--jsl-red);"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
   `).join('');
 }
@@ -694,27 +708,25 @@ function slRenderFavorites() {
   const grid = document.getElementById('sl-favorites-grid'); if (!grid) return;
   const badge = document.getElementById('sl-favorites-badge');
   if (badge) { badge.textContent = slFavorites.length; badge.classList.toggle('hidden', !slFavorites.length); }
-  if (!slFavorites.length) { grid.innerHTML = `<div class="fo-card-note text-center" style="grid-column:1/-1;padding:24px 0;">No favorites or saved lists yet.</div>`; return; }
+  if (!slFavorites.length) { grid.innerHTML = `<div class="empty" style="grid-column:1/-1;"><div>No favorites or saved lists yet.</div></div>`; return; }
   grid.innerHTML = slFavorites.map((f, idx) => {
     const isItem = f.kind === 'item', isFit = f.kind === 'fit', isList = f.kind === 'list';
-    const borderColor = isFit ? 'var(--gold, #c8a84b)' : isList ? 'var(--accent)' : 'rgba(255,255,255,0.12)';
-    const icon = isItem ? `<img src="${window.getItemIconUrl(f.typeId, f.name, 32)}" style="width:32px;height:32px;border-radius:6px;flex-shrink:0;" onerror="this.style.opacity=.15">`
-      : isFit && f.shipTypeId ? `<img src="${window.getItemIconUrl(f.shipTypeId, f.shipName, 64)}" style="width:32px;height:32px;border-radius:6px;flex-shrink:0;" onerror="this.style.opacity=.15">`
-      : `<div style="width:32px;height:32px;border-radius:6px;background:rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--accent);">${isList ? '☰' : '▶'}</div>`;
-    const sub = isFit ? `${f.shipName ? window.esc(f.shipName) + ' · ' : ''}fit <span style="cursor:pointer;text-decoration:underline;color:var(--accent);" onclick="slOpenFitPopup('fav', ${idx})">view</span>`
-      : isList ? `${(f.fits || []).length} fit${(f.fits || []).length !== 1 ? 's' : ''}, ${(f.items || []).length} item${(f.items || []).length !== 1 ? 's' : ''} <span style="cursor:pointer;text-decoration:underline;color:var(--accent);" onclick="slViewFavoriteList(${idx})">view</span>` : '';
+    const borderColor = isFit ? 'var(--jsl-gold)' : isList ? 'var(--jsl-accent)' : 'rgba(255,255,255,0.14)';
+    const icon = isItem ? `<img src="${window.getItemIconUrl(f.typeId, f.name, 32)}" style="width:32px;height:32px;border-radius:4px;flex-shrink:0;" onerror="this.style.opacity=.15">`
+      : isFit && f.shipTypeId ? `<img src="${window.getItemIconUrl(f.shipTypeId, f.shipName, 64)}" style="width:32px;height:32px;border-radius:4px;flex-shrink:0;" onerror="this.style.opacity=.15">`
+      : `<div style="width:32px;height:32px;border-radius:4px;background:rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--jsl-accent2);">${isList ? '&#9776;' : '&#9658;'}</div>`;
+    const sub = isFit ? `${f.shipName ? window.esc(f.shipName) + ' &middot; ' : ''}fit <span style="cursor:pointer;text-decoration:underline;" onclick="slOpenFitPopup('fav', ${idx})">view</span>`
+      : isList ? `${(f.fits || []).length} fit${(f.fits || []).length !== 1 ? 's' : ''}, ${(f.items || []).length} item${(f.items || []).length !== 1 ? 's' : ''} <span style="cursor:pointer;text-decoration:underline;" onclick="slViewFavoriteList(${idx})">view</span>` : '';
     return `
-      <div class="fo-card" style="border-left:3px solid ${borderColor}; display:flex; align-items:center; gap:8px; padding:10px 12px;">
+      <div class="fav-card" style="border-left:3px solid ${borderColor};">
         ${icon}
-        <div class="flex-1 min-w-0">
-          <div class="text-sm truncate" style="color:var(--text);">${window.esc(f.name)}</div>
-          ${sub ? `<div class="text-xs truncate" style="color:var(--text-mute);">${sub}</div>` : ''}
+        <div style="flex:1; min-width:0;">
+          <div class="fav-label">${window.esc(f.name)}</div>
+          ${sub ? `<div class="fav-sub">${sub}</div>` : ''}
         </div>
-        <div class="flex items-center gap-1 flex-shrink-0">
-          <button onclick="slUseFavorite(${idx})" class="lp-chip-btn" title="Add to current list" style="font-size:14px; padding:3px 8px;">+</button>
-          ${isList ? `<button onclick="slReplaceWithFavorite(${idx})" class="lp-chip-btn" title="Replace current list with this" style="font-size:10px;">⇄</button>` : ''}
-          <button onclick="slRemoveFavorite(${idx})" class="lp-chip-btn" style="font-size:10px; color:var(--red);">✕</button>
-        </div>
+        <div class="fav-plus" onclick="slUseFavorite(${idx})" title="Add to current list">+</div>
+        ${isList ? `<button onclick="slReplaceWithFavorite(${idx})" class="btn-g" title="Replace current list with this">&#8644;</button>` : ''}
+        <button onclick="slRemoveFavorite(${idx})" class="btn-g" style="color:var(--jsl-red); position:relative; z-index:2;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
       </div>
     `;
   }).join('');
