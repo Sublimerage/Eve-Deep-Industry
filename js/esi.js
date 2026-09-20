@@ -2154,6 +2154,37 @@ async function fetchSkillTrainingInfo(skillTypeId) {
 }
 window.fetchSkillTrainingInfo = fetchSkillTrainingInfo;
 
+// A ship's PACKAGED volume (how much cargo space the hull takes up unfitted/unassembled in a
+// hangar or hauler) is a completely different, much smaller number than its plain "volume" (the
+// hull's actual flying/in-space size) - eve_db.js's EVE_VOLUMES only carries that plain SDE
+// "volume" field, which is correct for ordinary modules/ammo/minerals (they have no packaged
+// variant at all) but wildly wrong for a ship sitting in a shopping list, which is always bought
+// and hauled packaged. Permanent cache, same pattern as fetchSkillTrainingInfo above - a hull's
+// packaged volume never changes.
+let _packagedVolumeCache = null;
+function loadPackagedVolumeCache() {
+  if (_packagedVolumeCache) return _packagedVolumeCache;
+  _packagedVolumeCache = window.safeParseJSON(localStorage.getItem('eve_packaged_volume_cache_v1'), {});
+  return _packagedVolumeCache;
+}
+async function fetchPackagedVolume(typeId) {
+  const cache = loadPackagedVolumeCache();
+  if (cache[typeId] !== undefined) return cache[typeId];
+  try {
+    const res = await fetch(`https://esi.evetech.net/latest/universe/types/${typeId}/?datasource=tranquility`, { cache: 'no-store' });
+    if (!res.ok) return 0;
+    const data = await res.json();
+    const vol = data.packaged_volume || data.volume || 0;
+    cache[typeId] = vol;
+    localStorage.setItem('eve_packaged_volume_cache_v1', JSON.stringify(cache));
+    return vol;
+  } catch (e) {
+    console.warn(`Packaged volume fetch failed for type ${typeId}:`, e);
+    return 0;
+  }
+}
+window.fetchPackagedVolume = fetchPackagedVolume;
+
 // SP needed to reach skillLevel (1-5) for a skill of this rank - CCP's own formula, confirmed
 // directly via /dogma/attributes/275/'s description text: "Skill points required to train a skill =
 // 250 * skillTimeConstant * sqrt(32)^(skillLevel - 1)".
