@@ -1,176 +1,144 @@
 /* ============================================================================================
-   Shopping List page - a faithful structural port of the original standalone tool
-   (jita-shopping-list.html) the user built and asked to have integrated: same panels, same
-   single-column-per-tab layout, same table/fit-box/stepper/favorites-grid structure, same
-   spacing and density - reskinned ONLY (colors -> this app's "dark luxury glass" tokens, so it
-   re-themes automatically with the site's color-theme switcher; fonts -> Inter/IBM Plex Mono,
-   the fonts already used everywhere else in this app instead of the original's own Rajdhani/
-   Share Tech Mono/Exo 2). Every selector here is scoped under .jsl so it can never collide with
-   or be reset by the rest of the site's Tailwind/styles.css rules - this file owns its own
-   entirely self-contained visual language, the same way the original tool's own <style> block
-   did, just pointed at this site's palette instead of hardcoded hex values.
+   Shopping List page - a structural port of the original standalone tool (jita-shopping-list.html)
+   the user built and asked to have integrated: same panels, same table/fit-box/stepper/favorites-
+   grid layout, same spacing and density. Buttons/inputs/badges deliberately do NOT get their own
+   custom look here - they reuse the site's own real components (.btn-glass, .lp-chip-btn,
+   .field-box, .field-line, .nav-tab, .lp-badge, .pill-check, all already defined in styles.css and
+   available on this page via body.page-calc) so this page is built from the exact same visual
+   material as the Calculator/Ledger/Invention/LP Store instead of a parallel approximation of it.
+   What's left here is only what those shared components don't already cover: the panel/fit-box
+   containers themselves (recolored onto --glass-fill/--glass-shadow/--radius-card, the same recipe
+   body.page-calc .lp-card already uses), the qty stepper, the totals grid, and table typography -
+   genuinely new shapes the rest of the site has no equivalent for. Every selector is scoped under
+   .jsl so none of it can collide with or be overridden by the rest of the site's rules.
    ============================================================================================ */
 
 .jsl {
-  --jsl-bg2: rgba(255,255,255,0.045);
-  --jsl-bg3: rgba(255,255,255,0.03);
-  --jsl-border: rgba(255,255,255,0.1);
+  --jsl-border: rgba(255,255,255,0.08);
   --jsl-glow: rgba(var(--accent-rgb),0.45);
-  --jsl-accent: var(--accent);
-  --jsl-accent2: var(--accent);
   --jsl-gold: var(--cost);
-  --jsl-gold2: var(--cost);
   --jsl-gold-rgb: var(--cost-rgb);
-  --jsl-text: var(--text-soft);
   --jsl-dim: var(--text-mute);
   --jsl-bright: var(--text);
-  --jsl-green: var(--green);
   --jsl-red: var(--red);
-  color: var(--jsl-text);
+  color: var(--text-soft);
   max-width: 1180px;
   margin: 0 auto;
 }
 .jsl, .jsl *, .jsl *::before, .jsl *::after { box-sizing: border-box; }
+.jsl ::-webkit-scrollbar { width: 5px; }
+.jsl ::-webkit-scrollbar-thumb { background: var(--jsl-glow); border-radius: 3px; }
 
-.jsl textarea, .jsl input[type=text], .jsl input[type=number] {
-  background: var(--jsl-bg2); border: 1px solid var(--jsl-border); color: var(--jsl-bright);
-  font-family: 'IBM Plex Mono', monospace; font-size: 12px; padding: 8px 10px; outline: none;
-  transition: border-color .15s; border-radius: 3px;
-}
-.jsl textarea:focus, .jsl input:focus { border-color: var(--jsl-accent); }
-.jsl textarea { width: 100%; resize: vertical; min-height: 100px; line-height: 1.6; }
-.jsl input[type=number] { width: 90px; text-align: right; }
-.jsl input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
-.jsl select {
-  background: var(--jsl-bg2); border: 1px solid var(--jsl-border); color: var(--jsl-bright);
-  font-family: 'IBM Plex Mono', monospace; font-size: 11px; padding: 8px 10px; outline: none;
-  border-radius: 3px; cursor: pointer; width: 100%;
-}
-.jsl select:focus { border-color: var(--jsl-accent); }
-.jsl .tab-badge { display: inline-block; background: var(--jsl-glow); color: var(--jsl-bright); font-family: 'IBM Plex Mono', monospace; font-size: 8px; padding: 1px 5px; border-radius: 8px; margin-left: 5px; min-width: 14px; text-align: center; vertical-align: middle; }
-
-/* ---- panels ---- */
-.jsl .panel { background: var(--jsl-bg3); border: 1px solid var(--jsl-border); border-radius: 6px; position: relative; margin-bottom: 14px; overflow: hidden; }
-.jsl .panel::before { content: ''; position: absolute; top: 0; left: 0; width: 3px; height: 100%; background: linear-gradient(180deg, var(--jsl-accent), transparent); pointer-events: none; }
-.jsl .ph { display: flex; align-items: center; gap: 10px; padding: 9px 16px 9px 20px; border-bottom: 1px solid var(--jsl-border); background: rgba(var(--accent-rgb),0.05); flex-wrap: wrap; }
-.jsl .pt { font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--jsl-accent2); }
-.jsl .pb { font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: var(--jsl-dim); letter-spacing: 0.05em; margin-left: auto; }
-.jsl .pd { padding: 14px 20px; }
-
-/* ---- buttons ---- */
-.jsl .btn { font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; border: 1px solid; border-radius: 4px; padding: 7px 16px; cursor: pointer; transition: background .15s; background: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
-.jsl .btn svg { width: 12px; height: 12px; flex-shrink: 0; }
-.jsl .btn-blue { background: rgba(var(--accent-rgb),0.1); border-color: var(--jsl-accent); color: var(--jsl-accent2); }
-.jsl .btn-blue:hover { background: rgba(var(--accent-rgb),0.22); }
-.jsl .btn-gold { background: rgba(var(--jsl-gold-rgb),0.1); border-color: var(--jsl-gold); color: var(--jsl-gold2); }
-.jsl .btn-gold:hover { background: rgba(var(--jsl-gold-rgb),0.22); }
-.jsl .btn-g { background: none; border-color: transparent; color: var(--jsl-dim); padding: 4px 7px; font-size: 10px; letter-spacing: 0.05em; cursor: pointer; font-family: 'Inter', sans-serif; font-weight: 700; text-transform: uppercase; border: 1px solid transparent; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px; }
-.jsl .btn-g svg { width: 10px; height: 10px; flex-shrink: 0; }
-.jsl .btn-g:hover { color: var(--jsl-red); border-color: rgba(var(--red-rgb),0.3); }
-.jsl .btn-g.danger { color: var(--jsl-red); }
-
+/* ---- layout ---- */
+.jsl .cols { display: grid; grid-template-columns: 320px 1fr; gap: 14px; align-items: start; }
+@media (max-width: 900px) { .jsl .cols { grid-template-columns: 1fr; } }
 .jsl .row { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
 
-/* ---- qty stepper ---- */
-.jsl .qty { display: inline-flex; align-items: center; border: 1px solid var(--jsl-border); background: var(--jsl-bg2); border-radius: 3px; flex-shrink: 0; }
-.jsl .qty button { background: none; border: none; color: var(--jsl-dim); width: 26px; height: 30px; cursor: pointer; font-size: 15px; font-family: monospace; }
-.jsl .qty button:hover { color: var(--jsl-accent); }
-.jsl .qty input[type=number] { background: none !important; border: none !important; color: var(--jsl-bright); font-family: 'IBM Plex Mono', monospace; font-size: 12px; width: 52px; text-align: center; outline: none; padding: 0 !important; }
-.jsl .qty.qty-sm input[type=number] { width: 40px; }
+/* ---- panels: the same glass-fill/glass-shadow/radius-card recipe body.page-calc .lp-card
+   already uses everywhere else, so a panel here reads as the same physical material as the rest
+   of the site instead of a flatter, sharper-edged approximation of it. ---- */
+.jsl .panel { background: var(--glass-fill); box-shadow: var(--glass-shadow); border-radius: var(--radius-card); margin-bottom: 14px; overflow: hidden; }
+.jsl .ph { display: flex; align-items: center; gap: 10px; padding: 14px 18px 10px; flex-wrap: wrap; }
+.jsl .pt { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text); }
+.jsl .pb { font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: var(--jsl-dim); letter-spacing: 0.05em; margin-left: auto; }
+.jsl .pd { padding: 4px 18px 16px; }
+
+/* ---- text fields: reuse the site's own .field-box (primary, filled) and .field-line (secondary,
+   invisible-until-focus) recipes directly via those classes in the markup - these rules only add
+   the layout properties (width/resize/min-height) those shared classes don't set themselves. ---- */
+.jsl textarea { width: 100%; resize: vertical; min-height: 90px; line-height: 1.6; padding: 8px 10px; }
+.jsl input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
+.jsl select { width: 100%; }
+
+/* ---- qty stepper - no equivalent component exists elsewhere on the site. ---- */
+.jsl .qty { display: inline-flex; align-items: center; background: rgba(255,255,255,0.05); border-radius: var(--radius-input); flex-shrink: 0; }
+.jsl .qty button { background: none; border: none; color: var(--jsl-dim); width: 26px; height: 30px; cursor: pointer; font-size: 15px; transition: color .15s ease; }
+.jsl .qty button:hover { color: var(--accent); }
+.jsl .qty input[type=number] { background: none !important; border: none !important; color: var(--text); font-family: 'IBM Plex Mono', monospace; font-size: 12px; width: 48px; text-align: center; outline: none; padding: 0 !important; }
+.jsl .qty.qty-sm input[type=number] { width: 36px; }
 .jsl .qty.qty-sm button { width: 22px; height: 26px; font-size: 13px; }
 
-/* ---- autocomplete ---- */
+/* ---- autocomplete dropdown (shared by all three search boxes) ---- */
 .jsl .acw { position: relative; }
-.jsl .acd { position: fixed; background: var(--jsl-bg3); border: 1px solid var(--jsl-accent); z-index: 200; max-height: 260px; overflow-y: auto; border-radius: 4px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+.jsl .acd { position: fixed; background: #14161a; border: 1px solid var(--glass-border); z-index: 200; max-height: 260px; overflow-y: auto; border-radius: var(--radius-btn); box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
 .jsl .acr { display: flex; align-items: center; gap: 10px; padding: 7px 12px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 12px; }
 .jsl .acr:hover, .jsl .acr.hi { background: rgba(var(--accent-rgb),0.12); }
-.jsl .acr img { width: 26px; height: 26px; flex-shrink: 0; object-fit: contain; border-radius: 3px; }
-.jsl .acn { color: var(--jsl-bright); }
+.jsl .acr img { width: 26px; height: 26px; flex-shrink: 0; object-fit: contain; border-radius: var(--radius-sm); }
+.jsl .acn { color: var(--text); }
 
 /* ---- item tables ---- */
 .jsl table.jtable { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
-.jsl table.jtable th { font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--jsl-dim); padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--jsl-border); }
-.jsl table.jtable td { padding: 6px 8px; border-bottom: 1px solid rgba(255,255,255,0.05); vertical-align: middle; overflow: hidden; }
+.jsl table.jtable th { font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--jsl-dim); padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--jsl-border); }
+.jsl table.jtable td { padding: 7px 10px; border-bottom: 1px solid rgba(255,255,255,0.05); vertical-align: middle; overflow: hidden; }
 .jsl table.jtable tbody tr:last-child td { border-bottom: none; }
-.jsl table.jtable tbody tr:hover td { background: rgba(var(--accent-rgb),0.03); }
-.jsl .tn { color: var(--jsl-bright); font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jsl table.jtable tbody tr:hover td { background: rgba(255,255,255,0.025); }
+.jsl .tn { color: var(--text); font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .jsl .tm { font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: var(--jsl-dim); margin-top: 1px; }
-.jsl .tp { font-family: 'IBM Plex Mono', monospace; color: var(--jsl-gold2); text-align: right; white-space: nowrap; }
-.jsl .tv { font-family: 'IBM Plex Mono', monospace; color: var(--jsl-accent); text-align: right; white-space: nowrap; }
+.jsl .tp { font-family: 'IBM Plex Mono', monospace; color: var(--cost); text-align: right; white-space: nowrap; }
+.jsl .tv { font-family: 'IBM Plex Mono', monospace; color: var(--text-soft); text-align: right; white-space: nowrap; }
 
-/* ---- fit box ---- */
-.jsl .fb { border: 1px solid var(--jsl-gold); border-radius: 4px; margin-bottom: 12px; position: relative; overflow: hidden; }
-.jsl .fh { background: rgba(var(--jsl-gold-rgb),0.07); border-bottom: 1px solid var(--jsl-border); padding: 7px 12px 7px 18px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; position: relative; cursor: pointer; user-select: none; }
-.jsl .fh:hover { background: rgba(var(--jsl-gold-rgb),0.11); }
-.jsl .fl { position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--jsl-gold); }
-.jsl .fn { font-family: 'Inter', sans-serif; font-weight: 700; font-size: 13px; color: var(--jsl-gold2); letter-spacing: 0.03em; }
+/* ---- fit box - same left-border-marks-identity idea body.page-calc .lp-job-card already uses
+   for build status, applied here to mark "this is a fit" instead. ---- */
+.jsl .fb { background: var(--glass-fill); box-shadow: var(--glass-shadow); border-radius: var(--radius-card); border-left: 3px solid var(--jsl-gold); margin-bottom: 10px; overflow: hidden; }
+.jsl .fh { padding: 10px 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; cursor: pointer; user-select: none; transition: background .15s ease; }
+.jsl .fh:hover { background: rgba(255,255,255,0.03); }
+.jsl .fn { font-size: 13px; font-weight: 700; color: var(--cost); letter-spacing: 0.01em; }
 .jsl .fs { font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: var(--jsl-dim); }
-.jsl .collapse-icon { color: var(--jsl-gold); margin-right: 2px; transition: transform .2s; display: inline-flex; flex-shrink: 0; }
+.jsl .collapse-icon { color: var(--cost); margin-right: 2px; transition: transform .2s; display: inline-flex; flex-shrink: 0; }
 .jsl .collapse-icon svg { width: 11px; height: 11px; }
 .jsl .fb.collapsed .collapse-icon { transform: rotate(-90deg); }
 .jsl .fb.collapsed .fb-body { display: none; }
-.jsl .fb-body { background: var(--jsl-bg3); }
-.jsl .ship-row { background: rgba(var(--jsl-gold-rgb),0.06); }
-.jsl .ship-row .tn { color: var(--jsl-gold2); }
-.jsl .ship-badge { font-family: 'IBM Plex Mono', monospace; font-size: 8px; color: var(--jsl-gold); letter-spacing: 0.06em; margin-left: 4px; }
+.jsl .ship-row { background: rgba(var(--jsl-gold-rgb),0.07); }
+.jsl .ship-row .tn { color: var(--cost); }
+.jsl .ship-badge { font-family: 'IBM Plex Mono', monospace; font-size: 8px; color: var(--cost); letter-spacing: 0.06em; margin-left: 4px; }
 
-/* ---- totals ---- */
-.jsl .tots { display: grid; grid-template-columns: repeat(3,1fr); gap: 1px; background: var(--jsl-border); margin-top: 1px; }
-.jsl .tc { background: var(--jsl-bg2); padding: 14px 20px; }
+/* ---- totals grid ---- */
+.jsl .tots { display: grid; grid-template-columns: repeat(3,1fr); gap: 1px; background: var(--jsl-border); }
+.jsl .tc { background: #111318; padding: 14px 18px; }
 .jsl .tl { font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--jsl-dim); margin-bottom: 4px; }
-.jsl .tv2 { font-family: 'Inter', sans-serif; font-size: 22px; font-weight: 700; color: var(--jsl-bright); line-height: 1; }
+.jsl .tv2 { font-size: 21px; font-weight: 700; color: var(--text); line-height: 1; }
 .jsl .ts { font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: var(--jsl-dim); margin-top: 3px; }
-.jsl .hb { margin-top: 6px; height: 3px; background: var(--jsl-border); border-radius: 2px; overflow: hidden; }
-.jsl .hf { height: 100%; transition: width .4s; background: linear-gradient(90deg, var(--jsl-accent), var(--jsl-accent2)); }
-.jsl .hf.warn { background: linear-gradient(90deg, var(--jsl-gold), var(--jsl-gold2)); }
-.jsl .hf.over { background: linear-gradient(90deg, var(--jsl-red), #ff9999); }
-.jsl .tots-divider { height: 30px; display: flex; align-items: center; justify-content: center; gap: 12px; background: var(--jsl-bg2); border-top: 1px solid var(--jsl-border); padding: 0 20px; }
+.jsl .hb { margin-top: 6px; height: 3px; background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden; }
+.jsl .hf { height: 100%; transition: width .4s; background: var(--accent); }
+.jsl .hf.warn { background: var(--cost); }
+.jsl .hf.over { background: var(--red); }
+.jsl .tots-divider { height: 26px; display: flex; align-items: center; justify-content: center; gap: 12px; background: rgba(255,255,255,0.02); padding: 0 20px; }
 .jsl .tots-divider::before, .jsl .tots-divider::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, transparent, var(--jsl-glow)); }
 .jsl .tots-divider::after { background: linear-gradient(90deg, var(--jsl-glow), transparent); }
 .jsl .tots-divider span { font-family: 'IBM Plex Mono', monospace; font-size: 8px; letter-spacing: 0.3em; color: var(--jsl-dim); white-space: nowrap; }
 
 /* ---- empty state ---- */
-.jsl .empty { text-align: center; padding: 36px 20px; color: var(--jsl-dim); font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.05em; }
-.jsl .empty .ic { margin-bottom: 10px; opacity: .35; display: flex; justify-content: center; }
+.jsl .empty { text-align: center; padding: 30px 20px; color: var(--jsl-dim); font-size: 12px; }
+.jsl .empty .ic { margin-bottom: 10px; opacity: .35; display: flex; justify-content: center; color: var(--text-mute); }
 .jsl .empty .ic svg { width: 26px; height: 26px; }
 
-.jsl .hint { font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: var(--jsl-dim); letter-spacing: 0.03em; margin-top: 7px; line-height: 1.8; }
-.jsl .hint b { color: var(--jsl-accent); font-weight: normal; }
-.jsl .divider-label { font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--jsl-dim); padding: 8px 10px; background: rgba(var(--accent-rgb),0.04); border: 1px solid var(--jsl-border); border-bottom: none; border-radius: 4px 4px 0 0; }
-
-/* ---- tabs ---- */
-.jsl .jtabs { display: flex; border-bottom: 1px solid var(--jsl-border); margin-bottom: 14px; gap: 2px; }
-.jsl .jtab { font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 10px 22px; cursor: pointer; color: var(--jsl-dim); border-bottom: 2px solid transparent; transition: all .15s; background: none; border-top: none; border-left: none; border-right: none; display: inline-flex; align-items: center; gap: 6px; }
-.jsl .jtab:hover { color: var(--jsl-text); }
-.jsl .jtab.active { color: var(--jsl-accent2); border-bottom-color: var(--jsl-accent); }
-.jsl .jtab-content { display: none; }
-.jsl .jtab-content.active { display: block; }
+.jsl .hint { font-size: 11px; color: var(--jsl-dim); line-height: 1.6; margin-top: 8px; }
+.jsl .hint b { color: var(--accent); font-weight: 600; }
+.jsl .divider-label { font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--jsl-dim); padding: 10px 4px 6px; }
 
 /* ---- price toggle ---- */
-.jsl .ptoggle { display: inline-flex; border: 1px solid var(--jsl-border); background: var(--jsl-bg2); overflow: hidden; border-radius: 3px; flex-shrink: 0; }
-.jsl .ptoggle button { background: none; border: none; color: var(--jsl-dim); font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.05em; padding: 6px 12px; cursor: pointer; transition: all .15s; }
-.jsl .ptoggle button.on { background: rgba(var(--accent-rgb),0.16); color: var(--jsl-accent2); }
+.jsl .ptoggle { display: inline-flex; background: rgba(255,255,255,0.05); border-radius: var(--radius-input); overflow: hidden; flex-shrink: 0; }
+.jsl .ptoggle button { background: none; border: none; color: var(--jsl-dim); font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 700; letter-spacing: 0.05em; padding: 6px 12px; cursor: pointer; transition: all .15s; }
+.jsl .ptoggle button.on { background: rgba(var(--accent-rgb),0.18); color: var(--accent); }
 
 /* ---- wishlist entries ---- */
-.jsl .wl-entry { border-bottom: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; gap: 8px; padding: 8px 14px; }
+.jsl .wl-entry { border-bottom: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; gap: 8px; padding: 9px 16px; }
 .jsl .wl-entry:last-child { border-bottom: none; }
 .jsl .wl-entry-fit { border-left: 3px solid var(--jsl-gold); }
-.jsl .wl-entry-item { border-left: 3px solid transparent; padding-left: 12px; }
+.jsl .wl-entry-item { border-left: 3px solid transparent; padding-left: 13px; }
 .jsl .wl-add-btn { opacity: 0; transition: opacity .15s; }
 .jsl .wl-entry:hover .wl-add-btn { opacity: 1; }
 
-/* ---- favorites grid ---- */
-.jsl .fav-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px,1fr)); gap: 10px; padding: 14px; }
-.jsl .fav-card { background: var(--jsl-bg2); border: 1px solid var(--jsl-border); border-radius: 4px; display: flex; align-items: center; gap: 10px; padding: 10px 12px; transition: border-color .15s; position: relative; }
-.jsl .fav-card:hover { border-color: var(--jsl-glow); }
-.jsl .fav-label { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--jsl-bright); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* ---- favorites grid - sub-cards within a panel, so they get the flatter .fo-card-weight
+   surface (same literal fill body.page-calc .fo-card uses) rather than full glass, keeping the
+   hierarchy readable: panel = glass, cards-within-a-panel = flat. ---- */
+.jsl .fav-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px,1fr)); gap: 10px; padding: 4px 18px 16px; }
+.jsl .fav-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: var(--radius-btn); display: flex; align-items: center; gap: 10px; padding: 10px 12px; transition: border-color .15s; position: relative; }
+.jsl .fav-card:hover { border-color: rgba(255,255,255,0.16); }
+.jsl .fav-label { font-size: 12px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .jsl .fav-sub { font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: var(--jsl-dim); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.jsl .fav-plus { flex-shrink: 0; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; background: rgba(var(--accent-rgb),0.08); border: 1px solid rgba(var(--accent-rgb),0.3); color: var(--jsl-accent2); cursor: pointer; transition: background .15s; border-radius: 3px; }
-.jsl .fav-plus svg { width: 14px; height: 14px; }
-.jsl .fav-plus:hover { background: rgba(var(--accent-rgb),0.25); }
+.jsl .fav-plus { flex-shrink: 0; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; background: rgba(var(--accent-rgb),0.14); color: var(--accent); cursor: pointer; transition: background .15s; border-radius: var(--radius-sm); font-weight: 700; }
+.jsl .fav-plus:hover { background: rgba(var(--accent-rgb),0.28); }
 
-/* ---- fit popup ---- */
-.jsl .fit-popup-body { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--jsl-text); line-height: 1.8; white-space: pre-wrap; background: var(--jsl-bg2); }
-
-.jsl ::-webkit-scrollbar { width: 5px; }
-.jsl ::-webkit-scrollbar-thumb { background: var(--jsl-glow); border-radius: 3px; }
+/* ---- fit popup body ---- */
+.jsl .fit-popup-body { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--text-soft); line-height: 1.8; white-space: pre-wrap; background: rgba(0,0,0,0.2); }
