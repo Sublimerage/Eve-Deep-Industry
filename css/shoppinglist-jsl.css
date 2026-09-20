@@ -38,11 +38,11 @@
 /* ---- layout - no max-width cap at all now: the page fills the full window instead of floating
    in a capped-width column with unused gutters on either side. Three real columns: the left rail
    (bulk-input forms), the middle (single-item add + the list itself, absorbing whatever space is
-   left), and a narrow, tall right rail (Favorite Items) - its own column, not another wide panel
-   stacked in the middle, mirroring how the left rail sits beside everything else rather than
-   between other panels. ---- */
-.jsl .cols { display: grid; grid-template-columns: minmax(480px, 560px) 1fr minmax(260px, 300px); gap: 20px; align-items: start; }
-@media (max-width: 1650px) { .jsl .cols { grid-template-columns: minmax(480px, 560px) 1fr; } }
+   left), and a tall right rail (Favorite Items) - its own column, not another wide panel stacked
+   in the middle, mirroring how the left rail sits beside everything else rather than between other
+   panels. ---- */
+.jsl .cols { display: grid; grid-template-columns: minmax(480px, 560px) 1fr minmax(520px, 620px); gap: 20px; align-items: start; }
+@media (max-width: 1900px) { .jsl .cols { grid-template-columns: minmax(480px, 560px) 1fr; } }
 @media (max-width: 1100px) { .jsl .cols { grid-template-columns: 1fr; } }
 .jsl .row { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
 
@@ -158,14 +158,22 @@
    handles fits and whole saved lists, and needs a tab switch to reach). Each entry is its own
    two-line row (name on top, qty stepper + Add underneath) rather than a one-click chip - reported
    directly: clicking a favorite should let you say how many, not silently add exactly 1. ---- */
-.jsl .qfav-row { border-bottom: 1px solid rgba(255,255,255,0.06); padding: 10px 2px; }
-.jsl .qfav-row:last-child { border-bottom: none; }
-.jsl .qfav-top { display: flex; align-items: center; gap: 8px; }
-.jsl .qfav-top img { width: 30px; height: 30px; border-radius: var(--radius-sm); flex-shrink: 0; }
-.jsl .qfav-top .tn { flex: 1; min-width: 0; font-size: 13px; }
-.jsl .qfav-top .lp-chip-btn { flex-shrink: 0; }
-.jsl .qfav-bottom { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
-.jsl .qfav-bottom .lp-chip-btn { flex: 1; justify-content: center; }
+.jsl .qfav-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.jsl .qfav-card { display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: var(--radius-btn); padding: 10px 30px 10px 12px; cursor: pointer; transition: background .15s ease, border-color .15s ease; position: relative; }
+.jsl .qfav-card:hover { background: rgba(var(--accent-rgb),0.1); border-color: rgba(var(--accent-rgb),0.3); }
+.jsl .qfav-card img { width: 32px; height: 32px; border-radius: var(--radius-sm); flex-shrink: 0; }
+.jsl .qfav-card .tn { flex: 1; min-width: 0; font-size: 13.5px; }
+.jsl .qfav-remove { position: absolute; top: 6px; right: 6px; opacity: 0; transition: opacity .15s ease; padding: 2px 5px !important; }
+.jsl .qfav-card:hover .qfav-remove { opacity: 1; }
+
+/* ---- quick-favorites qty popup - "click the item, then say how many" instead of a stepper +
+   button sitting under every single row. ---- */
+.jsl .qfav-popup { background: var(--glass-fill); box-shadow: 0 20px 50px rgba(0,0,0,0.6); border-radius: var(--radius-card); width: 340px; max-width: 90vw; overflow: hidden; }
+.jsl .qfav-popup-body { padding: 20px; text-align: center; }
+.jsl .qfav-popup-body img { width: 48px; height: 48px; border-radius: var(--radius-sm); margin: 0 auto 10px; display: block; }
+.jsl .qfav-popup-body .qty { margin: 14px auto 0; }
+.jsl .qfav-popup-body .qty input[type=number] { width: 70px; font-size: 16px; }
+.jsl .qfav-popup-body .qty button { width: 34px; height: 38px; font-size: 18px; }
 
 /* ---- fit popup body ---- */
 .jsl .fit-popup-body { font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; color: var(--text-soft); line-height: 1.8; white-space: pre-wrap; background: rgba(0,0,0,0.2); }
