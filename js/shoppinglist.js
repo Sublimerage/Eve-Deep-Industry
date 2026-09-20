@@ -50,6 +50,31 @@ function slLookupByName(name) {
 function slVolumeFor(typeId) {
   return (window.EVE_VOLUMES && window.EVE_VOLUMES[typeId]) || 0;
 }
+// Category 6 = Ship (confirmed against eve_db.js's own EVE_CATEGORIES, itself EVE's real
+// categoryID). Ships are the one case where EVE_VOLUMES' plain "volume" (the hull's actual flying
+// size - can be millions of m3 for a capital) is drastically wrong for a shopping list, which
+// always deals in the much smaller PACKAGED volume a hauler actually has to move. Every other
+// category (modules, ammo, minerals, ...) has no packaged variant at all, so EVE_VOLUMES is
+// already correct for them - gating on ship-only avoids a live ESI call for every ordinary item.
+function slIsShipType(typeId) {
+  return !!(window.EVE_CATEGORIES && window.EVE_CATEGORIES[typeId] === 6);
+}
+// Fixes up any ship hull already sitting in the list (standalone or inside a fit) with its real
+// packaged volume, once fetchPackagedVolume resolves - fired after every add path below. Cached
+// permanently in js/esi.js, so this is a one-time network hit per distinct hull ever added, and a
+// no-op on every later add of the same ship. Also self-heals any list/fit/favorite saved before
+// this fix existed, which would have the old, wrong (unpackaged) volume baked in.
+function slRefreshShipVolumes(typeIds) {
+  const ships = [...new Set(typeIds)].filter(slIsShipType);
+  if (!ships.length) return;
+  Promise.all(ships.map(id => window.fetchPackagedVolume(id).then(vol => {
+    if (!vol) return false;
+    let changed = false;
+    slItems.forEach(it => { if (it.typeId === id && it.volume !== vol) { it.volume = vol; changed = true; } });
+    slFits.forEach(f => f.baseItems.forEach(it => { if (it.typeId === id && it.volume !== vol) { it.volume = vol; changed = true; } }));
+    return changed;
+  }))).then(results => { if (results.some(Boolean)) slRenderAll(); });
+}
 function slSearch(query, limit) {
   const q = String(query || '').toLowerCase().trim();
   if (q.length < 2 || !window.IDX) return [];
@@ -142,12 +167,20 @@ function slFavSearchItem(q) {
 function slSearchKeydown(e) {
   if (e.key === 'Enter') slAddSearchedItem();
 }
+// Generic −/+ nudge for a plain number input that isn't tied to any app state until its owning
+// button (Import Fitting, Add to List) actually reads it - the sidebar's own qty/copies fields.
+function slStepInput(inputId, delta, min) {
+  const el = document.getElementById(inputId);
+  if (!el) return;
+  el.value = Math.max(min === undefined ? 1 : min, (parseInt(el.value) || 0) + delta);
+}
 
 function slAddItemToList(typeId, name, qty) {
   const ex = slItems.find(i => i.typeId === typeId);
   if (ex) ex.qty += qty;
   else slItems.push({ typeId, name, qty, volume: slVolumeFor(typeId) });
   window.fetchMarketPrices([typeId]).then(slRenderAll);
+  slRefreshShipVolumes([typeId]);
 }
 
 function slAddSearchedItem() {
@@ -187,6 +220,7 @@ function slPasteItems() {
   if (ids.length) window.fetchMarketPrices(ids).then(slRenderAll);
   window.showToast(`Added ${added} item${added !== 1 ? 's' : ''}${missed ? ` (${missed} not recognized)` : ''}.`, added ? 'success' : 'error');
   slRenderAll();
+  slRefreshShipVolumes(ids);
 }
 // Same as slAddItemToList but doesn't kick off its own price fetch - used when adding many items
 // in one pass (paste/EFT import), so the caller can fetch prices for the whole batch in one call
@@ -232,6 +266,7 @@ function slImportFit() {
   window.showToast(`Imported "${fit.name}" — ${fit.baseItems.length} item${fit.baseItems.length !== 1 ? 's' : ''}${fit.skipped ? ` (${fit.skipped} skipped)` : ''}.`, 'success');
   window.fetchMarketPrices(fit.baseItems.map(i => i.typeId)).then(slRenderAll);
   slRenderAll();
+  slRefreshShipVolumes(fit.baseItems.map(i => i.typeId));
 }
 
 // ── STOCK CHECK (reuses the app's own live ESI asset system) ───────────────────
@@ -272,8 +307,12 @@ function slRenderAll() {
   slSaveSession();
 }
 
-function slItemRowHTML(it, opts) {
-  // opts: { onQtyChange, onRemove, indentBg }
+// Standalone shopping-list items are directly qty-editable (a stepper) - there's nothing else
+// they're derived from. A fit's own module rows are NOT: their quantity comes from the actual
+// fitting (1 gyro, 4 turrets, ...) multiplied by the fit's copies, so the only meaningful edits are
+// "change copies" (the fit header's own stepper) or "remove this module" - matching the original
+// standalone tool exactly, which never made a fit's own item rows qty-editable either.
+function slStandaloneItemRowHTML(it, idx) {
   const stockQty = slStockFor(it.typeId);
   const deduct = slIsDeductingStock();
   const netQty = deduct ? Math.max(0, it.qty - stockQty) : it.qty;
@@ -281,17 +320,45 @@ function slItemRowHTML(it, opts) {
   const unitPrice = slPrice(it.typeId);
   const totalPrice = unitPrice * netQty;
   return `
-    <tr${opts.indentBg ? ' style="background:rgba(255,255,255,0.02);"' : ''}>
+    <tr>
       <td style="width:30px;"><img src="${window.getItemIconUrl(it.typeId, it.name, 32)}" style="width:24px;height:24px;border-radius:4px;" onerror="this.style.opacity=.15" loading="lazy"></td>
-      <td class="truncate" style="color:var(--text);" title="${window.esc(it.name)}">${window.esc(it.name)}</td>
-      <td class="text-right mono" style="width:70px;">
-        <input type="number" min="0" value="${it.qty}" class="field-line text-right mono text-xs" style="width:64px;" onchange="${opts.onQtyChange}(this.value)">
+      <td class="truncate" style="color:var(--text);" title="${window.esc(it.name)}">${window.esc(it.name)}<div class="text-xs mono" style="color:var(--text-mute);">${slFmtVol(it.volume * it.qty)} m&sup3; total</div></td>
+      <td style="width:104px;">
+        <div class="sl-qty">
+          <button onclick="slItemQtyStep(${idx}, -1)">&minus;</button>
+          <input type="number" min="0" value="${it.qty}" class="mono num-no-spin" onchange="slSetItemQty(${idx}, this.value)">
+          <button onclick="slItemQtyStep(${idx}, 1)">+</button>
+        </div>
       </td>
       ${hasStockData ? `<td class="text-right mono text-xs" style="width:70px; color:${stockQty > 0 ? 'var(--green)' : 'var(--text-mute)'};">${stockQty.toLocaleString()}</td>
       <td class="text-right mono text-xs" style="width:80px; color:${netQty > 0 ? 'var(--red)' : 'var(--green)'};">${netQty.toLocaleString()}</td>` : ''}
-      <td class="text-right mono text-xs" style="width:80px; color:var(--text-mute);">${slFmtVol(it.volume * it.qty)} m&sup3;</td>
-      <td class="text-right mono text-xs" style="width:100px; color:var(--gold, var(--cost));">${unitPrice > 0 ? window.formatISKCompact(totalPrice) : '—'}</td>
-      <td style="width:28px;"><button onclick="${opts.onRemove}" class="lp-chip-btn" style="padding:2px 6px;" title="Remove"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:11px;height:11px;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></td>
+      <td class="text-right mono text-xs" style="width:70px; color:var(--text-mute);">${slFmtVol(it.volume)} m&sup3;</td>
+      <td class="text-right mono text-xs" style="width:90px; color:var(--cost);">${unitPrice > 0 ? window.formatISKCompact(totalPrice) : '—'}</td>
+      <td style="width:28px;"><button onclick="slRemoveItem(${idx})" class="lp-chip-btn" style="padding:2px 6px;" title="Remove"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:11px;height:11px;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></td>
+    </tr>
+  `;
+}
+function slFitItemRowHTML(it, fit, isShip) {
+  const tq = it.qty * fit.copies;
+  const stockQty = slStockFor(it.typeId);
+  const deduct = slIsDeductingStock();
+  const netQty = deduct ? Math.max(0, tq - stockQty) : tq;
+  const hasStockData = !!(window.userStockMap && Object.keys(window.userStockMap).length);
+  const unitPrice = slPrice(it.typeId);
+  const totalPrice = unitPrice * netQty;
+  return `
+    <tr${isShip ? ' class="sl-fit-card-ship-row"' : ''}>
+      <td style="width:30px;"><img src="${window.getItemIconUrl(it.typeId, it.name, 32)}" style="width:24px;height:24px;border-radius:4px;" onerror="this.style.opacity=.15" loading="lazy"></td>
+      <td class="truncate" style="color:${isShip ? 'var(--cost)' : 'var(--text)'};" title="${window.esc(it.name)}">
+        ${window.esc(it.name)}${isShip ? ' <span class="text-[8px] mono" style="color:var(--cost); letter-spacing:0.08em;">SHIP</span>' : ''}
+        <div class="text-xs mono" style="color:var(--text-mute);">${it.qty}&times; per fit &middot; ${slFmtVol(it.volume * tq)} m&sup3;</div>
+      </td>
+      <td class="text-right mono text-xs" style="width:60px; color:var(--text);">${tq.toLocaleString()}</td>
+      ${hasStockData ? `<td class="text-right mono text-xs" style="width:70px; color:${stockQty > 0 ? 'var(--green)' : 'var(--text-mute)'};">${stockQty.toLocaleString()}</td>
+      <td class="text-right mono text-xs" style="width:80px; color:${netQty > 0 ? 'var(--red)' : 'var(--green)'};">${netQty.toLocaleString()}</td>` : ''}
+      <td class="text-right mono text-xs" style="width:70px; color:var(--text-mute);">${slFmtVol(it.volume)} m&sup3;</td>
+      <td class="text-right mono text-xs" style="width:90px; color:var(--cost);">${unitPrice > 0 ? window.formatISKCompact(totalPrice) : '—'}</td>
+      <td style="width:28px;"><button onclick="slRemoveFitItem(${fit.fitId}, ${it.typeId})" class="lp-chip-btn" style="padding:2px 6px;" title="Remove"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:11px;height:11px;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></td>
     </tr>
   `;
 }
@@ -305,44 +372,50 @@ function slRenderList() {
   }
   const hasStockData = !!(window.userStockMap && Object.keys(window.userStockMap).length);
   const headCols = `
-    <th style="width:30px;"></th><th>Item</th><th class="text-right" style="width:70px;">Qty</th>
+    <th style="width:30px;"></th><th>Item</th><th class="text-right" style="width:60px;">Qty</th>
     ${hasStockData ? '<th class="text-right" style="width:70px;">Have</th><th class="text-right" style="width:80px;">Buy Qty</th>' : ''}
-    <th class="text-right" style="width:80px;">Volume</th><th class="text-right" style="width:100px;">${slPriceMode === 'buy' ? 'Buy' : 'Sell'} Total</th><th style="width:28px;"></th>
+    <th class="text-right" style="width:70px;">Volume</th><th class="text-right" style="width:90px;">${slPriceMode === 'buy' ? 'Buy' : 'Sell'} Total</th><th style="width:28px;"></th>
   `;
   let html = '';
   slFits.forEach(fit => {
     const fv = fit.baseItems.reduce((s, i) => s + i.volume * i.qty, 0) * fit.copies;
     const fp = fit.baseItems.reduce((s, i) => s + slPrice(i.typeId) * i.qty, 0) * fit.copies;
+    const moduleCount = fit.baseItems.filter(i => i.typeId !== fit.shipTypeId).length;
+    const shipItem = fit.shipTypeId ? fit.baseItems.find(i => i.typeId === fit.shipTypeId) : null;
+    const moduleItems = fit.baseItems.filter(i => i.typeId !== fit.shipTypeId);
+    const orderedItems = shipItem ? [shipItem, ...moduleItems] : moduleItems;
     html += `
-      <div class="lp-row" style="margin-bottom:8px; padding:0; overflow:hidden;">
-        <div class="flex items-center gap-2 px-3 py-2 cursor-pointer" style="background:rgba(255,255,255,0.03);" onclick="slToggleFit(${fit.fitId})">
-          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px; transform:rotate(${fit.collapsed ? '-90' : '0'}deg); transition:transform .15s; flex-shrink:0;"><polyline points="6 9 12 15 18 9"/></svg>
-          <span class="font-bold text-sm truncate" style="color:var(--gold, var(--accent));">${window.esc(fit.name)}</span>
+      <div class="sl-fit-card">
+        <div class="sl-fit-card-head flex items-center gap-2 px-3 py-2.5" onclick="slToggleFit(${fit.fitId})">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px; transform:rotate(${fit.collapsed ? '-90' : '0'}deg); transition:transform .15s; flex-shrink:0; color:var(--cost);"><polyline points="6 9 12 15 18 9"/></svg>
+          <span class="font-bold text-sm truncate rajdhani tracking-wide" style="color:var(--cost);">${window.esc(fit.name)}</span>
           ${fit.shipName ? `<span class="text-xs truncate" style="color:var(--text-mute);">[${window.esc(fit.shipName)}]</span>` : ''}
-          <span class="text-xs mono flex-shrink-0" style="color:var(--text-mute); margin-left:auto;">${slFmtVol(fv)} m&sup3; &middot; ${fp > 0 ? window.formatISKCompact(fp) : '—'}</span>
-          <div class="flex items-center gap-1.5 flex-shrink-0" onclick="event.stopPropagation()">
+          <span class="text-xs mono flex-shrink-0 hidden sm:inline" style="color:var(--text-mute); margin-left:auto;">${slFmtVol(fv)} m&sup3; &middot; ${fp > 0 ? window.formatISKCompact(fp) : '—'} &middot; ${moduleCount} module${moduleCount !== 1 ? 's' : ''}</span>
+          <div class="flex items-center gap-1.5 flex-shrink-0" style="margin-left:${fit.shipName ? 'auto' : '0'};" onclick="event.stopPropagation()">
             <span class="text-[9px] mono" style="color:var(--text-mute);">COPIES</span>
-            <input type="number" min="1" value="${fit.copies}" class="field-line text-center mono text-xs" style="width:48px;" onchange="slSetFitCopies(${fit.fitId}, this.value)">
+            <div class="sl-qty sl-qty-sm">
+              <button onclick="slFitCopiesStep(${fit.fitId}, -1)">&minus;</button>
+              <input type="number" min="1" value="${fit.copies}" class="mono num-no-spin" onchange="slSetFitCopies(${fit.fitId}, this.value)">
+              <button onclick="slFitCopiesStep(${fit.fitId}, 1)">+</button>
+            </div>
             <button onclick="slCopyFitMultibuy(${fit.fitId})" class="lp-chip-btn" style="font-size:10px;">EFT</button>
             <button onclick="slRemoveFit(${fit.fitId})" class="lp-chip-btn" style="font-size:10px; color:var(--red);">Remove</button>
           </div>
         </div>
         ${!fit.collapsed ? `
-        <table class="w-full text-xs" style="border-collapse:collapse;">
-          <thead><tr style="color:var(--text-mute); font-size:9px; text-transform:uppercase; letter-spacing:0.05em;">${headCols}</tr></thead>
-          <tbody>${fit.baseItems.map(it => slItemRowHTML(
-            { ...it, qty: it.qty * fit.copies, volume: it.volume },
-            { onQtyChange: `slSetFitItemQty(${fit.fitId}, ${it.typeId},`, onRemove: `slRemoveFitItem(${fit.fitId}, ${it.typeId})` }
-          )).join('')}</tbody>
+        <table class="sl-item-table">
+          <thead><tr>${headCols}</tr></thead>
+          <tbody>${orderedItems.map(it => slFitItemRowHTML(it, fit, it.typeId === fit.shipTypeId)).join('')}</tbody>
         </table>` : ''}
       </div>
     `;
   });
   if (slItems.length) {
+    if (slFits.length) html += `<div class="sl-divider-label">Individual Items</div>`;
     html += `
-      <table class="w-full text-xs" style="border-collapse:collapse;">
-        <thead><tr style="color:var(--text-mute); font-size:9px; text-transform:uppercase; letter-spacing:0.05em;">${headCols}</tr></thead>
-        <tbody>${slItems.map((it, idx) => slItemRowHTML(it, { onQtyChange: `slSetItemQty(${idx},`, onRemove: `slRemoveItem(${idx})` })).join('')}</tbody>
+      <table class="sl-item-table sl-list-items-table">
+        <thead><tr>${headCols}</tr></thead>
+        <tbody>${slItems.map((it, idx) => slStandaloneItemRowHTML(it, idx)).join('')}</tbody>
       </table>
     `;
   }
@@ -351,13 +424,8 @@ function slRenderList() {
 
 function slToggleFit(fid) { const f = slFits.find(f => f.fitId === fid); if (f) { f.collapsed = !f.collapsed; slRenderList(); } }
 function slSetFitCopies(fid, val) { const v = Math.max(1, parseInt(val) || 1); const f = slFits.find(f => f.fitId === fid); if (f) { f.copies = v; slRenderAll(); } }
-function slSetFitItemQty(fid, typeId, val) {
-  const v = Math.max(0, parseInt(val) || 0);
-  const f = slFits.find(f => f.fitId === fid); if (!f) return;
-  const it = f.baseItems.find(i => i.typeId === typeId); if (!it) return;
-  it.qty = Math.max(0, Math.round(v / f.copies)) || 0;
-  slRenderAll();
-}
+function slFitCopiesStep(fid, delta) { const f = slFits.find(f => f.fitId === fid); if (f) { f.copies = Math.max(1, f.copies + delta); slRenderAll(); } }
+function slItemQtyStep(idx, delta) { if (!slItems[idx]) return; slItems[idx].qty = Math.max(0, slItems[idx].qty + delta); slRenderAll(); }
 function slSetItemQty(idx, val) {
   const v = Math.max(0, parseInt(val) || 0);
   if (!slItems[idx]) return;
@@ -506,11 +574,12 @@ function slWishlistToShopping() {
   window.fetchMarketPrices(ids).then(slRenderAll);
   slRenderAll(); slSwitchTab('list');
   window.showToast(`Added ${added} wishlist entr${added !== 1 ? 'ies' : 'y'} to the shopping list.`, 'success');
+  slRefreshShipVolumes(ids);
 }
 function slWishAddOne(idx) {
   const w = slWishlist[idx]; if (!w) return;
   if (w.kind === 'item') slAddItemToList(w.typeId, w.name, w.qty || 1);
-  else { const fit = slBuildFitFromEFT(w.fitText, w.copies || 1); if (fit) { fit.name = w.fitName; slFits.push(fit); window.fetchMarketPrices(fit.baseItems.map(i => i.typeId)).then(slRenderAll); } }
+  else { const fit = slBuildFitFromEFT(w.fitText, w.copies || 1); if (fit) { fit.name = w.fitName; slFits.push(fit); window.fetchMarketPrices(fit.baseItems.map(i => i.typeId)).then(slRenderAll); slRefreshShipVolumes(fit.baseItems.map(i => i.typeId)); } }
   slRenderAll(); slSwitchTab('list');
   window.showToast(`Added: ${w.kind === 'item' ? w.name : w.fitName}`, 'success');
 }
@@ -537,7 +606,11 @@ function slRenderWishlist() {
         <div class="flex-1 min-w-0"><div class="font-bold text-sm truncate" style="color:var(--gold, var(--accent));">${window.esc(w.fitName)}</div><div class="text-xs truncate" style="color:var(--text-mute);">${w.shipName ? window.esc(w.shipName) + ' · ' : ''}<span style="cursor:pointer;text-decoration:underline;" onclick="slOpenFitPopup('wish', ${idx})">view fit</span></div></div>`
         : `<img src="${window.getItemIconUrl(w.typeId, w.name, 32)}" style="width:26px;height:26px;border-radius:4px;flex-shrink:0;" onerror="this.style.opacity=.15">
         <span class="flex-1 truncate text-sm" style="color:var(--text);">${window.esc(w.name)}</span>`}
-      <input type="number" min="1" value="${w.kind === 'item' ? (w.qty || 1) : (w.copies || 1)}" class="field-line text-center mono text-xs flex-shrink-0" style="width:52px;" onchange="slWishQtySet(${idx}, this.value)">
+      <div class="sl-qty sl-qty-sm flex-shrink-0">
+        <button onclick="slWishQtyAdjust(${idx}, -1)">&minus;</button>
+        <input type="number" min="1" value="${w.kind === 'item' ? (w.qty || 1) : (w.copies || 1)}" class="mono num-no-spin" onchange="slWishQtySet(${idx}, this.value)">
+        <button onclick="slWishQtyAdjust(${idx}, 1)">+</button>
+      </div>
       <button onclick="slWishAddOne(${idx})" class="lp-chip-btn flex-shrink-0" style="font-size:10px;">+ Add</button>
       <button onclick="slRemoveWishEntry(${idx})" class="lp-chip-btn flex-shrink-0" style="font-size:10px; color:var(--red);">✕</button>
     </div>
@@ -593,7 +666,7 @@ function slRemoveFavorite(idx) {
 function slUseFavorite(idx) {
   const f = slFavorites[idx]; if (!f) return;
   if (f.kind === 'item') { slAddItemToList(f.typeId, f.name, 1); slRenderAll(); slSwitchTab('list'); window.showToast(`Added: ${f.name}`, 'success'); return; }
-  if (f.kind === 'fit') { const fit = slBuildFitFromEFT(f.fitText, 1); if (fit) { fit.name = f.name; slFits.push(fit); window.fetchMarketPrices(fit.baseItems.map(i => i.typeId)).then(slRenderAll); } slRenderAll(); slSwitchTab('list'); window.showToast(`Added fit: ${f.name}`, 'success'); return; }
+  if (f.kind === 'fit') { const fit = slBuildFitFromEFT(f.fitText, 1); if (fit) { fit.name = f.name; slFits.push(fit); window.fetchMarketPrices(fit.baseItems.map(i => i.typeId)).then(slRenderAll); slRefreshShipVolumes(fit.baseItems.map(i => i.typeId)); } slRenderAll(); slSwitchTab('list'); window.showToast(`Added fit: ${f.name}`, 'success'); return; }
   // list kind: add every item/fit on top of the current list
   (f.items || []).forEach(it => slAddItemToListSilent(it.typeId, it.name, it.qty));
   (f.fits || []).forEach(fit => slFits.push({ ...fit, fitId: ++slFitCounter, baseItems: fit.baseItems.map(i => ({ ...i })) }));
@@ -601,6 +674,7 @@ function slUseFavorite(idx) {
   window.fetchMarketPrices(ids).then(slRenderAll);
   slRenderAll(); slSwitchTab('list');
   window.showToast(`Added list "${f.name}" to your current list.`, 'success');
+  slRefreshShipVolumes(ids);
 }
 // "⇄ Replace" - list kind only. The right action for "pause what I'm doing and swap to this other
 // draft/recurring list instead" - clears the current list first, matching what the old standalone
@@ -614,6 +688,7 @@ function slReplaceWithFavorite(idx) {
   window.fetchMarketPrices(ids).then(slRenderAll);
   slRenderAll(); slSwitchTab('list');
   window.showToast(`Replaced current list with "${f.name}".`, 'success');
+  slRefreshShipVolumes(ids);
 }
 function slRenderFavorites() {
   const grid = document.getElementById('sl-favorites-grid'); if (!grid) return;
@@ -732,6 +807,7 @@ window.onload = function () {
   if (slItems.length || slFits.length) {
     const ids = [...slItems.map(i => i.typeId), ...slFits.flatMap(f => f.baseItems.map(i => i.typeId))];
     window.fetchMarketPrices(ids).then(slRenderAll);
+    slRefreshShipVolumes(ids);
   }
   if (typeof handleEsiSSOCallback === 'function') handleEsiSSOCallback();
 };
