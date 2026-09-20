@@ -97,8 +97,7 @@
          scoped to a literal nav element. -->
     <div class="flex items-center gap-1 mb-3" id="sl-tabs">
       <button class="nav-tab nav-tab-active-violet" data-sl-tab="list" onclick="slSwitchTab('list')">Shopping List</button>
-      <button class="nav-tab" data-sl-tab="favorites" onclick="slSwitchTab('favorites')">Favorites <span id="sl-favorites-badge" class="lp-badge hidden" style="margin-left:4px;">0</span></button>
-      <button class="nav-tab" data-sl-tab="wishlist" onclick="slSwitchTab('wishlist')">Wishlist <span id="sl-wishlist-badge" class="lp-badge hidden" style="margin-left:4px;">0</span></button>
+      <button class="nav-tab" data-sl-tab="favwish" onclick="slSwitchTab('favwish')">Favorites &amp; Wishlist</button>
     </div>
 
     <!-- ═══ TAB: SHOPPING LIST ═══════════════════════════════════════════════ -->
@@ -256,39 +255,38 @@
       </div>
     </div><!-- end tab-list -->
 
-    <!-- ═══ TAB: FAVORITES ══════════════════════════════════════════════════
-         Fits and saved lists only - single items are favorited from the Shopping List tab
-         itself (the star button on a row, or the Favorite Items rail), which keeps this grid
-         focused on the two things you actually come back to browse: fits and whole lists. -->
-    <div id="sl-tab-favorites" class="jtab-content">
-      <div class="panel" style="margin:0;">
-        <div class="ph">
-          <span class="pt">Favorites</span><span class="pb">Fits &amp; Saved Lists</span>
-          <div style="margin-left:auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-            <input type="text" id="sl-fav-name" placeholder="Favorite name..." class="field-box text-xs mono" style="width:150px;">
-            <button class="lp-chip-btn" onclick="slSaveCurrentAsFavorite()"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> Save Current List</button>
-            <button class="lp-chip-btn" onclick="slExportFavorites()"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Export</button>
-            <label class="lp-chip-btn" style="cursor:pointer;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 9v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Import<input type="file" accept=".json" style="display:none" onchange="slImportFavorites(this)"></label>
+    <!-- ═══ TAB: FAVORITES & WISHLIST ═══════════════════════════════════════════
+         Merged into one tab, side by side - each half was too thin on its own to earn a
+         separate tab. Both halves are fits-only: single items are favorited from the Shopping
+         List tab itself (the star button on a row, or the Favorite Items rail) - that stays a
+         completely separate flow, so it's not duplicated or shown here. -->
+    <div id="sl-tab-favwish" class="jtab-content">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
+
+        <!-- Left half: Favorites - fits and whole saved lists you keep coming back to. -->
+        <div class="panel" style="margin:0;">
+          <div class="ph">
+            <span class="pt">Favorites</span><span class="pb" id="sl-favorites-badge">0 Saved</span>
+            <div style="margin-left:auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+              <input type="text" id="sl-fav-name" placeholder="Favorite name..." class="field-box text-xs mono" style="width:120px;">
+              <button class="lp-chip-btn" onclick="slSaveCurrentAsFavorite()" title="Save the current shopping list as a favorite"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> Save List</button>
+              <button class="lp-chip-btn" onclick="slExportFavorites()" title="Export favorites as JSON"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+              <label class="lp-chip-btn" style="cursor:pointer;" title="Import favorites from JSON"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 9v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><input type="file" accept=".json" style="display:none" onchange="slImportFavorites(this)"></label>
+            </div>
+          </div>
+          <div id="sl-favorites-grid" class="fav-grid"></div>
+          <div class="wladd-bar">
+            <span class="fs">ADD FIT</span>
+            <textarea id="sl-fav-eft" class="field-box mono text-xs" style="min-height:38px;" placeholder="[Rifter, My Fit]&#10;Gyrostabilizer II&#10;..."></textarea>
+            <button class="btn-glass px-3 py-1.5 text-xs flex-shrink-0" onclick="slAddFavFit()">+ Add Fit</button>
           </div>
         </div>
-        <div id="sl-favorites-grid" class="fav-grid"></div>
-        <div class="wladd-bar">
-          <span class="fs">ADD FIT</span>
-          <textarea id="sl-fav-eft" class="field-box mono text-xs" style="min-height:38px;" placeholder="[Rifter, My Fit]&#10;Gyrostabilizer II&#10;..."></textarea>
-          <button class="btn-glass px-3 py-1.5 text-xs flex-shrink-0" onclick="slAddFavFit()">+ Add Fit</button>
-        </div>
-      </div>
-    </div><!-- end tab-favorites -->
 
-    <!-- ═══ TAB: WISHLIST ════════════════════════════════════════════════════
-         Fits only, same reasoning as Favorites above - a wishlist here means "fits I want to
-         fly next," not a second place to stash individual items. -->
-    <div id="sl-tab-wishlist" class="jtab-content">
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
+        <!-- Right half: Wishlist - fits you want to fly next. -->
         <div class="panel" style="margin:0;">
-          <div class="ph"><span class="pt">Wishlist</span><span class="pb">Fits to Fly Next</span></div>
-          <div class="wladd-bar" style="padding:14px 18px 10px;">
-            <span class="fs">ADD FIT (paste EFT)</span>
+          <div class="ph"><span class="pt">Wishlist</span><span class="pb" id="sl-wishlist-badge">0 Fits</span></div>
+          <div class="wladd-bar">
+            <span class="fs">ADD FIT</span>
             <textarea id="sl-wish-eft" class="field-box mono text-xs" style="min-height:38px;" placeholder="[Rifter, PVP Kiting]&#10;Gyrostabilizer II&#10;..."></textarea>
             <button class="btn-glass px-3 py-1.5 text-xs flex-shrink-0" onclick="slAddWishFit()">+ Add Fit</button>
           </div>
@@ -297,18 +295,9 @@
             <button class="lp-chip-btn" onclick="slWishlistToShopping()"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Add All to Shopping List</button>
           </div>
         </div>
-        <div class="panel" style="margin:0;">
-          <div class="ph"><span class="pt">Notes</span><span class="pb">Plans &amp; Reminders</span></div>
-          <div class="pd" style="padding-bottom:8px;">
-            <textarea id="sl-wish-notes" class="field-box mono text-xs" style="min-height:280px; resize:vertical;" placeholder="Ship ideas, price targets, goals..." oninput="slSaveNotes()"></textarea>
-            <div class="row">
-              <span class="fs">AUTO-SAVED</span>
-              <button class="lp-chip-btn" style="margin-left:auto;" onclick="slClearNotes()"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Clear Notes</button>
-            </div>
-          </div>
-        </div>
+
       </div>
-    </div><!-- end tab-wishlist -->
+    </div><!-- end tab-favwish -->
 
   </div><!-- end .jsl -->
   </div>
@@ -363,6 +352,6 @@
   <script src="js/config.js?v=8.0.47" defer></script>
   <script src="js/esi.js?v=8.0.41" defer></script>
   <script src="js/custom-select.js?v=1.5.0" defer></script>
-  <script src="js/shoppinglist.js?v=1.0.17" defer></script>
+  <script src="js/shoppinglist.js?v=1.0.18" defer></script>
 </body>
 </html>
