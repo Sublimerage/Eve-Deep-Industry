@@ -22,39 +22,48 @@
   --jsl-bright: var(--text);
   --jsl-red: var(--red);
   color: var(--text-soft);
-  max-width: 1180px;
+  max-width: 1760px;
   margin: 0 auto;
 }
 .jsl, .jsl *, .jsl *::before, .jsl *::after { box-sizing: border-box; }
 .jsl ::-webkit-scrollbar { width: 5px; }
 .jsl ::-webkit-scrollbar-thumb { background: var(--jsl-glow); border-radius: 3px; }
 
-/* ---- layout ---- */
-.jsl .cols { display: grid; grid-template-columns: 320px 1fr; gap: 14px; align-items: start; }
-@media (max-width: 900px) { .jsl .cols { grid-template-columns: 1fr; } }
+/* ---- tab content visibility - the actual show/hide behind slSwitchTab(). Losing this rule
+   (while keeping the .nav-tab button styling) is what made Wishlist/Favorites render permanently
+   stacked under the Shopping List content instead of swapping in - the buttons still toggled
+   .active correctly, but nothing was listening for it. ---- */
+.jsl .jtab-content { display: none; }
+.jsl .jtab-content.active { display: block; }
+
+/* ---- layout - left column widened and given room to breathe instead of a cramped fixed-width
+   rail; the page uses the full available width up to --jsl's own cap above instead of floating in
+   a narrow centered column with large unused gutters on wide screens. ---- */
+.jsl .cols { display: grid; grid-template-columns: minmax(360px, 420px) 1fr; gap: 20px; align-items: start; }
+@media (max-width: 1000px) { .jsl .cols { grid-template-columns: 1fr; } }
 .jsl .row { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
 
 /* ---- panels: the same glass-fill/glass-shadow/radius-card recipe body.page-calc .lp-card
    already uses everywhere else, so a panel here reads as the same physical material as the rest
    of the site instead of a flatter, sharper-edged approximation of it. ---- */
-.jsl .panel { background: var(--glass-fill); box-shadow: var(--glass-shadow); border-radius: var(--radius-card); margin-bottom: 14px; overflow: hidden; }
-.jsl .ph { display: flex; align-items: center; gap: 10px; padding: 14px 18px 10px; flex-wrap: wrap; }
-.jsl .pt { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text); }
-.jsl .pb { font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: var(--jsl-dim); letter-spacing: 0.05em; margin-left: auto; }
-.jsl .pd { padding: 4px 18px 16px; }
+.jsl .panel { background: var(--glass-fill); box-shadow: var(--glass-shadow); border-radius: var(--radius-card); margin-bottom: 18px; overflow: hidden; }
+.jsl .ph { display: flex; align-items: center; gap: 10px; padding: 18px 24px 12px; flex-wrap: wrap; }
+.jsl .pt { font-size: 12.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text); }
+.jsl .pb { font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; color: var(--jsl-dim); letter-spacing: 0.05em; margin-left: auto; }
+.jsl .pd { padding: 6px 24px 22px; }
 
 /* ---- text fields: reuse the site's own .field-box (primary, filled) and .field-line (secondary,
    invisible-until-focus) recipes directly via those classes in the markup - these rules only add
    the layout properties (width/resize/min-height) those shared classes don't set themselves. ---- */
-.jsl textarea { width: 100%; resize: vertical; min-height: 90px; line-height: 1.6; padding: 8px 10px; }
+.jsl textarea { width: 100%; resize: vertical; min-height: 105px; line-height: 1.65; padding: 10px 12px; }
 .jsl input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
 .jsl select { width: 100%; }
 
 /* ---- qty stepper - no equivalent component exists elsewhere on the site. ---- */
 .jsl .qty { display: inline-flex; align-items: center; background: rgba(255,255,255,0.05); border-radius: var(--radius-input); flex-shrink: 0; }
-.jsl .qty button { background: none; border: none; color: var(--jsl-dim); width: 26px; height: 30px; cursor: pointer; font-size: 15px; transition: color .15s ease; }
+.jsl .qty button { background: none; border: none; color: var(--jsl-dim); width: 28px; height: 32px; cursor: pointer; font-size: 16px; transition: color .15s ease; }
 .jsl .qty button:hover { color: var(--accent); }
-.jsl .qty input[type=number] { background: none !important; border: none !important; color: var(--text); font-family: 'IBM Plex Mono', monospace; font-size: 12px; width: 48px; text-align: center; outline: none; padding: 0 !important; }
+.jsl .qty input[type=number] { background: none !important; border: none !important; color: var(--text); font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; width: 52px; text-align: center; outline: none; padding: 0 !important; }
 .jsl .qty.qty-sm input[type=number] { width: 36px; }
 .jsl .qty.qty-sm button { width: 22px; height: 26px; font-size: 13px; }
 
