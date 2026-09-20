@@ -335,6 +335,15 @@ function slRenderAll() {
 // fitting (1 gyro, 4 turrets, ...) multiplied by the fit's copies, so the only meaningful edits are
 // "change copies" (the fit header's own stepper) or "remove this module" - matching the original
 // standalone tool exactly, which never made a fit's own item rows qty-editable either.
+// Star/favorite button shared by both row types - lets you favorite something straight from the
+// list you're already looking at, instead of only via the separate favorite-item search box.
+function slFavoriteRowBtnHTML(typeId, name) {
+  return `<button onclick="event.stopPropagation(); slFavoriteItemFromList(${typeId}, '${window.esc(name).replace(/'/g, "\\'")}')" class="lp-chip-btn" title="Add to favorites"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></button>`;
+}
+// Unit volume/price folded into the name's own subtitle line instead of two more dedicated table
+// columns - reported directly (repeatedly) that the row was overflowing/getting clipped on the
+// right at normal window widths. Fewer, wider-breathing columns fixes that at the source instead
+// of relying on horizontal scroll to see the rest of a row.
 function slStandaloneItemRowHTML(it, idx) {
   const stockQty = slStockFor(it.typeId);
   const deduct = slIsDeductingStock();
@@ -345,7 +354,7 @@ function slStandaloneItemRowHTML(it, idx) {
   return `
     <tr>
       <td><img src="${window.getItemIconUrl(it.typeId, it.name, 64)}" style="width:36px;height:36px;border-radius:5px;" onerror="this.style.opacity=.15" loading="lazy"></td>
-      <td><div class="tn" title="${window.esc(it.name)}">${window.esc(it.name)}</div><div class="tm">${slFmtVol(it.volume * it.qty)} m&sup3; total</div></td>
+      <td><div class="tn" title="${window.esc(it.name)}">${window.esc(it.name)}</div><div class="tm">${slFmtVol(it.volume)} m&sup3;/unit &middot; ${unitPrice > 0 ? window.formatISKCompact(unitPrice) : 'N/A'}/unit</div></td>
       <td style="text-align:center;">
         <div class="qty qty-sm" style="display:inline-flex;">
           <button onclick="slItemQtyStep(${idx}, -1)" type="button">&minus;</button>
@@ -353,12 +362,9 @@ function slStandaloneItemRowHTML(it, idx) {
           <button onclick="slItemQtyStep(${idx}, 1)" type="button">+</button>
         </div>
       </td>
-      ${hasStockData ? `<td class="tv" style="color:${stockQty > 0 ? 'var(--green)' : 'var(--jsl-dim)'};">${stockQty.toLocaleString()}</td>
-      <td class="tv" style="color:${netQty > 0 ? 'var(--jsl-red)' : 'var(--green)'};">${netQty.toLocaleString()}</td>` : ''}
-      <td class="tv">${slFmtVol(it.volume)} m&sup3;</td>
-      <td class="tp">${unitPrice > 0 ? window.formatISKCompact(unitPrice) : 'N/A'}</td>
+      ${hasStockData ? `<td class="tv"><div style="color:${netQty > 0 ? 'var(--jsl-red)' : 'var(--green)'};">${netQty.toLocaleString()}</div><div class="tm" style="text-align:right;">own: ${stockQty.toLocaleString()}</div></td>` : ''}
       <td class="tp">${unitPrice > 0 ? window.formatISKCompact(totalPrice) : '—'}</td>
-      <td style="text-align:right;"><button onclick="slRemoveItem(${idx})" class="lp-chip-btn" title="Remove"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></td>
+      <td style="text-align:right; white-space:nowrap;">${slFavoriteRowBtnHTML(it.typeId, it.name)}<button onclick="slRemoveItem(${idx})" class="lp-chip-btn" title="Remove"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></td>
     </tr>
   `;
 }
@@ -373,16 +379,20 @@ function slFitItemRowHTML(it, fit, isShip) {
   return `
     <tr${isShip ? ' class="ship-row"' : ''}>
       <td><img src="${window.getItemIconUrl(it.typeId, it.name, 64)}" style="width:36px;height:36px;border-radius:5px;" onerror="this.style.opacity=.15" loading="lazy"></td>
-      <td><div class="tn" title="${window.esc(it.name)}">${window.esc(it.name)}${isShip ? '<span class="ship-badge">SHIP</span>' : ''}</div><div class="tm">${it.qty}&times; per fit &middot; ${slFmtVol(it.volume * tq)} m&sup3;</div></td>
+      <td><div class="tn" title="${window.esc(it.name)}">${window.esc(it.name)}${isShip ? '<span class="ship-badge">SHIP</span>' : ''}</div><div class="tm">${it.qty}&times;/fit &middot; ${slFmtVol(it.volume)} m&sup3;/unit &middot; ${unitPrice > 0 ? window.formatISKCompact(unitPrice) : 'N/A'}/unit</div></td>
       <td style="text-align:center; font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--jsl-bright);">${tq.toLocaleString()}</td>
-      ${hasStockData ? `<td class="tv" style="color:${stockQty > 0 ? 'var(--green)' : 'var(--jsl-dim)'};">${stockQty.toLocaleString()}</td>
-      <td class="tv" style="color:${netQty > 0 ? 'var(--jsl-red)' : 'var(--green)'};">${netQty.toLocaleString()}</td>` : ''}
-      <td class="tv">${slFmtVol(it.volume)} m&sup3;</td>
-      <td class="tp">${unitPrice > 0 ? window.formatISKCompact(unitPrice) : 'N/A'}</td>
+      ${hasStockData ? `<td class="tv"><div style="color:${netQty > 0 ? 'var(--jsl-red)' : 'var(--green)'};">${netQty.toLocaleString()}</div><div class="tm" style="text-align:right;">own: ${stockQty.toLocaleString()}</div></td>` : ''}
       <td class="tp">${unitPrice > 0 ? window.formatISKCompact(totalPrice) : '—'}</td>
-      <td style="text-align:right;"><button onclick="slRemoveFitItem(${fit.fitId}, ${it.typeId})" class="lp-chip-btn" title="Remove"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></td>
+      <td style="text-align:right; white-space:nowrap;">${slFavoriteRowBtnHTML(it.typeId, it.name)}<button onclick="slRemoveFitItem(${fit.fitId}, ${it.typeId})" class="lp-chip-btn" title="Remove"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></td>
     </tr>
   `;
+}
+function slFavoriteItemFromList(typeId, name) {
+  if (slFavorites.find(f => f.kind === 'item' && f.typeId === typeId)) { window.showToast('Already in favorites.', 'info'); return; }
+  slFavorites.unshift({ kind: 'item', typeId, name });
+  saveSlFavorites();
+  slRenderFavorites();
+  window.showToast(`Added to favorites: ${name}`, 'success');
 }
 
 function slRenderList() {
@@ -401,10 +411,14 @@ function slRenderList() {
   // Qty column needs to fit the full −/input/+ stepper (86px on its own), not just a bare number.
   // Reported directly: both were too narrow, silently clipping the right edge of the icon and the
   // stepper's own + button.
+  // Fewer, wider-breathing columns than before - unit volume/price now live in each row's own
+  // name subtitle instead of two dedicated columns, and Have+Buy Qty collapsed into one column
+  // (Buy Qty as the primary number, "own: N" as a small subtitle) - the previous 8-column layout
+  // was what kept overflowing/clipping its right edge at normal window widths.
   const headCols = `
-    <th style="width:66px;"></th><th>Item</th><th style="text-align:center;width:118px;">Qty</th>
-    ${hasStockData ? '<th style="text-align:right;width:72px;" title="How many of this you already own, from the stock filter in the sidebar">Have</th><th style="text-align:right;width:86px;" title="What you still need to buy after subtracting what you already own">Buy Qty</th>' : ''}
-    <th style="text-align:right;width:94px;" title="Volume of a single unit">Vol/Unit</th><th style="text-align:right;width:94px;" title="Jita ${slPriceMode === 'buy' ? 'buy' : 'sell'} price per unit">${slPriceMode === 'buy' ? 'Buy' : 'Sell'}</th><th style="text-align:right;width:106px;" title="Unit price &times; quantity">Total</th><th style="width:32px;"></th>
+    <th style="width:60px;"></th><th>Item</th><th style="text-align:center;width:118px;">Qty</th>
+    ${hasStockData ? `<th style="text-align:right;width:100px;" title="What you still need to buy after subtracting what you already own (shown below it)">Buy Qty</th>` : ''}
+    <th style="text-align:right;width:100px;" title="${slPriceMode === 'buy' ? 'Buy' : 'Sell'} price &times; quantity">Total (${slPriceMode === 'buy' ? 'Buy' : 'Sell'})</th><th style="width:82px;"></th>
   `;
   let html = '';
   slFits.forEach(fit => {
