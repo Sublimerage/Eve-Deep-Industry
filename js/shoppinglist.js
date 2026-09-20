@@ -340,7 +340,7 @@ function slStandaloneItemRowHTML(it, idx) {
   const totalPrice = unitPrice * netQty;
   return `
     <tr>
-      <td><img src="${window.getItemIconUrl(it.typeId, it.name, 32)}" style="width:24px;height:24px;border-radius:3px;" onerror="this.style.opacity=.15" loading="lazy"></td>
+      <td><img src="${window.getItemIconUrl(it.typeId, it.name, 64)}" style="width:36px;height:36px;border-radius:5px;" onerror="this.style.opacity=.15" loading="lazy"></td>
       <td><div class="tn" title="${window.esc(it.name)}">${window.esc(it.name)}</div><div class="tm">${slFmtVol(it.volume * it.qty)} m&sup3; total</div></td>
       <td style="text-align:center;">
         <div class="qty qty-sm" style="display:inline-flex;">
@@ -368,7 +368,7 @@ function slFitItemRowHTML(it, fit, isShip) {
   const totalPrice = unitPrice * netQty;
   return `
     <tr${isShip ? ' class="ship-row"' : ''}>
-      <td><img src="${window.getItemIconUrl(it.typeId, it.name, 32)}" style="width:24px;height:24px;border-radius:3px;" onerror="this.style.opacity=.15" loading="lazy"></td>
+      <td><img src="${window.getItemIconUrl(it.typeId, it.name, 64)}" style="width:36px;height:36px;border-radius:5px;" onerror="this.style.opacity=.15" loading="lazy"></td>
       <td><div class="tn" title="${window.esc(it.name)}">${window.esc(it.name)}${isShip ? '<span class="ship-badge">SHIP</span>' : ''}</div><div class="tm">${it.qty}&times; per fit &middot; ${slFmtVol(it.volume * tq)} m&sup3;</div></td>
       <td style="text-align:center; font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--jsl-bright);">${tq.toLocaleString()}</td>
       ${hasStockData ? `<td class="tv" style="color:${stockQty > 0 ? 'var(--green)' : 'var(--jsl-dim)'};">${stockQty.toLocaleString()}</td>
@@ -392,9 +392,9 @@ function slRenderList() {
   }
   const hasStockData = !!(window.userStockMap && Object.keys(window.userStockMap).length);
   const headCols = `
-    <th style="width:30px;"></th><th>Item</th><th style="text-align:center;width:70px;">Qty</th>
-    ${hasStockData ? '<th style="text-align:right;width:60px;">Have</th><th style="text-align:right;width:70px;">Buy Qty</th>' : ''}
-    <th style="text-align:right;width:70px;">Vol/Unit</th><th style="text-align:right;width:80px;">${slPriceMode === 'buy' ? 'Buy' : 'Sell'}</th><th style="text-align:right;width:90px;">Total</th><th style="width:28px;"></th>
+    <th style="width:46px;"></th><th>Item</th><th style="text-align:center;width:70px;">Qty</th>
+    ${hasStockData ? '<th style="text-align:right;width:60px;" title="How many of this you already own, from the stock filter in the sidebar">Have</th><th style="text-align:right;width:70px;" title="What you still need to buy after subtracting what you already own">Buy Qty</th>' : ''}
+    <th style="text-align:right;width:80px;" title="Volume of a single unit">Vol/Unit</th><th style="text-align:right;width:80px;" title="Jita ${slPriceMode === 'buy' ? 'buy' : 'sell'} price per unit">${slPriceMode === 'buy' ? 'Buy' : 'Sell'}</th><th style="text-align:right;width:90px;" title="Unit price &times; quantity">Total</th><th style="width:28px;"></th>
   `;
   let html = '';
   slFits.forEach(fit => {
@@ -424,6 +424,7 @@ function slRenderList() {
         </div>
         <div class="fb-body">
           <table class="jtable">
+            <thead><tr>${headCols}</tr></thead>
             <tbody>${orderedItems.map(it => slFitItemRowHTML(it, fit, it.typeId === fit.shipTypeId)).join('')}</tbody>
           </table>
         </div>
@@ -733,6 +734,7 @@ function slReplaceWithFavorite(idx) {
   slRefreshShipVolumes(ids);
 }
 function slRenderFavorites() {
+  slRenderQuickFavorites();
   const grid = document.getElementById('sl-favorites-grid'); if (!grid) return;
   const badge = document.getElementById('sl-favorites-badge');
   if (badge) { badge.textContent = slFavorites.length; badge.classList.toggle('hidden', !slFavorites.length); }
@@ -758,6 +760,26 @@ function slRenderFavorites() {
       </div>
     `;
   }).join('');
+}
+// Quick-add strip on the Shopping List tab itself (right column) - just the item-kind favorites
+// (modules/consumables you reach for often), so adding one of those doesn't need a tab switch to
+// the full Favorites tab (which also has to deal with fits and whole saved lists). Filters slFavorites
+// down but keeps each entry's REAL index into that array (not the filtered position), since
+// slUseFavorite needs the real index to find the right entry.
+function slRenderQuickFavorites() {
+  const el = document.getElementById('sl-quickfav-grid');
+  if (!el) return;
+  const itemFavs = slFavorites.map((f, idx) => ({ ...f, idx })).filter(f => f.kind === 'item');
+  if (!itemFavs.length) {
+    el.innerHTML = `<div class="empty" style="padding:16px 0;">No favorite items yet - add some from the Favorites tab and they'll show up here for one-click adding.</div>`;
+    return;
+  }
+  el.innerHTML = itemFavs.map(f => `
+    <div class="quickfav-chip" onclick="slUseFavorite(${f.idx})" title="Add to shopping list: ${window.esc(f.name)}">
+      <img src="${window.getItemIconUrl(f.typeId, f.name, 32)}" onerror="this.style.opacity=.15" loading="lazy">
+      <span>${window.esc(f.name)}</span>
+    </div>
+  `).join('');
 }
 function slViewFavoriteList(idx) {
   const f = slFavorites[idx]; if (!f || f.kind !== 'list') return;
