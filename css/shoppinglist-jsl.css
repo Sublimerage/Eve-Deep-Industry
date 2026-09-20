@@ -22,8 +22,7 @@
   --jsl-bright: var(--text);
   --jsl-red: var(--red);
   color: var(--text-soft);
-  max-width: 1760px;
-  margin: 0 auto;
+  width: 100%;
 }
 .jsl, .jsl *, .jsl *::before, .jsl *::after { box-sizing: border-box; }
 .jsl ::-webkit-scrollbar { width: 5px; }
@@ -36,11 +35,12 @@
 .jsl .jtab-content { display: none; }
 .jsl .jtab-content.active { display: block; }
 
-/* ---- layout - left column widened and given room to breathe instead of a cramped fixed-width
-   rail; the page uses the full available width up to --jsl's own cap above instead of floating in
-   a narrow centered column with large unused gutters on wide screens. ---- */
-.jsl .cols { display: grid; grid-template-columns: minmax(360px, 420px) 1fr; gap: 20px; align-items: start; }
-@media (max-width: 1000px) { .jsl .cols { grid-template-columns: 1fr; } }
+/* ---- layout - no max-width cap at all now: the page fills the full window instead of floating
+   in a capped-width column with unused gutters on either side. The left column stays a sane,
+   readable width (it's a stack of forms, not something that benefits from stretching edge to
+   edge); the right column (the list itself) absorbs 100% of whatever space is left over. ---- */
+.jsl .cols { display: grid; grid-template-columns: minmax(380px, 460px) 1fr; gap: 22px; align-items: start; }
+@media (max-width: 1100px) { .jsl .cols { grid-template-columns: 1fr; } }
 .jsl .row { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
 
 /* ---- panels: the same glass-fill/glass-shadow/radius-card recipe body.page-calc .lp-card
@@ -48,106 +48,107 @@
    of the site instead of a flatter, sharper-edged approximation of it. ---- */
 .jsl .panel { background: var(--glass-fill); box-shadow: var(--glass-shadow); border-radius: var(--radius-card); margin-bottom: 18px; overflow: hidden; }
 .jsl .ph { display: flex; align-items: center; gap: 10px; padding: 18px 24px 12px; flex-wrap: wrap; }
-.jsl .pt { font-size: 12.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text); }
-.jsl .pb { font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; color: var(--jsl-dim); letter-spacing: 0.05em; margin-left: auto; }
-.jsl .pd { padding: 6px 24px 22px; }
+.jsl .pt { font-size: 14px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text); }
+.jsl .pb { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--jsl-dim); letter-spacing: 0.05em; margin-left: auto; }
+.jsl .pd { padding: 6px 24px 22px; font-size: 13.5px; }
 
 /* ---- text fields: reuse the site's own .field-box (primary, filled) and .field-line (secondary,
    invisible-until-focus) recipes directly via those classes in the markup - these rules only add
    the layout properties (width/resize/min-height) those shared classes don't set themselves. ---- */
-.jsl textarea { width: 100%; resize: vertical; min-height: 105px; line-height: 1.65; padding: 10px 12px; }
+.jsl textarea { width: 100%; resize: vertical; min-height: 105px; line-height: 1.65; padding: 10px 12px; font-size: 13.5px !important; }
 .jsl input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
-.jsl select { width: 100%; }
+.jsl select { width: 100%; font-size: 13px !important; }
+.jsl input[type=text] { font-size: 13.5px !important; }
 
 /* ---- qty stepper - no equivalent component exists elsewhere on the site. ---- */
 .jsl .qty { display: inline-flex; align-items: center; background: rgba(255,255,255,0.05); border-radius: var(--radius-input); flex-shrink: 0; }
-.jsl .qty button { background: none; border: none; color: var(--jsl-dim); width: 28px; height: 32px; cursor: pointer; font-size: 16px; transition: color .15s ease; }
+.jsl .qty button { background: none; border: none; color: var(--jsl-dim); width: 30px; height: 34px; cursor: pointer; font-size: 17px; transition: color .15s ease; }
 .jsl .qty button:hover { color: var(--accent); }
-.jsl .qty input[type=number] { background: none !important; border: none !important; color: var(--text); font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; width: 52px; text-align: center; outline: none; padding: 0 !important; }
-.jsl .qty.qty-sm input[type=number] { width: 36px; }
-.jsl .qty.qty-sm button { width: 22px; height: 26px; font-size: 13px; }
+.jsl .qty input[type=number] { background: none !important; border: none !important; color: var(--text); font-family: 'IBM Plex Mono', monospace; font-size: 13.5px; width: 54px; text-align: center; outline: none; padding: 0 !important; }
+.jsl .qty.qty-sm input[type=number] { width: 38px; }
+.jsl .qty.qty-sm button { width: 24px; height: 28px; font-size: 14px; }
 
 /* ---- autocomplete dropdown (shared by all three search boxes) ---- */
 .jsl .acw { position: relative; }
-.jsl .acd { position: fixed; background: #14161a; border: 1px solid var(--glass-border); z-index: 200; max-height: 260px; overflow-y: auto; border-radius: var(--radius-btn); box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-.jsl .acr { display: flex; align-items: center; gap: 10px; padding: 7px 12px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 12px; }
+.jsl .acd { position: fixed; background: #14161a; border: 1px solid var(--glass-border); z-index: 200; max-height: 320px; overflow-y: auto; border-radius: var(--radius-btn); box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+.jsl .acr { display: flex; align-items: center; gap: 10px; padding: 8px 14px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 13.5px; }
 .jsl .acr:hover, .jsl .acr.hi { background: rgba(var(--accent-rgb),0.12); }
-.jsl .acr img { width: 26px; height: 26px; flex-shrink: 0; object-fit: contain; border-radius: var(--radius-sm); }
+.jsl .acr img { width: 28px; height: 28px; flex-shrink: 0; object-fit: contain; border-radius: var(--radius-sm); }
 .jsl .acn { color: var(--text); }
 
 /* ---- item tables ---- */
-.jsl table.jtable { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
-.jsl table.jtable th { font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--jsl-dim); padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--jsl-border); }
-.jsl table.jtable td { padding: 7px 10px; border-bottom: 1px solid rgba(255,255,255,0.05); vertical-align: middle; overflow: hidden; }
+.jsl table.jtable { width: 100%; border-collapse: collapse; font-size: 13.5px; table-layout: fixed; }
+.jsl table.jtable th { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--jsl-dim); padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--jsl-border); }
+.jsl table.jtable td { padding: 9px 12px; border-bottom: 1px solid rgba(255,255,255,0.05); vertical-align: middle; overflow: hidden; }
 .jsl table.jtable tbody tr:last-child td { border-bottom: none; }
 .jsl table.jtable tbody tr:hover td { background: rgba(255,255,255,0.025); }
 .jsl .tn { color: var(--text); font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.jsl .tm { font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: var(--jsl-dim); margin-top: 1px; }
+.jsl .tm { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: var(--jsl-dim); margin-top: 2px; }
 .jsl .tp { font-family: 'IBM Plex Mono', monospace; color: var(--cost); text-align: right; white-space: nowrap; }
 .jsl .tv { font-family: 'IBM Plex Mono', monospace; color: var(--text-soft); text-align: right; white-space: nowrap; }
 
 /* ---- fit box - same left-border-marks-identity idea body.page-calc .lp-job-card already uses
    for build status, applied here to mark "this is a fit" instead. ---- */
-.jsl .fb { background: var(--glass-fill); box-shadow: var(--glass-shadow); border-radius: var(--radius-card); border-left: 3px solid var(--jsl-gold); margin-bottom: 10px; overflow: hidden; }
-.jsl .fh { padding: 10px 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; cursor: pointer; user-select: none; transition: background .15s ease; }
+.jsl .fb { background: var(--glass-fill); box-shadow: var(--glass-shadow); border-radius: var(--radius-card); border-left: 3px solid var(--jsl-gold); margin-bottom: 12px; overflow: hidden; }
+.jsl .fh { padding: 12px 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; cursor: pointer; user-select: none; transition: background .15s ease; }
 .jsl .fh:hover { background: rgba(255,255,255,0.03); }
-.jsl .fn { font-size: 13px; font-weight: 700; color: var(--cost); letter-spacing: 0.01em; }
-.jsl .fs { font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: var(--jsl-dim); }
+.jsl .fn { font-size: 15px; font-weight: 700; color: var(--cost); letter-spacing: 0.01em; }
+.jsl .fs { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: var(--jsl-dim); }
 .jsl .collapse-icon { color: var(--cost); margin-right: 2px; transition: transform .2s; display: inline-flex; flex-shrink: 0; }
-.jsl .collapse-icon svg { width: 11px; height: 11px; }
+.jsl .collapse-icon svg { width: 12px; height: 12px; }
 .jsl .fb.collapsed .collapse-icon { transform: rotate(-90deg); }
 .jsl .fb.collapsed .fb-body { display: none; }
 .jsl .ship-row { background: rgba(var(--jsl-gold-rgb),0.07); }
 .jsl .ship-row .tn { color: var(--cost); }
-.jsl .ship-badge { font-family: 'IBM Plex Mono', monospace; font-size: 8px; color: var(--cost); letter-spacing: 0.06em; margin-left: 4px; }
+.jsl .ship-badge { font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; color: var(--cost); letter-spacing: 0.06em; margin-left: 4px; }
 
 /* ---- totals grid ---- */
 .jsl .tots { display: grid; grid-template-columns: repeat(3,1fr); gap: 1px; background: var(--jsl-border); }
-.jsl .tc { background: #111318; padding: 14px 18px; }
-.jsl .tl { font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--jsl-dim); margin-bottom: 4px; }
-.jsl .tv2 { font-size: 21px; font-weight: 700; color: var(--text); line-height: 1; }
-.jsl .ts { font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: var(--jsl-dim); margin-top: 3px; }
-.jsl .hb { margin-top: 6px; height: 3px; background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden; }
+.jsl .tc { background: #111318; padding: 16px 20px; }
+.jsl .tl { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--jsl-dim); margin-bottom: 5px; }
+.jsl .tv2 { font-size: 24px; font-weight: 700; color: var(--text); line-height: 1; }
+.jsl .ts { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: var(--jsl-dim); margin-top: 4px; }
+.jsl .hb { margin-top: 7px; height: 4px; background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden; }
 .jsl .hf { height: 100%; transition: width .4s; background: var(--accent); }
 .jsl .hf.warn { background: var(--cost); }
 .jsl .hf.over { background: var(--red); }
-.jsl .tots-divider { height: 26px; display: flex; align-items: center; justify-content: center; gap: 12px; background: rgba(255,255,255,0.02); padding: 0 20px; }
+.jsl .tots-divider { height: 28px; display: flex; align-items: center; justify-content: center; gap: 12px; background: rgba(255,255,255,0.02); padding: 0 20px; }
 .jsl .tots-divider::before, .jsl .tots-divider::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, transparent, var(--jsl-glow)); }
 .jsl .tots-divider::after { background: linear-gradient(90deg, var(--jsl-glow), transparent); }
-.jsl .tots-divider span { font-family: 'IBM Plex Mono', monospace; font-size: 8px; letter-spacing: 0.3em; color: var(--jsl-dim); white-space: nowrap; }
+.jsl .tots-divider span { font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.3em; color: var(--jsl-dim); white-space: nowrap; }
 
 /* ---- empty state ---- */
-.jsl .empty { text-align: center; padding: 30px 20px; color: var(--jsl-dim); font-size: 12px; }
+.jsl .empty { text-align: center; padding: 34px 20px; color: var(--jsl-dim); font-size: 13.5px; }
 .jsl .empty .ic { margin-bottom: 10px; opacity: .35; display: flex; justify-content: center; color: var(--text-mute); }
-.jsl .empty .ic svg { width: 26px; height: 26px; }
+.jsl .empty .ic svg { width: 28px; height: 28px; }
 
-.jsl .hint { font-size: 11px; color: var(--jsl-dim); line-height: 1.6; margin-top: 8px; }
+.jsl .hint { font-size: 12.5px; color: var(--jsl-dim); line-height: 1.6; margin-top: 8px; }
 .jsl .hint b { color: var(--accent); font-weight: 600; }
-.jsl .divider-label { font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--jsl-dim); padding: 10px 4px 6px; }
+.jsl .divider-label { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--jsl-dim); padding: 12px 4px 7px; }
 
 /* ---- price toggle ---- */
 .jsl .ptoggle { display: inline-flex; background: rgba(255,255,255,0.05); border-radius: var(--radius-input); overflow: hidden; flex-shrink: 0; }
-.jsl .ptoggle button { background: none; border: none; color: var(--jsl-dim); font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 700; letter-spacing: 0.05em; padding: 6px 12px; cursor: pointer; transition: all .15s; }
+.jsl .ptoggle button { background: none; border: none; color: var(--jsl-dim); font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; padding: 7px 13px; cursor: pointer; transition: all .15s; }
 .jsl .ptoggle button.on { background: rgba(var(--accent-rgb),0.18); color: var(--accent); }
 
 /* ---- wishlist entries ---- */
-.jsl .wl-entry { border-bottom: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; gap: 8px; padding: 9px 16px; }
+.jsl .wl-entry { border-bottom: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; gap: 8px; padding: 10px 18px; font-size: 13.5px; }
 .jsl .wl-entry:last-child { border-bottom: none; }
 .jsl .wl-entry-fit { border-left: 3px solid var(--jsl-gold); }
-.jsl .wl-entry-item { border-left: 3px solid transparent; padding-left: 13px; }
+.jsl .wl-entry-item { border-left: 3px solid transparent; padding-left: 15px; }
 .jsl .wl-add-btn { opacity: 0; transition: opacity .15s; }
 .jsl .wl-entry:hover .wl-add-btn { opacity: 1; }
 
 /* ---- favorites grid - sub-cards within a panel, so they get the flatter .fo-card-weight
    surface (same literal fill body.page-calc .fo-card uses) rather than full glass, keeping the
    hierarchy readable: panel = glass, cards-within-a-panel = flat. ---- */
-.jsl .fav-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px,1fr)); gap: 10px; padding: 4px 18px 16px; }
-.jsl .fav-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: var(--radius-btn); display: flex; align-items: center; gap: 10px; padding: 10px 12px; transition: border-color .15s; position: relative; }
+.jsl .fav-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px,1fr)); gap: 12px; padding: 4px 22px 18px; }
+.jsl .fav-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: var(--radius-btn); display: flex; align-items: center; gap: 10px; padding: 12px 14px; transition: border-color .15s; position: relative; }
 .jsl .fav-card:hover { border-color: rgba(255,255,255,0.16); }
-.jsl .fav-label { font-size: 12px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.jsl .fav-sub { font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: var(--jsl-dim); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.jsl .fav-plus { flex-shrink: 0; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; background: rgba(var(--accent-rgb),0.14); color: var(--accent); cursor: pointer; transition: background .15s; border-radius: var(--radius-sm); font-weight: 700; }
+.jsl .fav-label { font-size: 13.5px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jsl .fav-sub { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: var(--jsl-dim); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jsl .fav-plus { flex-shrink: 0; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; background: rgba(var(--accent-rgb),0.14); color: var(--accent); cursor: pointer; transition: background .15s; border-radius: var(--radius-sm); font-weight: 700; font-size: 15px; }
 .jsl .fav-plus:hover { background: rgba(var(--accent-rgb),0.28); }
 
 /* ---- fit popup body ---- */
-.jsl .fit-popup-body { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--text-soft); line-height: 1.8; white-space: pre-wrap; background: rgba(0,0,0,0.2); }
+.jsl .fit-popup-body { font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; color: var(--text-soft); line-height: 1.8; white-space: pre-wrap; background: rgba(0,0,0,0.2); }
