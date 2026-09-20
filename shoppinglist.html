@@ -9,7 +9,7 @@
 <title>Eve Deep Industry — Shopping List</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c8ff4d' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='9' cy='21' r='1.6'/%3E%3Ccircle cx='18.5' cy='21' r='1.6'/%3E%3Cpath d='M2 3h3l2.4 12.2a1.8 1.8 0 0 0 1.77 1.45h9a1.8 1.8 0 0 0 1.77-1.45L23 7H6'/%3E%3C/svg%3E">
 <link class="cache-bust" rel="stylesheet" href="css/tailwind-build.css?v=1.0.17">
-<link class="cache-bust" rel="stylesheet" href="css/styles.css?v=27.91.0">
+<link class="cache-bust" rel="stylesheet" href="css/styles.css?v=27.92.0">
 <script>(function(){try{var t=localStorage.getItem('eve_color_theme');if(t&&t!=='lime')document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
 <!-- GoatCounter - privacy-friendly page-view analytics, no cookies/consent banner needed -->
 <script data-goatcounter="https://sublimerage.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
@@ -101,7 +101,11 @@
           <button onclick="slImportFit()" class="btn-glass px-3 py-1.5 text-xs flex items-center gap-1.5 flex-1 justify-center">
             <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg> Import Fitting
           </button>
-          <input type="number" id="sl-fit-copies" min="1" value="1" title="Copies" class="field-line mono text-center flex-shrink-0" style="width:56px;">
+          <div class="sl-qty flex-shrink-0" title="Copies">
+            <button onclick="slStepInput('sl-fit-copies', -1)" type="button">&minus;</button>
+            <input type="number" id="sl-fit-copies" min="1" value="1" class="mono num-no-spin">
+            <button onclick="slStepInput('sl-fit-copies', 1)" type="button">+</button>
+          </div>
         </div>
       </div>
 
@@ -125,7 +129,11 @@
           <div id="sl-search-results" class="fixed bg-[#0d1922] rounded-lg max-h-72 overflow-y-auto hidden z-50 shadow-2xl"></div>
         </div>
         <div class="flex items-center gap-2 mt-2">
-          <input type="number" id="sl-item-qty" min="1" value="1" title="Quantity" class="field-line mono text-center flex-shrink-0" style="width:64px;">
+          <div class="sl-qty flex-shrink-0" title="Quantity">
+            <button onclick="slStepInput('sl-item-qty', -1)" type="button">&minus;</button>
+            <input type="number" id="sl-item-qty" min="1" value="1" class="mono num-no-spin">
+            <button onclick="slStepInput('sl-item-qty', 1)" type="button">+</button>
+          </div>
           <button onclick="slAddSearchedItem()" class="btn-glass px-3 py-1.5 text-xs flex-1">+ Add to List</button>
         </div>
         <div class="flex items-center justify-between mt-2.5">
@@ -215,7 +223,11 @@
               <div id="sl-wish-search-results" class="fixed bg-[#0d1922] rounded-lg max-h-72 overflow-y-auto hidden z-50 shadow-2xl"></div>
             </div>
             <div class="flex items-center gap-2 mt-2">
-              <input type="number" id="sl-wish-qty" min="1" value="1" title="Quantity" class="field-line mono text-center flex-shrink-0" style="width:64px;">
+              <div class="sl-qty flex-shrink-0" title="Quantity">
+                <button onclick="slStepInput('sl-wish-qty', -1)" type="button">&minus;</button>
+                <input type="number" id="sl-wish-qty" min="1" value="1" class="mono num-no-spin">
+                <button onclick="slStepInput('sl-wish-qty', 1)" type="button">+</button>
+              </div>
               <button onclick="slAddWishItem()" class="btn-glass px-3 py-1.5 text-xs flex-1">+ Add Item</button>
             </div>
             <div class="fo-card-title mt-3">Add Fit (paste EFT)</div>
@@ -306,8 +318,8 @@
 
   <script src="eve_db.js?v=16.4.0" defer></script>
   <script src="js/config.js?v=8.0.47" defer></script>
-  <script src="js/esi.js?v=8.0.40" defer></script>
+  <script src="js/esi.js?v=8.0.41" defer></script>
   <script src="js/custom-select.js?v=1.5.0" defer></script>
-  <script src="js/shoppinglist.js?v=1.0.1" defer></script>
+  <script src="js/shoppinglist.js?v=1.0.2" defer></script>
 </body>
 </html>
