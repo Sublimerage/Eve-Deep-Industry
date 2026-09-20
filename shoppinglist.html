@@ -10,7 +10,7 @@
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c8ff4d' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='9' cy='21' r='1.6'/%3E%3Ccircle cx='18.5' cy='21' r='1.6'/%3E%3Cpath d='M2 3h3l2.4 12.2a1.8 1.8 0 0 0 1.77 1.45h9a1.8 1.8 0 0 0 1.77-1.45L23 7H6'/%3E%3C/svg%3E">
 <link class="cache-bust" rel="stylesheet" href="css/tailwind-build.css?v=1.0.17">
 <link class="cache-bust" rel="stylesheet" href="css/styles.css?v=27.93.0">
-<link class="cache-bust" rel="stylesheet" href="css/shoppinglist-jsl.css?v=1.0.0">
+<link class="cache-bust" rel="stylesheet" href="css/shoppinglist-jsl.css?v=1.1.0">
 <script>(function(){try{var t=localStorage.getItem('eve_color_theme');if(t&&t!=='lime')document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
 <!-- GoatCounter - privacy-friendly page-view analytics, no cookies/consent banner needed -->
 <script data-goatcounter="https://sublimerage.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
@@ -92,118 +92,123 @@
   <div class="flex-1 overflow-y-auto p-4">
   <div class="jsl">
 
-    <!-- Sub-tabs - same three sections the original tool had (its own fourth "What Do I Need?"
-         tab was dropped per the original integration request: the stock-check panel below covers
-         that need with live data instead of manually pasted container contents). -->
-    <div class="jtabs" id="sl-tabs">
-      <button class="jtab active" data-sl-tab="list" onclick="slSwitchTab('list')">Shopping List</button>
-      <button class="jtab" data-sl-tab="wishlist" onclick="slSwitchTab('wishlist')">Wishlist <span id="sl-wishlist-badge" class="tab-badge hidden">0</span></button>
-      <button class="jtab" data-sl-tab="favorites" onclick="slSwitchTab('favorites')">Favorites <span id="sl-favorites-badge" class="tab-badge hidden">0</span></button>
+    <!-- Sub-tabs - reuses the site's own .nav-tab pill component (same one the page-level header
+         nav uses), on a plain flex div rather than a <nav> tag since .primary-tabs' own CSS is
+         scoped to a literal nav element. -->
+    <div class="flex items-center gap-1 mb-3" id="sl-tabs">
+      <button class="nav-tab nav-tab-active-violet" data-sl-tab="list" onclick="slSwitchTab('list')">Shopping List</button>
+      <button class="nav-tab" data-sl-tab="wishlist" onclick="slSwitchTab('wishlist')">Wishlist <span id="sl-wishlist-badge" class="lp-badge hidden" style="margin-left:4px;">0</span></button>
+      <button class="nav-tab" data-sl-tab="favorites" onclick="slSwitchTab('favorites')">Favorites <span id="sl-favorites-badge" class="lp-badge hidden" style="margin-left:4px;">0</span></button>
     </div>
 
     <!-- ═══ TAB: SHOPPING LIST ═══════════════════════════════════════════════ -->
     <div id="sl-tab-list" class="jtab-content active">
+      <div class="cols">
 
-      <div class="panel">
-        <div class="ph"><span class="pt">Import Fitting</span><span class="pb">EFT Format</span></div>
-        <div class="pd">
-          <textarea id="sl-eft-input" placeholder="[Rifter, My Fit]&#10;Gyrostabilizer II&#10;Small Ancillary Armor Repairer&#10;1MN Afterburner II&#10;Warp Scrambler II&#10;..."></textarea>
-          <div class="hint">In EVE: open the Fitting window &rarr; <b>right-click the fit name &rarr; Copy to Clipboard</b> &rarr; paste above.</div>
-          <div class="row">
-            <button class="btn btn-gold" onclick="slImportFit()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg> Import Fitting</button>
-            <span class="fs">COPIES</span>
-            <div class="qty"><button onclick="slStepInput('sl-fit-copies', -1)" type="button">&minus;</button><input type="number" id="sl-fit-copies" min="1" value="1"><button onclick="slStepInput('sl-fit-copies', 1)" type="button">+</button></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="panel">
-        <div class="ph"><span class="pt">Paste Item List</span><span class="pb">Bulk Import</span></div>
-        <div class="pd">
-          <textarea id="sl-paste-input" style="min-height:80px;" placeholder="One item per line:&#10;Rifter&#10;Gyrostabilizer II&#10;Tritanium x5000&#10;Antimatter Charge M x1000"></textarea>
-          <div class="hint">Quantities with an <b>x</b> suffix. Works with cargo scans and contract lists.</div>
-          <div class="row"><button class="btn btn-blue" onclick="slPasteItems()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Add All to List</button></div>
-        </div>
-      </div>
-
-      <div class="panel">
-        <div class="ph"><span class="pt">Add Single Item</span><span class="pb">Search &amp; Add</span></div>
-        <div class="pd">
-          <div class="acw">
-            <input type="text" id="sl-item-search" autocomplete="off" placeholder="Type to search EVE items..."
-              oninput="slSearchItem(this.value)" onfocus="slSearchItem(this.value)" onkeydown="slSearchKeydown(event)"
-              onblur="setTimeout(() => { const el = document.getElementById('sl-search-results'); if (el) el.classList.add('hidden'); }, 200)">
-            <div id="sl-search-results" class="acd hidden"></div>
-          </div>
-          <div class="row">
-            <div class="qty"><button onclick="slStepInput('sl-item-qty', -1)" type="button">&minus;</button><input type="number" id="sl-item-qty" min="1" value="1"><button onclick="slStepInput('sl-item-qty', 1)" type="button">+</button></div>
-            <button class="btn btn-blue" onclick="slAddSearchedItem()">+ Add to List</button>
-            <div style="flex:1;"></div>
-            <span class="fs">HAULER m&sup3;</span>
-            <input type="number" id="sl-hauler-capacity" value="62000" oninput="slUpdateTotals(); try{localStorage.setItem('eve_sl_hauler_m3', this.value)}catch(e){}">
-          </div>
-        </div>
-      </div>
-
-      <!-- Check Against My Stock - not part of the original tool (it had no live-asset system at
-           all); added here as its own panel using the same #stock-location-filter/
-           applyStockLocationFilter/refreshLiveAssets machinery (js/esi.js) the Calculator and
-           Ledger already use, so a container picked here is the exact same live, ESI-fetched
-           stock - not a second, separate stock system. -->
-      <div class="panel">
-        <div class="ph"><span class="pt">Check Against My Stock</span><span class="pb">Optional</span></div>
-        <div class="pd">
-          <div class="row" style="margin-top:0;">
-            <label class="pill-check">
-              <input type="checkbox" id="use-char-assets" checked onchange="slOnStockFilterChanged()">
-              <span class="pill-check-face"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-7 8-7s8 3 8 7"/></svg>Personal</span>
-            </label>
-            <label class="pill-check">
-              <input type="checkbox" id="use-corp-assets" checked onchange="slOnStockFilterChanged()">
-              <span class="pill-check-face"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V7a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v14"/><path d="M12 11h6a1 1 0 0 1 1 1v9"/><line x1="8" y1="9" x2="8" y2="9.01"/><line x1="8" y1="13" x2="8" y2="13.01"/><line x1="8" y1="17" x2="8" y2="17.01"/><line x1="16" y1="15" x2="16" y2="15.01"/><line x1="16" y1="19" x2="16" y2="19.01"/></svg>Corp</span>
-            </label>
-          </div>
-          <div class="row">
-            <input type="text" id="location-filter-search" autocomplete="off" placeholder="Filter locations..." oninput="filterLocationDropdownOptions()" style="flex:1; min-width:160px;">
-          </div>
-          <div class="row">
-            <select id="stock-location-filter" onchange="slOnStockFilterChanged()">
-              <option value="all" selected>All Locations (Combined Assets)</option>
-              <option value="industry_system">Current System Only (JITA)</option>
-            </select>
-          </div>
-          <div class="row">
-            <button id="deduct-stock-mode" value="true" onclick="toggleDeductStockButton(this, 'slRenderAll')" class="btn btn-blue" style="flex:1;" title="Show a Buy Qty column with your stock already subtracted from what's needed - click to show the full raw amounts instead"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Deducting Stock</button>
-            <button onclick="refreshLiveAssets()" class="btn btn-g" style="border-color:var(--jsl-border);" title="Refresh Assets: fetch your latest live character and corp assets from EVE Online" aria-label="Refresh Assets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 4 21 9 16 9"/></svg></button>
-          </div>
-        </div>
-      </div>
-
-      <div class="panel">
-        <div class="ph">
-          <span class="pt">Shopping List</span>
-          <div style="margin-left:auto; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-            <div class="ptoggle">
-              <button id="sl-btn-sell" class="on" onclick="slSetPriceMode('sell')" type="button">SELL</button>
-              <button id="sl-btn-buy" onclick="slSetPriceMode('buy')" type="button">BUY</button>
+        <!-- Left: the bulk-input tools - import/paste/stock-check - kept together so the main
+             list stays anchored on the right while you feed it. -->
+        <div>
+          <div class="panel">
+            <div class="ph"><span class="pt">Import Fitting</span><span class="pb">EFT Format</span></div>
+            <div class="pd">
+              <textarea id="sl-eft-input" class="field-box mono text-xs" placeholder="[Rifter, My Fit]&#10;Gyrostabilizer II&#10;Small Ancillary Armor Repairer&#10;1MN Afterburner II&#10;Warp Scrambler II&#10;..."></textarea>
+              <div class="hint">In EVE: open the Fitting window &rarr; <b>right-click the fit name &rarr; Copy to Clipboard</b> &rarr; paste above.</div>
+              <div class="row">
+                <button class="btn-glass px-3 py-1.5 text-xs flex items-center gap-1.5 flex-1 justify-center" onclick="slImportFit()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;"><polygon points="6 3 20 12 6 21 6 3"/></svg> Import Fitting</button>
+                <div class="qty"><button onclick="slStepInput('sl-fit-copies', -1)" type="button">&minus;</button><input type="number" id="sl-fit-copies" min="1" value="1"><button onclick="slStepInput('sl-fit-copies', 1)" type="button">+</button></div>
+              </div>
             </div>
-            <button class="btn-g" onclick="slCopyMultibuy()"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.6" y1="10.6" x2="15.4" y2="6.4"/><line x1="8.6" y1="13.4" x2="15.4" y2="17.6"/></svg> Copy Multibuy</button>
-            <button class="btn-g" onclick="slRefreshAllPrices()"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 4 21 9 16 9"/></svg> Refresh</button>
-            <span class="pb" id="sl-type-count">0 Types</span>
           </div>
-        </div>
-        <div id="sl-totals-wrap" style="display:none;">
-          <div class="tots">
-            <div class="tc"><div class="tl">Total Volume</div><div class="tv2" id="sl-tv" style="color:var(--jsl-accent2);">0</div><div class="ts" id="sl-tvs">m&sup3;</div><div class="hb"><div class="hf" id="sl-hf" style="width:0%;"></div></div></div>
-            <div class="tc"><div class="tl">Total Price</div><div class="tv2" id="sl-tp" style="color:var(--jsl-gold2);">&mdash;</div><div class="ts" id="sl-tp-mode">SELL</div></div>
-            <div class="tc"><div class="tl">Total Quantity</div><div class="tv2" id="sl-tq">0</div><div class="ts" id="sl-tu">0 unique types</div></div>
-          </div>
-          <div class="tots-divider"><span>ITEMS</span></div>
-        </div>
-        <div id="sl-list-body"></div>
-        <div style="padding:10px 20px; display:none;" id="sl-list-foot"><button class="btn btn-g" style="color:var(--jsl-red);" onclick="slClearAll()"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Clear All</button></div>
-      </div>
 
+          <div class="panel">
+            <div class="ph"><span class="pt">Paste Item List</span><span class="pb">Bulk Import</span></div>
+            <div class="pd">
+              <textarea id="sl-paste-input" class="field-box mono text-xs" style="min-height:70px;" placeholder="One item per line:&#10;Rifter&#10;Gyrostabilizer II&#10;Tritanium x5000&#10;Antimatter Charge M x1000"></textarea>
+              <div class="hint">Quantities with an <b>x</b> suffix. Works with cargo scans and contract lists.</div>
+              <div class="row"><button class="btn-glass px-3 py-1.5 text-xs flex items-center justify-center gap-1.5 w-full" onclick="slPasteItems()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Add All to List</button></div>
+            </div>
+          </div>
+
+          <!-- Check Against My Stock - not part of the original tool (it had no live-asset system
+               at all); added as its own panel using the same #stock-location-filter/
+               applyStockLocationFilter/refreshLiveAssets machinery (js/esi.js) the Calculator and
+               Ledger already use, so a container picked here is the exact same live, ESI-fetched
+               stock - not a second, separate stock system. -->
+          <div class="panel">
+            <div class="ph"><span class="pt">Check Against My Stock</span><span class="pb">Optional</span></div>
+            <div class="pd">
+              <div class="row" style="margin-top:0;">
+                <label class="pill-check">
+                  <input type="checkbox" id="use-char-assets" checked onchange="slOnStockFilterChanged()">
+                  <span class="pill-check-face"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-7 8-7s8 3 8 7"/></svg>Personal</span>
+                </label>
+                <label class="pill-check">
+                  <input type="checkbox" id="use-corp-assets" checked onchange="slOnStockFilterChanged()">
+                  <span class="pill-check-face"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V7a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v14"/><path d="M12 11h6a1 1 0 0 1 1 1v9"/><line x1="8" y1="9" x2="8" y2="9.01"/><line x1="8" y1="13" x2="8" y2="13.01"/><line x1="8" y1="17" x2="8" y2="17.01"/><line x1="16" y1="15" x2="16" y2="15.01"/><line x1="16" y1="19" x2="16" y2="19.01"/></svg>Corp</span>
+                </label>
+              </div>
+              <input type="text" id="location-filter-search" autocomplete="off" placeholder="Filter locations..." oninput="filterLocationDropdownOptions()"
+                class="field-line w-full text-[11px] mono mt-2">
+              <select id="stock-location-filter" onchange="slOnStockFilterChanged()" class="field-line w-full font-bold text-[11px] truncate mt-2" style="color:var(--accent);">
+                <option value="all" selected>All Locations (Combined Assets)</option>
+                <option value="industry_system">Current System Only (JITA)</option>
+              </select>
+              <div class="row">
+                <div class="flex-1 min-w-0"><button id="deduct-stock-mode" value="true" onclick="toggleDeductStockButton(this, 'slRenderAll')" class="btn-glass w-full px-3 py-1.5 text-xs flex items-center justify-center gap-1.5" title="Show a Buy Qty column with your stock already subtracted from what's needed - click to show the full raw amounts instead"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Deducting Stock</button></div>
+                <button onclick="refreshLiveAssets()" class="btn-glass btn-glass-muted px-2.5 py-1.5 flex items-center justify-center flex-shrink-0" style="height:30px;" title="Refresh Assets: fetch your latest live character and corp assets from EVE Online" aria-label="Refresh Assets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 4 21 9 16 9"/></svg></button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: the one-off single-item add, and the list itself. -->
+        <div>
+          <div class="panel">
+            <div class="ph"><span class="pt">Add Single Item</span><span class="pb">Search &amp; Add</span></div>
+            <div class="pd">
+              <div class="acw">
+                <input type="text" id="sl-item-search" autocomplete="off" placeholder="Type to search EVE items..." class="field-box mono text-sm w-full"
+                  oninput="slSearchItem(this.value)" onfocus="slSearchItem(this.value)" onkeydown="slSearchKeydown(event)"
+                  onblur="setTimeout(() => { const el = document.getElementById('sl-search-results'); if (el) el.classList.add('hidden'); }, 200)">
+                <div id="sl-search-results" class="acd hidden"></div>
+              </div>
+              <div class="row">
+                <div class="qty"><button onclick="slStepInput('sl-item-qty', -1)" type="button">&minus;</button><input type="number" id="sl-item-qty" min="1" value="1"><button onclick="slStepInput('sl-item-qty', 1)" type="button">+</button></div>
+                <button class="btn-glass px-3 py-1.5 text-xs flex-1" onclick="slAddSearchedItem()">+ Add to List</button>
+                <div style="flex:1;"></div>
+                <span class="fs">HAULER m&sup3;</span>
+                <input type="number" id="sl-hauler-capacity" value="62000" class="field-line text-right mono text-xs" style="width:90px;" oninput="slUpdateTotals(); try{localStorage.setItem('eve_sl_hauler_m3', this.value)}catch(e){}">
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="ph">
+              <span class="pt">Shopping List</span>
+              <div style="margin-left:auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <div class="ptoggle">
+                  <button id="sl-btn-sell" class="on" onclick="slSetPriceMode('sell')" type="button">SELL</button>
+                  <button id="sl-btn-buy" onclick="slSetPriceMode('buy')" type="button">BUY</button>
+                </div>
+                <button class="lp-chip-btn" onclick="slCopyMultibuy()"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.6" y1="10.6" x2="15.4" y2="6.4"/><line x1="8.6" y1="13.4" x2="15.4" y2="17.6"/></svg> Copy Multibuy</button>
+                <button class="lp-chip-btn" onclick="slRefreshAllPrices()"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 4 21 9 16 9"/></svg> Refresh</button>
+                <span class="pb" id="sl-type-count">0 Types</span>
+              </div>
+            </div>
+            <div id="sl-totals-wrap" style="display:none;">
+              <div class="tots">
+                <div class="tc"><div class="tl">Total Volume</div><div class="tv2" id="sl-tv" style="color:var(--accent);">0</div><div class="ts" id="sl-tvs">m&sup3;</div><div class="hb"><div class="hf" id="sl-hf" style="width:0%;"></div></div></div>
+                <div class="tc"><div class="tl">Total Price</div><div class="tv2" id="sl-tp" style="color:var(--cost);">&mdash;</div><div class="ts" id="sl-tp-mode">SELL</div></div>
+                <div class="tc"><div class="tl">Total Quantity</div><div class="tv2" id="sl-tq">0</div><div class="ts" id="sl-tu">0 unique types</div></div>
+              </div>
+              <div class="tots-divider"><span>ITEMS</span></div>
+            </div>
+            <div id="sl-list-body"></div>
+            <div style="padding:10px 18px; display:none;" id="sl-list-foot"><button class="lp-chip-btn" style="color:var(--red);" onclick="slClearAll()"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Clear All</button></div>
+          </div>
+        </div>
+
+      </div>
     </div><!-- end tab-list -->
 
     <!-- ═══ TAB: WISHLIST ════════════════════════════════════════════════════ -->
@@ -214,31 +219,31 @@
           <div class="pd">
             <div class="fs" style="margin-bottom:6px;">ADD ITEM</div>
             <div class="acw">
-              <input type="text" id="sl-wish-search" autocomplete="off" placeholder="Search item to add..."
+              <input type="text" id="sl-wish-search" autocomplete="off" placeholder="Search item to add..." class="field-box mono text-sm w-full"
                 oninput="slWishSearchItem(this.value)" onfocus="slWishSearchItem(this.value)"
                 onblur="setTimeout(() => { const el = document.getElementById('sl-wish-search-results'); if (el) el.classList.add('hidden'); }, 200)">
               <div id="sl-wish-search-results" class="acd hidden"></div>
             </div>
             <div class="row" style="margin-bottom:14px;">
               <div class="qty"><button onclick="slStepInput('sl-wish-qty', -1)" type="button">&minus;</button><input type="number" id="sl-wish-qty" min="1" value="1"><button onclick="slStepInput('sl-wish-qty', 1)" type="button">+</button></div>
-              <button class="btn btn-blue" onclick="slAddWishItem()">+ Add Item</button>
+              <button class="btn-glass px-3 py-1.5 text-xs flex-1" onclick="slAddWishItem()">+ Add Item</button>
             </div>
             <div class="fs" style="margin-bottom:6px;">ADD FIT (paste EFT)</div>
-            <textarea id="sl-wish-eft" style="min-height:80px;" placeholder="[Rifter, PVP Kiting]&#10;Gyrostabilizer II&#10;..."></textarea>
-            <div class="row"><button class="btn btn-gold" onclick="slAddWishFit()">Add Fit to Wishlist</button></div>
+            <textarea id="sl-wish-eft" class="field-box mono text-xs" style="min-height:70px;" placeholder="[Rifter, PVP Kiting]&#10;Gyrostabilizer II&#10;..."></textarea>
+            <div class="row"><button class="btn-glass px-3 py-1.5 text-xs w-full" onclick="slAddWishFit()">Add Fit to Wishlist</button></div>
           </div>
           <div id="sl-wishlist-body"></div>
-          <div style="padding:8px 14px; border-top:1px solid var(--jsl-border);">
-            <button class="btn btn-blue" style="width:100%;" onclick="slWishlistToShopping()"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Add All to Shopping List</button>
+          <div style="padding:8px 14px; border-top:1px solid rgba(255,255,255,0.08);">
+            <button class="btn-glass px-3 py-1.5 text-xs w-full flex items-center justify-center gap-1.5" onclick="slWishlistToShopping()"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Add All to Shopping List</button>
           </div>
         </div>
         <div class="panel" style="margin:0;">
           <div class="ph"><span class="pt">Notes</span><span class="pb">Plans &amp; Reminders</span></div>
           <div class="pd" style="padding-bottom:8px;">
-            <textarea id="sl-wish-notes" style="min-height:300px; resize:vertical;" placeholder="Ship ideas, price targets, goals..." oninput="slSaveNotes()"></textarea>
+            <textarea id="sl-wish-notes" class="field-box mono text-xs" style="min-height:280px; resize:vertical;" placeholder="Ship ideas, price targets, goals..." oninput="slSaveNotes()"></textarea>
             <div class="row">
               <span class="fs">AUTO-SAVED</span>
-              <button class="btn btn-g" style="margin-left:auto;" onclick="slClearNotes()"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Clear Notes</button>
+              <button class="lp-chip-btn" style="margin-left:auto;" onclick="slClearNotes()"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Clear Notes</button>
             </div>
           </div>
         </div>
@@ -251,30 +256,30 @@
         <div class="ph">
           <span class="pt">Favorites</span><span class="pb">Quick-Add &amp; Saved Lists</span>
           <div style="margin-left:auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-            <input type="text" id="sl-fav-name" placeholder="Favorite name..." style="width:150px;">
-            <button class="btn btn-blue" onclick="slSaveCurrentAsFavorite()"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> Save Current List</button>
-            <button class="btn-g" onclick="slExportFavorites()">Export JSON</button>
-            <label class="btn-g" style="cursor:pointer;">Import JSON<input type="file" accept=".json" style="display:none" onchange="slImportFavorites(this)"></label>
+            <input type="text" id="sl-fav-name" placeholder="Favorite name..." class="field-line text-xs mono" style="width:150px;">
+            <button class="btn-glass px-3 py-1.5 text-xs flex items-center gap-1.5" onclick="slSaveCurrentAsFavorite()"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> Save Current List</button>
+            <button class="lp-chip-btn" onclick="slExportFavorites()">Export JSON</button>
+            <label class="lp-chip-btn" style="cursor:pointer;">Import JSON<input type="file" accept=".json" style="display:none" onchange="slImportFavorites(this)"></label>
           </div>
         </div>
         <div id="sl-favorites-grid" class="fav-grid"></div>
-        <div style="padding:10px 14px; border-top:1px solid var(--jsl-border); display:grid; grid-template-columns:1fr 1fr; gap:14px;">
+        <div style="padding:10px 14px 16px; border-top:1px solid rgba(255,255,255,0.08); display:grid; grid-template-columns:1fr 1fr; gap:14px;">
           <div>
             <div class="fs" style="margin-bottom:6px;">ADD SINGLE ITEM</div>
             <div style="display:flex; gap:8px; align-items:center;">
               <div class="acw" style="flex:1;">
-                <input type="text" id="sl-fav-search" autocomplete="off" placeholder="Search item..."
+                <input type="text" id="sl-fav-search" autocomplete="off" placeholder="Search item..." class="field-box mono text-sm w-full"
                   oninput="slFavSearchItem(this.value)" onfocus="slFavSearchItem(this.value)"
                   onblur="setTimeout(() => { const el = document.getElementById('sl-fav-search-results'); if (el) el.classList.add('hidden'); }, 200)">
                 <div id="sl-fav-search-results" class="acd hidden"></div>
               </div>
-              <button class="btn btn-blue" onclick="slAddFavItem()">+ Add</button>
+              <button class="btn-glass px-3 py-2 text-xs flex-shrink-0" onclick="slAddFavItem()">+ Add</button>
             </div>
           </div>
           <div>
             <div class="fs" style="margin-bottom:6px;">ADD FIT</div>
-            <textarea id="sl-fav-eft" style="min-height:60px;" placeholder="[Rifter, My Fit]&#10;Gyrostabilizer II&#10;..."></textarea>
-            <div class="row" style="margin-top:6px;"><button class="btn btn-gold" onclick="slAddFavFit()">Add Fit as Favorite</button></div>
+            <textarea id="sl-fav-eft" class="field-box mono text-xs" style="min-height:60px;" placeholder="[Rifter, My Fit]&#10;Gyrostabilizer II&#10;..."></textarea>
+            <div class="row" style="margin-top:6px;"><button class="btn-glass px-3 py-1.5 text-xs w-full" onclick="slAddFavFit()">Add Fit as Favorite</button></div>
           </div>
         </div>
       </div>
@@ -287,18 +292,18 @@
   <div class="fixed inset-0 bg-black/80 flex items-center justify-center z-[999] hidden p-4" id="sl-fit-popup-bg" onclick="if(event.target===this) slCloseFitPopup()">
     <div class="jsl" style="max-width:520px; width:100%;">
       <div class="panel" style="margin:0; box-shadow:0 20px 50px rgba(0,0,0,0.6);">
-        <div class="ph" style="padding:12px 16px;">
-          <img id="sl-fp-icon" src="" style="width:36px;height:36px;flex-shrink:0;border-radius:4px;" onerror="this.style.opacity=.15">
+        <div class="ph" style="padding:14px 16px 10px;">
+          <img id="sl-fp-icon" src="" style="width:36px;height:36px;flex-shrink:0;border-radius:6px;" onerror="this.style.opacity=.15">
           <div style="flex:1; min-width:0;">
-            <div class="pt" style="letter-spacing:0.02em;" id="sl-fp-fitname"></div>
+            <div class="pt" id="sl-fp-fitname"></div>
             <div class="fs" id="sl-fp-shipname"></div>
           </div>
-          <button onclick="slCloseFitPopup()" class="btn-g" title="Close" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+          <button onclick="slCloseFitPopup()" class="lp-chip-btn" title="Close" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
         </div>
         <div class="fit-popup-body pd" id="sl-fp-body" style="max-height:50vh; overflow-y:auto;"></div>
-        <div class="row" style="padding:12px 16px; margin:0; border-top:1px solid var(--jsl-border);">
-          <button class="btn btn-blue" style="flex:1;" id="sl-fp-add-btn">Add to Shopping List</button>
-          <button class="btn btn-g" onclick="slCloseFitPopup()">Close</button>
+        <div class="row" style="padding:12px 16px; margin:0; border-top:1px solid rgba(255,255,255,0.08);">
+          <button class="btn-glass flex-1 py-1.5 text-xs" id="sl-fp-add-btn">Add to Shopping List</button>
+          <button class="lp-chip-btn" onclick="slCloseFitPopup()">Close</button>
         </div>
       </div>
     </div>
@@ -311,6 +316,6 @@
   <script src="js/config.js?v=8.0.47" defer></script>
   <script src="js/esi.js?v=8.0.41" defer></script>
   <script src="js/custom-select.js?v=1.5.0" defer></script>
-  <script src="js/shoppinglist.js?v=1.0.5" defer></script>
+  <script src="js/shoppinglist.js?v=1.0.7" defer></script>
 </body>
 </html>
