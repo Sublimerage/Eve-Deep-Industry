@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>Eve Deep Industry — LP Store</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c8ff4d' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='8' r='5'/%3E%3Cpath d='M8.5 12.5L7 21l5-3 5 3-1.5-8.5'/%3E%3C/svg%3E">
+<link class="cache-bust" rel="stylesheet" href="css/tailwind-build.css?v=1.0.17">
+<link class="cache-bust" rel="stylesheet" href="css/styles.css?v=27.93.0">
+<script>(function(){try{var t=localStorage.getItem('eve_color_theme');if(t&&t!=='lime')document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<!-- GoatCounter - privacy-friendly page-view analytics, no cookies/consent banner needed -->
+<script data-goatcounter="https://sublimerage.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
+</head>
+<body class="page-calc theme-unify flex flex-col min-h-screen text-slate-200">
+
+  <!-- Header -->
+  <header class="px-5 flex flex-wrap justify-between items-center gap-2 z-30">
+    <div class="flex items-center gap-3 flex-shrink-0">
+      <div class="flex items-center space-x-3 flex-shrink-0 header-brand">
+        <div class="w-9 h-9 bg-purple-500 rounded-xl flex items-center justify-center flex-shrink-0" style="color:#0a1002;" title="Eve Deep Industry">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="width:19px;height:19px;">
+            <circle cx="12" cy="8" r="5"/><path d="M8.5 12.5L7 21l5-3 5 3-1.5-8.5"/>
+          </svg>
+        </div>
+        <h1 class="rajdhani font-bold uppercase leading-none hidden lg:block" style="font-size:11px; letter-spacing:0.18em; color:var(--accent);">Eve Deep Industry</h1>
+      </div>
+
+      <nav class="primary-tabs">
+        <a href="index.html" class="nav-tab"><svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2.2"/><circle cx="6" cy="18.5" r="2.2"/><circle cx="12" cy="18.5" r="2.2"/><circle cx="18" cy="18.5" r="2.2"/><path d="M12 7.2v3M12 10.2L6 16.3M12 10.2v6.1M12 10.2l6 6.1"/></svg>Calculator</a>
+        <a href="ledger.html" class="nav-tab"><svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4.5" width="14" height="16" rx="2"/><path d="M9 3.5h6a1 1 0 011 1V6H8V4.5a1 1 0 011-1z"/><path d="M8.5 12.5l2 2 4.5-4.5"/><line x1="8" y1="17" x2="16" y2="17"/></svg>Ledger</a>
+        <a href="invention.html" class="nav-tab"><svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3h4"/><path d="M10.5 3v5.3L5.9 16.8A2 2 0 007.6 20h8.8a2 2 0 001.7-3.2L13.5 8.3V3"/><path d="M8.2 14.5h7.6"/></svg>Invention</a>
+        <div class="nav-tab nav-tab-active-violet"><svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="5"/><path d="M8.5 12.5L7 21l5-3 5 3-1.5-8.5"/></svg>LP Store</div>
+        <a href="shoppinglist.html" class="nav-tab"><svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="2.2"/><circle cx="18.5" cy="21" r="2.2"/><path d="M2 3h3l2.4 12.2a1.8 1.8 0 0 0 1.77 1.45h9a1.8 1.8 0 0 0 1.77-1.45L23 7H6"/></svg>Shopping List</a>
+      </nav>
+    </div>
+
+    <div class="flex items-center gap-3 mono flex-wrap flex-shrink-0">
+      <div class="theme-menu-wrap">
+        <button id="theme-menu-btn" onclick="toggleThemeMenu(event)" class="icon-btn" title="Change color theme">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="9" r="5"/><circle cx="15" cy="9" r="5"/><circle cx="12" cy="15" r="5"/></svg>
+        </button>
+        <div id="theme-menu" class="theme-menu hidden"></div>
+      </div>
+
+      <!-- Community & Support - same toggle-panel pattern as the theme menu above
+           (js/config.js toggleCommunityMenu). The character/corp name is also wrapped in a
+           showinfo: link (EVE's real chat-link scheme - confirmed via live forum examples:
+           character is type 1377, corporation is type 2) in case the visitor's OS has the EVE
+           client registered as that protocol's handler; not confirmed reliable from a plain
+           browser, which is why the Copy button next to it - not this - is the one guaranteed
+           action. -->
+      <div class="theme-menu-wrap">
+        <button id="community-menu-btn" onclick="toggleCommunityMenu(event)" class="btn-glass community-btn-pulse px-3 py-1.5 text-xs flex items-center gap-1.5" title="Feedback, bug reports, Discord &amp; ISK donations">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>
+          <span class="hidden sm:inline">Feedback &amp; Support</span>
+        </button>
+        <div id="community-menu" class="community-menu hidden">
+          <div class="community-menu-title">Community &amp; Feedback</div>
+          <div class="community-menu-note">Bug reports, feature requests, or just want to chat about the tool? The Discord is the best place to reach us.</div>
+          <a href="https://discord.gg/vzjErSDEBS" target="_blank" rel="noopener noreferrer" class="btn-glass w-full py-1.5 text-xs flex items-center justify-center gap-1.5">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>
+            Join the Discord
+          </a>
+          <div class="community-menu-title">Support &amp; Feedback In-Game</div>
+          <div class="community-menu-note">Send EVE mail feedback to the character below. ISK donations are also welcome, to either the character or the corp:</div>
+          <div class="community-menu-row">
+            <span class="community-menu-row-label">Character</span>
+            <span class="flex items-center gap-1.5">
+              <span class="copy-name" data-copy-name="Sublime Rage" onclick="copyNameToClipboard(event)" title="Click to copy">Sublime Rage</span>
+              <a href="showinfo:1377//90416002" onclick="event.stopPropagation();" title="Try opening this character in the EVE client (not guaranteed to work from a browser)" style="color:var(--text-mute); display:inline-flex;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:11px;height:11px;"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              </a>
+            </span>
+          </div>
+          <div class="community-menu-row">
+            <span class="community-menu-row-label">Corporation</span>
+            <span class="flex items-center gap-1.5">
+              <span class="copy-name" data-copy-name="Sublimor Mortis" onclick="copyNameToClipboard(event)" title="Click to copy">Sublimor Mortis</span>
+              <a href="showinfo:2//98809098" onclick="event.stopPropagation();" title="Try opening this corporation in the EVE client (not guaranteed to work from a browser)" style="color:var(--text-mute); display:inline-flex;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:11px;height:11px;"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              </a>
+            </span>
+          </div>
+        </div>
+      </div>
+      <div id="esi-login-container">
+        <button onclick="startEsiSSOLogin()" class="btn-glass btn-glass-muted px-3.5 py-2 text-xs flex items-center gap-1.5" title="Login with EVE Online to auto-fill your real skill levels">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;"><rect x="5" y="11" width="14" height="9" rx="1.5"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>
+          <span class="hidden sm:inline">EVE SSO Login</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Calculator's own dashboard summary bar (js/app.js recalculate() writes into these ids
+       directly) - hidden until an offer is isolated, shown/hidden together with #viewport below. -->
+  <section id="lpstore-calc-stat-strip" class="stat-strip relative z-10 hidden">
+    <div class="stat">
+      <div class="stat-label">Total production cost</div>
+      <div id="summary-build-cost" class="stat-value mono" style="color:var(--cost);">0 ISK</div>
+      <div id="summary-runs-subtext" class="stat-sub mono">Mat: 0 + Fee: 0</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Surplus leftovers credit</div>
+      <div id="summary-surplus-credit" class="stat-value mono" style="color:var(--accent);">0 ISK</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Net output revenue</div>
+      <div id="summary-output-sell" class="stat-value mono">0 ISK</div>
+      <div id="summary-output-buy" class="stat-sub mono">Instant Buy: 0 ISK</div>
+    </div>
+    <div class="stat">
+      <div id="summary-profit-sell-label" class="stat-label">Net profit (sell output)</div>
+      <div id="summary-profit-sell" class="stat-value mono" style="color:var(--green);">0 ISK</div>
+      <div id="summary-roi-sell" class="stat-sub mono" style="color:var(--green);">ROI: 0%</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Net profit (instant buy)</div>
+      <div id="summary-profit-buy" class="stat-value mono" style="color:var(--green);">0 ISK</div>
+      <div id="summary-roi-buy" class="stat-sub mono" style="color:var(--green);">ROI: 0%</div>
+    </div>
+  </section>
+
+  <div class="content-row flex-1 flex overflow-hidden relative">
+
+    <!-- Left: same icon-rail + single-flyout-panel system as the Calculator (js/app.js
+         openFlyoutSection/closeFlyoutPanel, unmodified - reuses the exact #control-sidebar/
+         #control-flyout/#flyout-panel-title ids those functions already query, since this is a
+         different document from index.html and never loaded alongside it, reusing the ids is free).
+         'pricing'/'build'/'fees' section ids double up on the Calculator's own FLYOUT_TITLES
+         entries; 'station' is a new entry added there for this page. There used to be a 'store'
+         tab here too (the corp picker) - moved out to the persistent #lpstore-corp-switcher bar
+         in <main> instead, since a flyout meant opening/closing a full overlay every time just to
+         change corp. FLYOUT_TITLES still has a harmless unused 'store' key - see its own comment. -->
+    <aside id="control-sidebar" class="icon-rail">
+      <div id="icon-btn-pricing" class="icon-rail-btn" onclick="openFlyoutSection('pricing')">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12.5 3H19a2 2 0 012 2v6.5a2 2 0 01-.6 1.4l-8 8a2 2 0 01-2.8 0l-6.5-6.5a2 2 0 010-2.8l8-8a2 2 0 011.4-.6z"/><circle cx="16.5" cy="7.5" r="1.3"/></svg><span class="icon-label">Pricing</span>
+      </div>
+      <div id="icon-btn-station" class="icon-rail-btn" onclick="openFlyoutSection('station')">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V10l5-3 5 3v11"/><path d="M14 21v-7l6-3v10"/><line x1="2" y1="21" x2="22" y2="21"/></svg><span class="icon-label">Station</span>
+      </div>
+      <div id="icon-btn-build" class="icon-rail-btn" onclick="openFlyoutSection('build')">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 6l4 4-8.5 8.5a2 2 0 01-2.8 0v0a2 2 0 010-2.8L15.2 7.2"/><path d="M12 8l4-4 4 4-4 4"/></svg><span class="icon-label">Build</span>
+      </div>
+      <div id="icon-btn-fees" class="icon-rail-btn" onclick="openFlyoutSection('fees')">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="8" y1="16" x2="16" y2="8"/></svg><span class="icon-label">Fees</span>
+      </div>
+      <!-- Missing-skills check - see index.html's own copy of this for the full comment. -->
+      <div id="icon-btn-skills" class="icon-rail-btn" onclick="openFlyoutSection('skills')">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 8l10 5 10-5-10-5z"/><path d="M6 10.5V16c0 1.5 2.7 3 6 3s6-1.5 6-3v-5.5"/><line x1="22" y1="8" x2="22" y2="14"/></svg><span class="icon-label">Skills</span>
+        <span id="skills-tab-dot" class="icon-rail-dot hidden"></span>
+      </div>
+
+      <div id="control-flyout" class="flyout-panel">
+        <div class="flyout-panel-header">
+          <span id="flyout-panel-title" class="flyout-panel-title">LP Store</span>
+          <div class="flyout-panel-close" onclick="closeFlyoutPanel()" title="Close">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </div>
+        </div>
+        <div class="flyout-panel-body">
+
+          <div id="flyout-pricing" class="flyout-section">
+            <div class="fo-card">
+              <div class="fo-card-title">Pricing Basis</div>
+              <div class="fo-row">
+                <span class="fo-row-label">Material cost</span>
+                <select id="input-price-mode" onchange="if(typeof recalculate==='function') recalculate();" class="field-line fo-row-select" title="Whether component material prices use the instant sell price or the (cheaper, slower) buy-order price.">
+                  <option value="sell" selected>Sell (Instant)</option>
+                  <option value="buy">Buy Order</option>
+                </select>
+              </div>
+              <div class="fo-card-note">Applies to the isolated build tree for the offer you've drilled into.</div>
+            </div>
+          </div>
+
+          <!-- Production Station - same preset picker + Structure select the Calculator itself uses
+               (js/app.js loadProductionPreset/saveProductionPreset/deleteProductionPreset,
+               onStructureTypeChange), reused as-is rather than a lookalike. #facility-tax in the Fees
+               tab already doubles as the SAME field these functions read/write (both persist to
+               eve_tax_settings). -->
+          <div id="flyout-station" class="flyout-section">
+            <div class="fo-card">
+              <div class="fo-card-title">Structure</div>
+              <select id="facility-select" onchange="onStructureTypeChange(); saveTaxSettings(); if(typeof recalculate==='function') recalculate();" class="field-line w-full text-white font-semibold text-xs" title="A structure is one thing at a time - this single selection drives ME, TE, AND job-fee bonuses together.">
+                <option value="npc">NPC Station</option>
+                <option value="raitaru">Raitaru — M Engineering Complex</option>
+                <option value="azbel">Azbel — L Engineering Complex</option>
+                <option value="sotiyo" selected>Sotiyo — XL Engineering Complex</option>
+                <option value="athanor">Athanor — M Refinery</option>
+                <option value="tatara">Tatara — L Refinery</option>
+              </select>
+              <div id="structure-bonuses" class="struct-bonus-row"></div>
+              <div class="fo-row">
+                <span class="fo-row-label">Active</span>
+                <span id="lpstore-active-station-label" class="fo-row-value">—</span>
+              </div>
+              <div class="fo-card-note">System &amp; rig fitting follow whatever's active on the Calculator — loading a preset that saved them applies them here too.</div>
+            </div>
+
+            <div class="fo-card">
+              <div class="fo-card-title">Production Preset</div>
+              <div class="flex items-center gap-1.5">
+                <select id="production-preset-select" onchange="loadProductionPreset(this.value)" class="field-line flex-1 min-w-0 font-bold text-xs">
+                  <option value="">— Load a saved production station —</option>
+                </select>
+                <button onclick="deleteProductionPreset()" class="toggle-btn" title="Delete the currently-selected preset">
+                  <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;"><polyline points="3,6 5,6 21,6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+                </button>
+              </div>
+              <button onclick="saveProductionPreset()" class="btn-glass w-full py-1.5 text-xs flex items-center justify-center gap-1.5" title="Saves your current system, structure type, rig fitting, and facility tax as a named preset you can switch back to instantly">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17,21 17,13 7,13 7,21"/><polyline points="7,3 7,8 15,8"/></svg>
+                Save Current as Preset
+              </button>
+            </div>
+          </div>
+
+          <!-- Build Optimizers - same Actions/Auto-Build/Smart Optimizer controls as the Calculator's
+               own Build flyout (js/optimizers.js), operating on whatever's currently isolated. -->
+          <div id="flyout-build" class="flyout-section">
+            <div class="fo-card">
+              <div class="fo-card-title">Bulk Actions</div>
+              <div class="fo-btn-row">
+                <button id="build-all-btn" onclick="buildAllComponents()" class="btn-glass py-2 px-3 text-xs">Build All</button>
+                <button onclick="buyAllSubComponents()" class="btn-glass btn-glass-muted py-2 px-3 text-xs">Buy All</button>
+              </div>
+              <div class="fo-card-note">Acts on the isolated build tree for the current offer. Or step through it gradually, one tier at a time:</div>
+              <div class="fo-btn-row">
+                <button onclick="buildOneLayerDeeper()" class="btn-glass py-2 px-3 text-xs flex items-center justify-center gap-1" title="Sets every component one tier below whatever's already Build to Build too - click again to go another layer deeper.">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;flex-shrink:0;"><polyline points="12,5 12,19"/><polyline points="5,12 12,19 19,12"/><line x1="4" y1="21" x2="20" y2="21"/></svg>
+                  +1 Layer
+                </button>
+                <button onclick="buildOneLayerShallower()" class="btn-glass btn-glass-muted py-2 px-3 text-xs flex items-center justify-center gap-1" title="Switches the deepest tier you're currently building back to Buy - the reverse of +1 Layer, one step at a time.">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;flex-shrink:0;"><polyline points="12,19 12,5"/><polyline points="5,12 12,5 19,12"/><line x1="4" y1="3" x2="20" y2="3"/></svg>
+                  -1 Layer
+                </button>
+              </div>
+            </div>
+
+            <div class="fo-card">
+              <div class="fo-card-title">Auto-Build by Margin</div>
+              <div class="fo-card-note">Switch every component whose own build margin beats this to Build.</div>
+              <div class="fo-row">
+                <span class="fo-row-label">Min profit</span>
+                <div class="fo-row-ctl">
+                  <input type="text" inputmode="decimal" id="build-profit-threshold" value="5.0" oninput="sanitizeDecimalInput(event)" class="fo-num">
+                  <span class="fo-num-suffix">%</span>
+                  <button onclick="applyBuildProfitOptimizer()" class="fo-mini-btn">Optimize</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="fo-card">
+              <div class="fo-card-title">Smart Optimizers</div>
+              <div class="fo-row" title="Switch a component to Buy when its cheapest tracked market beats building it by at least this margin.">
+                <span class="fo-row-label">Market spread</span>
+                <div class="fo-row-ctl">
+                  <input type="text" inputmode="decimal" id="buy-savings-threshold" value="5.0" oninput="sanitizeDecimalInput(event)" class="fo-num">
+                  <span class="fo-num-suffix">%</span>
+                  <button onclick="applyComponentSpreadOptimizer()" class="fo-mini-btn">Optimize</button>
+                </div>
+              </div>
+              <div class="fo-row" title="Only act on a Buy switch when it moves the total build cost by at least this much.">
+                <span class="fo-row-label">Budget impact</span>
+                <div class="fo-row-ctl">
+                  <input type="text" inputmode="decimal" id="total-cost-savings-threshold" value="1.0" oninput="sanitizeDecimalInput(event)" class="fo-num">
+                  <span class="fo-num-suffix">%</span>
+                  <button onclick="applyBudgetImpactOptimizer()" class="fo-mini-btn">Optimize</button>
+                </div>
+              </div>
+              <button onclick="resetSmartBuyModes()" class="btn-glass btn-glass-muted w-full py-1.5 text-[11px] mono">Reset Buy Modes</button>
+            </div>
+          </div>
+
+          <!-- Taxes & Fees - shared with the main calculator via the eve_tax_settings localStorage
+               key, editing here updates it everywhere. -->
+          <div id="flyout-fees" class="flyout-section">
+            <div class="fo-card">
+              <div class="fo-card-title">Market Orders</div>
+              <div class="fo-card-note">Shared with the Calculator — editing here updates it there too.</div>
+              <div class="fo-row" title="Facility/structure tax applied to every manufacturing job's installation cost.">
+                <span class="fo-row-label">Facility tax</span>
+                <div class="fo-row-ctl">
+                  <input type="text" inputmode="decimal" id="facility-tax" value="1.0" oninput="sanitizeDecimalInput(event); saveSharedTaxSettingsFromLPStore();" class="fo-num">
+                  <span class="fo-num-suffix">%</span>
+                </div>
+              </div>
+              <div class="fo-row" title="SCC surcharge applied to every manufacturing job's installation cost.">
+                <span class="fo-row-label">SCC surcharge</span>
+                <div class="fo-row-ctl">
+                  <input type="text" inputmode="decimal" id="scc-surcharge" value="4.0" oninput="sanitizeDecimalInput(event); saveSharedTaxSettingsFromLPStore();" class="fo-num">
+                  <span class="fo-num-suffix">%</span>
+                </div>
+              </div>
+              <div class="fo-row" title="Sales tax deducted when selling the item / manufactured output.">
+                <span class="fo-row-label">Sales tax</span>
+                <div class="fo-row-ctl">
+                  <input type="text" inputmode="decimal" id="sales-tax" value="3.6" oninput="sanitizeDecimalInput(event); saveSharedTaxSettingsFromLPStore();" class="fo-num">
+                  <span class="fo-num-suffix">%</span>
+                </div>
+              </div>
+              <div class="fo-row" title="Broker fee, applied when selling AND when buying materials / required items via market orders.">
+                <span class="fo-row-label">Broker fee</span>
+                <div class="fo-row-ctl">
+                  <input type="text" inputmode="decimal" id="broker-fee" value="1.0" oninput="sanitizeDecimalInput(event); saveSharedTaxSettingsFromLPStore();" class="fo-num">
+                  <span class="fo-num-suffix">%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Missing Skills - see index.html's own copy of this for the full comment. -->
+          <div id="flyout-skills" class="flyout-section">
+            <div class="fo-card">
+              <div class="fo-card-title">Missing Required Skills</div>
+              <div class="fo-card-note">Checks every component you're currently set to Build in this isolated offer (the item itself included) against your trained skills.</div>
+              <div id="skills-flyout-body" class="fo-card-note">Loading…</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main: Ranked offer table -->
+    <main class="flex-1 overflow-y-auto p-4" id="lpstore-main-area">
+      <!-- Corp switcher - a persistent bar, not a flyout. The picker used to live inside the
+           icon-rail's Store flyout, which meant opening a full overlay panel (that covered this
+           whole list) every single time you wanted to change corp, then closing it again -
+           friction for something done often, not a rarely-touched setting like Fees/Structure.
+           This is always visible; only the small popover below it (absolute-positioned, anchored
+           to this bar, not the whole page) opens/closes, and it only covers the little bit of
+           space directly under the bar. -->
+      <div id="lpstore-corp-switcher" class="lp-card p-3 mb-4 relative">
+        <div class="flex items-center gap-5 flex-wrap">
+          <!-- Change sits directly against the corp name/label it acts on - LP Owned/Find Item
+               (account-wide tools, not tied to whichever corp is currently selected) grouped
+               separately right after it, close by rather than stretched to the far edge of a wide
+               card (justify-between used to push this group all the way to the right - too far). -->
+          <div class="flex items-center gap-3 min-w-0">
+            <button type="button" onclick="toggleLPStoreCorpPopover()" class="btn-glass btn-glass-muted px-3 py-1.5 text-xs flex items-center gap-1.5 flex-shrink-0">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;"><polyline points="7,7 3,11 7,15"/><line x1="3" y1="11" x2="15" y2="11"/><polyline points="17,17 21,13 17,9"/><line x1="21" y1="13" x2="9" y2="13"/></svg>
+              Change
+            </button>
+            <div class="min-w-0">
+              <div class="text-[10px] uppercase tracking-wide" style="color:var(--text-mute);">NPC Corporation LP Store</div>
+              <div id="lpstore-corp-active-label" class="font-bold text-sm truncate" style="color:var(--text-mute);">— none selected —</div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 flex-shrink-0">
+            <button type="button" onclick="toggleLPOwnedPopover()" class="btn-glass btn-glass-muted px-3 py-1.5 text-xs flex items-center gap-1.5 flex-shrink-0">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;"><circle cx="12" cy="8" r="5"/><path d="M8.5 12.5L7 21l5-3 5 3-1.5-8.5"/></svg>
+              LP Owned
+            </button>
+            <!-- Search-scope tabs, replacing the old standalone "Find Item" button - a plain action
+                 button gave no persistent signal of which search you were currently using (reported
+                 as confusing: easy to lose track of "this store" vs "every store"). Always visible
+                 here regardless of which main-content view is showing, with the active one lit up via
+                 .lp-pill.active - see js/lpstore.js's showLPItemSearchArea/exitLPItemSearchArea,
+                 which now also call setLPStoreSearchModeTab() to keep this in sync. This also
+                 replaces the item-search view's own former "Back to Store" button - one control for
+                 switching, not two different-looking ones that did the same thing. -->
+            <div class="flex items-center gap-1 p-1 rounded-full flex-shrink-0" style="background:rgba(255,255,255,0.04);">
+              <button type="button" id="lpstore-tab-store" onclick="exitLPItemSearchArea()" class="lp-pill active" title="Search only the currently selected corporation's own offers">This Store</button>
+              <button type="button" id="lpstore-tab-finditem" onclick="showLPItemSearchArea()" class="lp-pill" title="Search every known LP store at once for one item">All Stores</button>
+            </div>
+          </div>
+        </div>
+        <div id="lpstore-corp-popover" class="lpstore-corp-popover glass-card hidden">
+          <div class="relative mb-2">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-mute);pointer-events:none;"><circle cx="10.5" cy="10.5" r="6.5"/><line x1="20" y1="20" x2="15.5" y2="15.5"/></svg>
+            <input type="text" id="lpstore-corp-search" placeholder="Search corporation or faction..." autocomplete="off"
+              oninput="filterLPStoreCorpList(this.value)"
+              class="field-box w-full text-white font-bold mono text-base" style="padding:10px 12px 10px 36px;">
+          </div>
+          <div id="lpstore-corp-list" class="lpstore-corp-list"></div>
+          <p class="text-[10px] mt-2 leading-relaxed" style="color:var(--text-mute);">
+            Ranked by <b>estimated ISK profit per LP spent</b>, regardless of your current standing or access - that's on you to sort out in-game. For a BPC offer, <b>Isolate</b> it to open the exact same interactive build tree the Calculator uses (required redemption items show as <span style="color:#c084fc;">purple</span> cards). Each redemption grants one blueprint copy with however many runs ESI's offer data reports - not several separate single-run copies.
+          </p>
+        </div>
+
+        <!-- LP Owned - your OWN character's real LP balance per corp (js/esi.js fetchUserAndCorpAssets,
+             GET /characters/{id}/loyalty/points/, needs esi-characters.read_loyalty.v1). There is no
+             such thing as corporation-held LP in EVE - confirmed directly against ESI's complete
+             OpenAPI spec (every one of its 182 endpoints checked, not just a guessed URL): the only two
+             loyalty-related routes are this character one and the store-offers one below, and the
+             wallet journal's own ref_type list has nothing loyalty-related either. LP is always a
+             personal character stat, same as standing. This shows the character's own balance broken
+             down per corp, which is the real, useful equivalent of what "corp LP" was reaching for. -->
+        <div id="lpstore-lp-owned-popover" class="lpstore-corp-popover glass-card hidden">
+          <div id="lpstore-lp-owned-content"></div>
+        </div>
+      </div>
+
+      <div id="lpstore-empty-state" class="flex items-center justify-center h-full text-slate-500 italic">
+        Choose an NPC corporation above to see its LP store ranked by ISK/LP.
+      </div>
+      <div id="lpstore-loading-state" class="hidden flex items-center justify-center h-full text-slate-500 italic">
+        Loading offers and pricing every item…
+      </div>
+      <div id="lpstore-error-state" class="hidden flex items-center justify-center h-full" style="color:var(--red-400, #f87171);"></div>
+      <div id="lpstore-results-area" class="hidden space-y-4">
+        <div class="lp-card p-4">
+          <!-- Moved up from the sidebar - a filter this central deserves to be seen, not buried
+               under Production Station/Optimizers below the fold. Same setLPStoreSearch()
+               live-filter as before, just relocated. Its own full-width row (not squeezed to the
+               right of the header via justify-between, and not .field-line - that class is
+               deliberately invisible-until-focused, right for a dense secondary field but wrong for
+               the main way this whole page gets filtered) - .field-box instead, the same
+               real-background, always-visible treatment the app already uses for its one other
+               primary search field (Invention's own item search). -->
+          <h2 class="text-sm font-bold uppercase tracking-wider rajdhani mb-2" style="color:var(--accent);">Ranked Offers</h2>
+          <div class="relative mb-3">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-mute);pointer-events:none;"><circle cx="10.5" cy="10.5" r="6.5"/><line x1="20" y1="20" x2="15.5" y2="15.5"/></svg>
+            <input type="text" id="lpstore-search-input" placeholder="Search by item name..." autocomplete="off" oninput="setLPStoreSearch(this.value)" class="field-box w-full text-white font-bold mono text-sm" style="padding:9px 12px 9px 34px;">
+          </div>
+          <!-- Category filter, as icon pills instead of a dropdown - populated by
+               renderLPCategoryBar() (js/lpstore.js) from LP_CATEGORY_FILTERS, the same lp-pill/active
+               convention the Offer Type buttons above use. -->
+          <div id="lpstore-category-bar" class="flex flex-wrap gap-1.5 mb-1.5"></div>
+          <p class="text-[10px] mb-3" style="color:var(--text-mute);">Categories resolve in the background right after offers load - may take a moment to fully sort the first time.</p>
+          <div id="lpstore-table-container" class="overflow-x-auto"></div>
+        </div>
+      </div>
+
+      <!-- Find Item - reverse search across every known LP store, in a dedicated space matching the
+           Ranked Offers list above rather than a small popover (a popover was too cramped for a
+           grouped, multi-corp-per-item result set - see js/lpstore.js's own note on
+           showLPItemSearchArea/filterLPItemSearchResults). Toggled the same way the isolated build
+           canvas is: shown/hidden as a sibling state inside #lpstore-main-area, exited back to
+           whichever of empty/loading/results-area actually applies via exitLPItemSearchArea. -->
+      <div id="lpstore-item-search-area" class="hidden space-y-4">
+        <div class="lp-card p-4">
+          <!-- No "Back to Store" button here anymore - the "This Store" tab in the switcher bar
+               above (always visible, same control that got you here) does that job now instead of a
+               second, differently-styled way to do the same thing. -->
+          <div class="flex items-center gap-3 mb-1">
+            <h2 class="text-sm font-bold uppercase tracking-wider rajdhani" style="color:var(--accent);">Find Item Across Every LP Store</h2>
+          </div>
+          <p class="text-[10px] mb-3 leading-relaxed" style="color:var(--text-mute);">Est. ISK/LP is net of sales tax + broker fee, same as the ranked list - for a <span class="lpstore-item-search-type-badge lpstore-item-search-type-bpc">BPC</span> offer it prices the product's market value but not what it costs to actually build (materials, job fee), so it reads a bit optimistic there. Isolate an offer for the real number.</p>
+          <!-- A real autocomplete now, not a live filter - typing suggests distinct ITEMS (one row
+               each, however many corps sell it), and #lpstore-item-search-results only ever shows
+               one item's own corp list, populated once a suggestion is actually picked (see
+               js/lpstore.js's pickLPItemSearchSuggestion/renderLPItemSearchResultsArea). Was live
+               filtering straight into the results area before - matched the OLD flat per-offer/
+               grouped-list design, but not this one. autocomplete="off" - this input has its own
+               custom suggestion dropdown now, and the browser's native one would just draw a second,
+               conflicting dropdown on top of it. -->
+          <div class="relative mb-3">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-mute);pointer-events:none;"><circle cx="10.5" cy="10.5" r="6.5"/><line x1="20" y1="20" x2="15.5" y2="15.5"/></svg>
+            <input type="text" id="lpstore-item-search-input" autocomplete="off" placeholder="Search any item across every LP store..."
+              oninput="filterLPItemSearchResults(this.value)"
+              onfocus="if (this.value.trim().length >= 2) filterLPItemSearchResults(this.value);"
+              onblur="setTimeout(() => { const el = document.getElementById('lpstore-item-search-suggestions'); if (el) el.classList.add('hidden'); }, 200)"
+              class="field-box w-full text-white font-bold mono text-sm" style="padding:9px 12px 9px 34px;">
+            <div id="lpstore-item-search-suggestions" class="lpstore-corp-popover glass-card hidden"></div>
+          </div>
+          <div id="lpstore-item-search-results">
+            <p class="text-sm italic" style="color:var(--text-mute);">Search for an item above, then select it from the suggestions to see which corps offer it.</p>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Isolated Build Inspector - the Calculator's OWN tree canvas, exactly as it appears on
+         index.html (js/app.js renderTreeDiagram/createNodeCard, unmodified). Hidden until
+         isolateOffer() runs; hidden together with #lpstore-main-area's ranked list. Structurally a
+         sibling of it (not nested inside), matching index.html's own #viewport/#bom-sidebar being
+         flex siblings in .content-row rather than living inside a scrolling <main>. -->
+    <div class="flex-1 relative border-t border-orange-500/20 hidden" id="viewport" onclick="clearHighlight()">
+      <div id="pan-zoom-content">
+        <svg id="tree-svg"></svg>
+        <div id="tree-container" class="relative flex justify-center items-center space-x-24 p-24 min-w-max min-h-max"></div>
+      </div>
+
+      <div class="absolute top-3 left-3 z-40 flex items-center gap-1.5 mono text-xs" onclick="event.stopPropagation()">
+        <button onclick="exitLPInspector()" class="btn-glass btn-glass-muted px-2.5 py-1.5 text-[11px] flex items-center gap-1.5" title="Back to the ranked offer list">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+          Back to List
+        </button>
+        <span id="lpstore-inspector-name" class="px-2.5 py-1.5 glass-card text-slate-200 font-semibold truncate" style="max-width:260px;"></span>
+      </div>
+
+      <!-- Isolate-mode indicator - see index.html's own copy of this for the full comment. -->
+      <div id="isolate-mode-banner" class="hidden absolute top-3 left-3 z-40 flex items-center gap-2 px-3 py-1.5 glass-card mono text-xs max-w-[min(45vw,260px)]" style="border-color:rgba(var(--accent-rgb),0.5);" onclick="event.stopPropagation()">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 flex-shrink-0" style="color:var(--accent);"><circle cx="12" cy="12" r="3"/><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/></svg>
+        <span class="text-slate-300 truncate min-w-0">Isolated: <span id="isolate-mode-banner-name" class="font-bold text-white"></span></span>
+        <span class="text-slate-600 flex-shrink-0">·</span>
+        <button onclick="exitIsolation(event)" class="font-semibold hover:underline flex-shrink-0" style="color:var(--accent);">Esc to exit</button>
+      </div>
+
+      <!-- Onboarding tips - see index.html's own copy of this for the full comment. -->
+      <div id="pan-tip-callout" class="absolute top-14 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2.5 px-3.5 py-2 mono text-xs max-w-[min(92vw,380px)] community-btn-pulse" style="background:rgba(var(--accent-rgb),0.16); border:1.5px solid rgba(var(--accent-rgb),0.55); border-radius:var(--radius-btn); box-shadow:0 8px 24px rgba(0,0,0,0.4);" onclick="event.stopPropagation()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 flex-shrink-0" style="color:var(--accent);">
+          <path d="M12 3a6 6 0 0 1 6 6v6a6 6 0 0 1-12 0V9a6 6 0 0 1 6-6z"/>
+          <line x1="12" y1="3.2" x2="12" y2="11"/>
+          <path d="M12 3.2a6 6 0 0 1 5.9 5.8h-5.9z" fill="var(--accent)" stroke="none"/>
+        </svg>
+        <span class="text-slate-200 font-semibold">Right-click + drag to <span class="text-white font-bold">pan</span> the canvas</span>
+        <button onclick="advanceOnboardingTip()" class="btn-glass px-2.5 py-1 text-[10.5px] font-bold flex-shrink-0" style="white-space:nowrap;">Next</button>
+      </div>
+
+      <div class="absolute top-3 right-3 z-40 flex items-center gap-1.5 mono text-xs" onclick="event.stopPropagation()">
+        <span id="zoom-level-text" class="px-2.5 py-1.5 glass-card text-slate-300 font-semibold">100%</span>
+        <button onclick="collapseAllNodes()" id="collapse-all-btn" class="btn-glass btn-glass-muted px-2.5 py-1.5 text-[11px] flex items-center gap-1 community-btn-pulse" title="Collapse every branch that has inputs, to shrink very tall builds">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;"><polyline points="7,4 12,9 17,4"/><polyline points="7,20 12,15 17,20"/></svg>
+          Collapse
+        </button>
+        <button onclick="compactAllNodes()" id="compact-all-btn" class="btn-glass btn-glass-muted px-2.5 py-1.5 text-[11px] flex items-center gap-1" title="Shrink every card in the whole tree to a small chip, without hiding anything - unlike Collapse, every layer stays visible and connected, just much smaller">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;"><polyline points="4,14 10,14 10,20"/><polyline points="20,10 14,10 14,4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+          Compact All
+        </button>
+        <button onclick="expandAllNodes()" id="expand-all-btn" class="btn-glass btn-glass-muted px-2.5 py-1.5 text-[11px] flex items-center gap-1" title="Expand every collapsed branch">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;"><polyline points="7,9 12,4 17,9"/><polyline points="7,15 12,20 17,15"/></svg>
+          Expand
+        </button>
+        <button onclick="centerOnSelectedNode()" class="icon-btn" title="Center on selected card, or the final output if nothing is selected [F]">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>
+        </button>
+        <button onclick="resetPanZoom()" class="icon-btn" title="Reset pan and zoom">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-2.2-5.9"/><polyline points="21,3 21,9 15,9"/></svg>
+        </button>
+      </div>
+
+      <div id="viewport-hint" class="absolute bottom-3 left-3 z-40 px-3 py-1.5 mono text-slate-400 text-[11px]" title="Click Card: Highlight Inputs &amp; Output · Click BOM Row: Center Material · [F]: Center Output · Arrow Keys: Walk Tree · [Space]: Compact/Expand Selected">
+        Click card to highlight · Click BOM row to center · [F] to center output · Arrow keys to walk tree · [Space] to compact/expand
+      </div>
+
+      <!-- Market Economics pull-up drawer - LP Store isolation mode only (lives inside #viewport,
+           which is itself only ever shown while isolated). Data comes from ESI market history for
+           the isolated offer's own PRODUCT typeId (js/lpstore.js loadAndRenderMarketDrawer), at
+           whatever station the Calculator's own Home Market is set to (js/app.js, eve_home_station_id
+           - the same market every other price on this page already comes from). Fetched lazily on
+           first open, not prefetched on isolate, and reset whenever a different offer is isolated. -->
+      <button id="lp-market-drawer-tab" onclick="event.stopPropagation(); toggleMarketDrawer();" class="lp-market-drawer-tab" title="Market Economics: price history and trade volume for this item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3,17 9,11 13,15 21,6"/><polyline points="15,6 21,6 21,12"/></svg>
+        Market Economics
+        <svg id="lp-market-drawer-tab-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6,15 12,9 18,15"/></svg>
+      </button>
+      <div id="lp-market-drawer" class="lp-market-drawer" onclick="event.stopPropagation()">
+        <div class="lp-market-drawer-header">
+          <div class="flex items-center gap-2 min-w-0">
+            <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;flex-shrink:0;"><polyline points="3,17 9,11 13,15 21,6"/><polyline points="15,6 21,6 21,12"/></svg>
+            <span class="font-semibold text-sm" style="color:var(--text);">Market Economics</span>
+            <span id="lp-market-item-name" class="text-slate-400 text-xs truncate"></span>
+            <span class="flex items-center gap-1 text-[10px] mono flex-shrink-0" style="color:var(--text-mute);" title="Every price and volume figure below comes from this station's market">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:10px;height:10px;"><path d="M12 21s7-5.2 7-11a7 7 0 0 0-14 0c0 5.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+              <span id="lp-market-region-label">—</span>
+            </span>
+          </div>
+          <div class="flex items-center gap-1.5 flex-shrink-0">
+            <div id="lp-market-range-pills" class="flex gap-1"></div>
+            <button onclick="toggleMarketExpanded()" id="lp-market-expand-toggle" class="icon-btn" title="Toggle a taller drawer">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+            </button>
+            <button onclick="setMarketTableView(!_lpMarketTableView)" id="lp-market-table-toggle" class="icon-btn" title="Switch between chart and table view">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+            </button>
+            <button onclick="toggleMarketDrawer()" class="flyout-panel-close" title="Close">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+        </div>
+        <div id="lp-market-drawer-body" class="lp-market-drawer-body">
+          <div class="flex items-center justify-center h-full text-slate-500 italic text-sm">Loading market history…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bill of Materials (BOM) Sidebar - identical to index.html's #bom-sidebar (same ids, same
+         markup), populated automatically by js/app.js renderBillOfMaterials() once an offer is
+         isolated. Hidden together with #viewport above. -->
+    <aside id="bom-sidebar" class="lp-card w-80 md:w-96 flex flex-col overflow-hidden flex-shrink-0 z-20 m-4 ml-0 p-4 hidden">
+      <div class="lp-row flex justify-between items-center" style="padding-top:0; margin-top:0; border-top:none;">
+        <div class="min-w-0">
+          <h2 class="font-bold rajdhani tracking-wider text-sm uppercase truncate" style="color:var(--text);" title="Bill of Materials: click a row to focus its card in the diagram">Bill of Materials</h2>
+          <div class="text-[9px] mono truncate" style="color:var(--text-mute);">CLICK ROW TO FOCUS CARD IN DIAGRAM</div>
+        </div>
+        <div class="flex items-center gap-1.5 flex-shrink-0">
+          <button id="btn-bom-view-mode" onclick="toggleBomViewMode()" class="btn-glass btn-glass-muted px-2.5 py-1.5 text-[10px]" title="Switch between detailed and compact list view">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3.5" y1="6" x2="3.51" y2="6"/><line x1="3.5" y1="12" x2="3.51" y2="12"/><line x1="3.5" y1="18" x2="3.51" y2="18"/></svg> Compact
+          </button>
+          <button onclick="copyMultibuyText()" class="btn-glass px-3.5 py-1.5 text-xs">
+            Copy Multibuy
+          </button>
+        </div>
+      </div>
+
+      <details open class="lp-row group">
+        <summary class="cursor-pointer flex items-center justify-between list-none" style="color:var(--text-mute);" title="Only affects this shopping list and Copy Multibuy - materials you already have in stock are excluded from what's shown/copied here. Does NOT affect Total Production Cost or Profit, which always reflect full market value regardless of stock.">
+          <span class="lp-label flex items-center gap-1.5">
+            Stock &amp; Location <span id="location-search-feedback" class="text-[9px] font-mono font-bold normal-case hidden" style="color:var(--accent);"></span>
+          </span>
+          <span class="group-open:rotate-90 transition-transform" style="color:var(--text-mute);"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"/></svg></span>
+        </summary>
+        <div class="pt-2.5 space-y-2.5">
+          <div class="flex items-center gap-2">
+            <label class="pill-check">
+              <input type="checkbox" id="use-char-assets" checked onchange="applyStockLocationFilter()">
+              <span class="pill-check-face"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-7 8-7s8 3 8 7"/></svg>Personal</span>
+            </label>
+            <label class="pill-check">
+              <input type="checkbox" id="use-corp-assets" checked onchange="applyStockLocationFilter()">
+              <span class="pill-check-face"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V7a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v14"/><path d="M12 11h6a1 1 0 0 1 1 1v9"/><line x1="8" y1="9" x2="8" y2="9.01"/><line x1="8" y1="13" x2="8" y2="13.01"/><line x1="8" y1="17" x2="8" y2="17.01"/><line x1="16" y1="15" x2="16" y2="15.01"/><line x1="16" y1="19" x2="16" y2="19.01"/></svg>Corp</span>
+            </label>
+          </div>
+          <input type="text" id="location-filter-search" autocomplete="off" placeholder="Filter locations..." oninput="filterLocationDropdownOptions()"
+            class="field-line w-full text-[11px] mono" style="color:var(--text);">
+          <select id="stock-location-filter" onchange="applyStockLocationFilter()" class="field-line w-full font-bold text-[11px] truncate" style="color:var(--accent);">
+            <option value="all" selected>All Locations (Combined Assets)</option>
+            <option value="industry_system">Current System Only (JITA)</option>
+          </select>
+        </div>
+      </details>
+
+      <div class="lp-row space-y-2.5 flex flex-col">
+        <div class="flex items-center gap-1.5">
+          <div class="flex-1 min-w-0">
+            <button id="deduct-stock-mode" value="true" onclick="toggleDeductStockButton(this, 'recalculate')" class="btn-glass w-full px-3 py-1.5 text-xs flex items-center justify-center gap-1.5" title="Materials you already own are excluded from the shopping list/multibuy below - click to show the full list instead"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Deducting Stock</button>
+          </div>
+          <button onclick="refreshLiveAssets()" class="btn-glass btn-glass-muted px-2.5 py-1.5 flex items-center justify-center flex-shrink-0" style="height:30px;" title="Refresh Assets: fetch your latest live character and corp assets from EVE Online" aria-label="Refresh Assets">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 4 21 9 16 9"/></svg>
+          </button>
+        </div>
+        <div class="flex items-center justify-between text-[11px] mono">
+          <span class="font-bold" style="color:var(--text-mute);">Order Type:</span>
+          <div class="flex gap-1">
+            <button onclick="setBOMOrderFilter('all')" id="btn-bom-order-all" class="lp-pill active" style="padding:5px 12px;">All</button>
+            <button onclick="setBOMOrderFilter('buy')" id="btn-bom-order-buy" class="lp-pill" style="padding:5px 12px;">Buy</button>
+            <button onclick="setBOMOrderFilter('sell')" id="btn-bom-order-sell" class="lp-pill" style="padding:5px 12px;">Sell</button>
+          </div>
+        </div>
+        <div class="flex items-center justify-between text-[11px] mono">
+          <span class="font-bold" style="color:var(--text-mute);">Category:</span>
+          <select id="bom-category-select" onchange="setBOMCategoryFilter(this.value)" class="field-line px-2 py-1 text-[11px] w-40 font-semibold" style="color:var(--text);">
+            <option value="all">All Items</option>
+            <option value="minerals">Minerals</option>
+            <option value="pigas">PI / Gases</option>
+            <option value="fuel">Fuel Blocks</option>
+            <option value="ships">Ships</option>
+            <option value="others">Others</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="bom-items-list" class="lp-row flex-1 min-h-0 overflow-y-auto space-y-2 text-xs" style="margin-bottom:0;"></div>
+
+      <div class="lp-row mono">
+        <div class="flex justify-between text-xs" style="color:var(--text-mute);">
+          <span>Unique Material Types:</span>
+          <span id="bom-type-count" class="font-bold" style="color:var(--text);">0</span>
+        </div>
+        <div class="flex justify-between text-xs mt-1" style="color:var(--text-mute);">
+          <span>Total Volume:</span>
+          <span id="bom-total-volume" class="font-bold" style="color:var(--text-soft);">0 m3</span>
+        </div>
+        <div class="mt-2">
+          <div class="text-[10.5px] uppercase tracking-wide" style="color:var(--text-mute);">Grand Total Material ISK</div>
+          <div id="bom-total-isk" class="font-bold text-base" style="color:var(--cost);">0 ISK</div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Required proprietary notice (EVE Online Developer License Agreement, section 7.1) - see
+       css/styles.css's own comment on .site-legal-footer for the sourcing. -->
+  <footer class="site-legal-footer"><a href="https://www.eveonline.com/" target="_blank" rel="noopener noreferrer">EVE Online&reg;</a> and related trademarks/logos are property of <a href="https://fenris.com" target="_blank" rel="noopener noreferrer">Fenris Creations</a>. Unofficial fan-made content, not affiliated with or endorsed by <a href="https://fenris.com" target="_blank" rel="noopener noreferrer">Fenris Creations</a>.</footer>
+
+  <!-- js/app.js loaded here too (same as index.html) - it owns the tree canvas (#viewport/
+       #tree-container), the Bill of Materials sidebar (#bom-sidebar), and selectItem()/recalculate(),
+       all reused as-is for the isolated build view. Registers its own 'load' listener rather than a
+       plain window.onload= assignment specifically so js/lpstore.js's own listener (below) can
+       coexist instead of clobbering it - see both files' own comments on this. -->
+  <script src="eve_db.js?v=16.4.0" defer></script>
+  <script src="js/config.js?v=8.0.47" defer></script>
+  <script src="js/esi.js?v=8.0.41" defer></script>
+  <script src="js/tree.js?v=8.0.6" defer></script>
+  <script src="js/optimizers.js?v=8.0.21" defer></script>
+  <script src="js/app.js?v=15.101.0" defer></script>
+  <script src="js/lpstore.js?v=7.37.0" defer></script>
+  <script src="js/custom-select.js?v=1.5.0" defer></script>
+</body>
+</html>
