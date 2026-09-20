@@ -30,8 +30,8 @@ let slSessionReady = false; // guards against saving a blank session before load
 // Per-search-box "the user actually clicked a specific result" state - three independent search
 // boxes (Add Single Item, Wishlist, Favorites) each need their own, so picking a result in one
 // doesn't clobber what was picked in another.
-const slPicked = { item: null, wish: null, fav: null };
-const slSearchState = { item: { res: [], idx: -1 }, wish: { res: [], idx: -1 }, fav: { res: [], idx: -1 } };
+const slPicked = { item: null, wish: null, fav: null, qfav: null };
+const slSearchState = { item: { res: [], idx: -1 }, wish: { res: [], idx: -1 }, fav: { res: [], idx: -1 }, qfav: { res: [], idx: -1 } };
 
 const SL_ITEMS_KEY = 'eve_sl_session_v1';
 const SL_WISHLIST_KEY = 'eve_sl_wishlist_v1';
@@ -165,8 +165,8 @@ document.addEventListener('mousedown', (e) => {
   const it = slSearchState[kind].res[idx];
   if (!it) return;
   slPicked[kind] = it;
-  const inputIds = { item: 'sl-item-search', wish: 'sl-wish-search', fav: 'sl-fav-search' };
-  const resultIds = { item: 'sl-search-results', wish: 'sl-wish-search-results', fav: 'sl-fav-search-results' };
+  const inputIds = { item: 'sl-item-search', wish: 'sl-wish-search', fav: 'sl-fav-search', qfav: 'sl-quickfav-search' };
+  const resultIds = { item: 'sl-search-results', wish: 'sl-wish-search-results', fav: 'sl-fav-search-results', qfav: 'sl-quickfav-search-results' };
   document.getElementById(inputIds[kind]).value = it.name;
   document.getElementById(resultIds[kind]).classList.add('hidden');
 });
@@ -182,6 +182,10 @@ function slWishSearchItem(q) {
 function slFavSearchItem(q) {
   slPicked.fav = null;
   slRenderSearchDropdown('fav', document.getElementById('sl-fav-search'), document.getElementById('sl-fav-search-results'), slSearch(q));
+}
+function slQuickFavSearchItem(q) {
+  slPicked.qfav = null;
+  slRenderSearchDropdown('qfav', document.getElementById('sl-quickfav-search'), document.getElementById('sl-quickfav-search-results'), slSearch(q));
 }
 function slSearchKeydown(e) {
   if (e.key === 'Enter') slAddSearchedItem();
@@ -391,10 +395,16 @@ function slRenderList() {
     return;
   }
   const hasStockData = !!(window.userStockMap && Object.keys(window.userStockMap).length);
+  // Column widths have to leave real room for what's actually inside them under table-layout:fixed
+  // (which clips anything wider than its declared column rather than letting it push neighbors
+  // over) - the icon column needs to fit a 36px icon plus the table's own cell padding, and the
+  // Qty column needs to fit the full −/input/+ stepper (86px on its own), not just a bare number.
+  // Reported directly: both were too narrow, silently clipping the right edge of the icon and the
+  // stepper's own + button.
   const headCols = `
-    <th style="width:46px;"></th><th>Item</th><th style="text-align:center;width:70px;">Qty</th>
-    ${hasStockData ? '<th style="text-align:right;width:60px;" title="How many of this you already own, from the stock filter in the sidebar">Have</th><th style="text-align:right;width:70px;" title="What you still need to buy after subtracting what you already own">Buy Qty</th>' : ''}
-    <th style="text-align:right;width:80px;" title="Volume of a single unit">Vol/Unit</th><th style="text-align:right;width:80px;" title="Jita ${slPriceMode === 'buy' ? 'buy' : 'sell'} price per unit">${slPriceMode === 'buy' ? 'Buy' : 'Sell'}</th><th style="text-align:right;width:90px;" title="Unit price &times; quantity">Total</th><th style="width:28px;"></th>
+    <th style="width:66px;"></th><th>Item</th><th style="text-align:center;width:118px;">Qty</th>
+    ${hasStockData ? '<th style="text-align:right;width:72px;" title="How many of this you already own, from the stock filter in the sidebar">Have</th><th style="text-align:right;width:86px;" title="What you still need to buy after subtracting what you already own">Buy Qty</th>' : ''}
+    <th style="text-align:right;width:94px;" title="Volume of a single unit">Vol/Unit</th><th style="text-align:right;width:94px;" title="Jita ${slPriceMode === 'buy' ? 'buy' : 'sell'} price per unit">${slPriceMode === 'buy' ? 'Buy' : 'Sell'}</th><th style="text-align:right;width:106px;" title="Unit price &times; quantity">Total</th><th style="width:32px;"></th>
   `;
   let html = '';
   slFits.forEach(fit => {
@@ -687,6 +697,18 @@ function slAddFavItem() {
   if (slFavorites.find(f => f.kind === 'item' && f.typeId === it.id)) { window.showToast('Already in favorites.', 'info'); return; }
   slFavorites.unshift({ kind: 'item', typeId: it.id, name: it.name });
   saveSlFavorites(); document.getElementById('sl-fav-search').value = ''; slPicked.fav = null; slRenderFavorites();
+  window.showToast(`Added to favorites: ${it.name}`, 'success');
+}
+// Same as slAddFavItem, but for the compact search box inside the Shopping List tab's own
+// Favorite Items panel - kept as its own function/picked-state slot (slPicked.qfav) rather than
+// reusing slPicked.fav, since the Favorites tab's own search box can be open at the same time and
+// picking a result in one must not clobber what's picked in the other.
+function slAddQuickFavItem() {
+  if (!slPicked.qfav) { window.showToast('Search for and select an item first.', 'info'); return; }
+  const it = slPicked.qfav;
+  if (slFavorites.find(f => f.kind === 'item' && f.typeId === it.id)) { window.showToast('Already in favorites.', 'info'); return; }
+  slFavorites.unshift({ kind: 'item', typeId: it.id, name: it.name });
+  saveSlFavorites(); document.getElementById('sl-quickfav-search').value = ''; slPicked.qfav = null; slRenderFavorites();
   window.showToast(`Added to favorites: ${it.name}`, 'success');
 }
 function slAddFavFit() {
