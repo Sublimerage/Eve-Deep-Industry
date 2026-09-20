@@ -175,8 +175,8 @@
 /* ---- favorites grid - sub-cards within a panel, so they get the flatter .fo-card-weight
    surface (same literal fill body.page-calc .fo-card uses) rather than full glass, keeping the
    hierarchy readable: panel = glass, cards-within-a-panel = flat. ---- */
-.jsl .fav-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px,1fr)); gap: 12px; padding: 4px 22px 18px; }
-.jsl .fav-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: var(--radius-btn); display: flex; align-items: center; gap: 10px; padding: 12px 14px; transition: border-color .15s; position: relative; }
+.jsl .fav-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px,1fr)); gap: 12px; padding: 4px 22px 18px; }
+.jsl .fav-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: var(--radius-btn); display: flex; align-items: center; gap: 14px; padding: 14px; transition: border-color .15s; position: relative; }
 .jsl .fav-card:hover { border-color: rgba(255,255,255,0.16); }
 /* Reported directly: the fit name was cut off with "..." and unreadable - wraps instead of
    truncating now, and the card grows to fit instead of forcing everything onto one line. */
