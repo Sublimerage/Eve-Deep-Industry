@@ -793,15 +793,37 @@ function slRenderQuickFavorites() {
   if (!el) return;
   const itemFavs = slFavorites.map((f, idx) => ({ ...f, idx })).filter(f => f.kind === 'item');
   if (!itemFavs.length) {
-    el.innerHTML = `<div class="empty" style="padding:16px 0;">No favorite items yet - add some from the Favorites tab and they'll show up here for one-click adding.</div>`;
+    el.innerHTML = `<div class="empty" style="padding:16px 0;">No favorite items yet - search above to add some.</div>`;
     return;
   }
   el.innerHTML = itemFavs.map(f => `
-    <div class="quickfav-chip" onclick="slUseFavorite(${f.idx})" title="Add to shopping list: ${window.esc(f.name)}">
-      <img src="${window.getItemIconUrl(f.typeId, f.name, 32)}" onerror="this.style.opacity=.15" loading="lazy">
-      <span>${window.esc(f.name)}</span>
+    <div class="qfav-row">
+      <div class="qfav-top">
+        <img src="${window.getItemIconUrl(f.typeId, f.name, 32)}" onerror="this.style.opacity=.15" loading="lazy">
+        <span class="tn" title="${window.esc(f.name)}">${window.esc(f.name)}</span>
+        <button class="lp-chip-btn" style="color:var(--jsl-red);" onclick="slRemoveFavorite(${f.idx})" title="Remove from favorites"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      </div>
+      <div class="qfav-bottom">
+        <div class="qty qty-sm"><button onclick="slQuickFavQtyStep(${f.idx}, -1)" type="button">&minus;</button><input type="number" id="sl-qfav-qty-${f.idx}" min="1" value="1"><button onclick="slQuickFavQtyStep(${f.idx}, 1)" type="button">+</button></div>
+        <button class="lp-chip-btn" onclick="slQuickFavAddOne(${f.idx})">+ Add</button>
+      </div>
     </div>
   `).join('');
+}
+// Reads whatever quantity is currently sitting in that favorite's own stepper - reported directly:
+// clicking a favorite used to silently add exactly 1 with no way to say how many you actually want.
+function slQuickFavAddOne(idx) {
+  const f = slFavorites[idx]; if (!f || f.kind !== 'item') return;
+  const qtyInput = document.getElementById('sl-qfav-qty-' + idx);
+  const qty = Math.max(1, parseInt(qtyInput?.value) || 1);
+  slAddItemToList(f.typeId, f.name, qty);
+  slRenderAll();
+  window.showToast(`Added ${qty} × ${f.name}`, 'success');
+}
+function slQuickFavQtyStep(idx, delta) {
+  const input = document.getElementById('sl-qfav-qty-' + idx);
+  if (!input) return;
+  input.value = Math.max(1, (parseInt(input.value) || 1) + delta);
 }
 function slViewFavoriteList(idx) {
   const f = slFavorites[idx]; if (!f || f.kind !== 'list') return;
