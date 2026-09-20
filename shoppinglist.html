@@ -196,6 +196,17 @@
                   <button id="sl-btn-sell" class="on" onclick="slSetPriceMode('sell')" type="button">SELL</button>
                   <button id="sl-btn-buy" onclick="slSetPriceMode('buy')" type="button">BUY</button>
                 </div>
+                <!-- Same idea as the Calculator's own "Smart Optimizers: Market spread" control -
+                     per item, not a global toggle: switches an item to its Buy Order price instead
+                     of instant-sell price when the gap between the two is at least this much,
+                     since that's cheap enough to be worth placing an order and waiting for instead
+                     of buying instantly off what's already listed. -->
+                <div class="row" style="margin:0; gap:4px;" title="Per item: recommend a Buy Order instead of buying instantly off Sell Orders once the price gap between the two is at least this much.">
+                  <span class="fs">MIN SPREAD</span>
+                  <input type="number" id="sl-spread-threshold" value="5" min="0" step="0.5" class="field-editable text-center mono text-xs" style="width:52px;">
+                  <span class="fs">%</span>
+                  <button class="lp-chip-btn" onclick="slApplySpreadOptimizer()">Optimize</button>
+                </div>
                 <button class="lp-chip-btn" onclick="slCopyMultibuy()"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.6" y1="10.6" x2="15.4" y2="6.4"/><line x1="8.6" y1="13.4" x2="15.4" y2="17.6"/></svg> Copy Multibuy</button>
                 <button class="lp-chip-btn" onclick="slRefreshAllPrices()"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 4 21 9 16 9"/></svg> Refresh</button>
                 <span class="pb" id="sl-type-count">0 Types</span>
@@ -367,6 +378,6 @@
   <script src="js/config.js?v=8.0.47" defer></script>
   <script src="js/esi.js?v=8.0.41" defer></script>
   <script src="js/custom-select.js?v=1.5.0" defer></script>
-  <script src="js/shoppinglist.js?v=1.0.14" defer></script>
+  <script src="js/shoppinglist.js?v=1.0.15" defer></script>
 </body>
 </html>
