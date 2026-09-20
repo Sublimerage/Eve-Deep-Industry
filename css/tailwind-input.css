@@ -6,10 +6,12 @@
 @source "../index.html";
 @source "../ledger.html";
 @source "../invention.html";
+@source "../shoppinglist.html";
 @source "../js/app.js";
 @source "../js/ledger.js";
 @source "../js/invention.js";
 @source "../js/invention-queue.js";
+@source "../js/shoppinglist.js";
 @source "../js/esi.js";
 @source "../js/optimizers.js";
 @source "../js/tree.js";
