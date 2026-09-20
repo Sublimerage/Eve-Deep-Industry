@@ -444,10 +444,12 @@ function slRenderList() {
   if (slItems.length) {
     if (slFits.length) html += `<div class="divider-label">Individual Items</div>`;
     html += `
-      <table class="jtable">
-        <thead><tr>${headCols}</tr></thead>
-        <tbody>${slItems.map((it, idx) => slStandaloneItemRowHTML(it, idx)).join('')}</tbody>
-      </table>
+      <div class="sl-table-wrap">
+        <table class="jtable">
+          <thead><tr>${headCols}</tr></thead>
+          <tbody>${slItems.map((it, idx) => slStandaloneItemRowHTML(it, idx)).join('')}</tbody>
+        </table>
+      </div>
     `;
   }
   body.innerHTML = html;
@@ -788,12 +790,49 @@ function slRenderFavorites() {
 // the full Favorites tab (which also has to deal with fits and whole saved lists). Filters slFavorites
 // down but keeps each entry's REAL index into that array (not the filtered position), since
 // slUseFavorite needs the real index to find the right entry.
+// Category filter for the quick-favorites panel - once there are many favorites, a flat grid gets
+// hard to scan (reported directly). Grouped by real EVE category IDs (window.EVE_CATEGORIES,
+// eve_db.js), confirmed live rather than guessed: 7=Module, 8=Charge (this bucket genuinely covers
+// ammo AND consumables like nanite paste/cap boosters - EVE's own SDE doesn't split those further),
+// 18=Drone, 20=Implant (boosters/"drugs" share this exact category with cybernetic implants in the
+// real SDE - there's no reliable way to split "drugs" out from a plain category check, so this
+// stays one honestly-labeled bucket rather than a fabricated distinction), 4=Material, 16=Skill.
+// Anything outside those falls into "Other" rather than disappearing.
+const SL_QFAV_CATEGORIES = [
+  { key: 'all', label: 'All' },
+  { key: 7, label: 'Modules' },
+  { key: 8, label: 'Charges & Consumables' },
+  { key: 18, label: 'Drones' },
+  { key: 20, label: 'Implants & Boosters' },
+  { key: 4, label: 'Materials' },
+  { key: 16, label: 'Skills' },
+  { key: 'other', label: 'Other' },
+];
+let slQuickFavFilter = 'all';
+function slQuickFavCategoryOf(typeId) {
+  const cat = window.EVE_CATEGORIES ? window.EVE_CATEGORIES[typeId] : undefined;
+  return SL_QFAV_CATEGORIES.some(c => c.key === cat) ? cat : 'other';
+}
+function slSetQuickFavFilter(key) {
+  slQuickFavFilter = key;
+  slRenderQuickFavorites();
+}
 function slRenderQuickFavorites() {
   const el = document.getElementById('sl-quickfav-grid');
+  const filtersEl = document.getElementById('sl-quickfav-filters');
   if (!el) return;
-  const itemFavs = slFavorites.map((f, idx) => ({ ...f, idx })).filter(f => f.kind === 'item');
-  if (!itemFavs.length) {
+  const allItemFavs = slFavorites.map((f, idx) => ({ ...f, idx })).filter(f => f.kind === 'item');
+  if (filtersEl) {
+    filtersEl.classList.toggle('hidden', allItemFavs.length < 6);
+    filtersEl.innerHTML = SL_QFAV_CATEGORIES.map(c => `<button class="qfav-filter${slQuickFavFilter === c.key ? ' active' : ''}" onclick="slSetQuickFavFilter(${typeof c.key === 'string' ? `'${c.key}'` : c.key})">${c.label}</button>`).join('');
+  }
+  const itemFavs = slQuickFavFilter === 'all' ? allItemFavs : allItemFavs.filter(f => slQuickFavCategoryOf(f.typeId) === slQuickFavFilter);
+  if (!allItemFavs.length) {
     el.innerHTML = `<div class="empty" style="padding:16px 0; grid-column:1/-1;">No favorite items yet - search above to add some.</div>`;
+    return;
+  }
+  if (!itemFavs.length) {
+    el.innerHTML = `<div class="empty" style="padding:16px 0; grid-column:1/-1;">No favorites in this category.</div>`;
     return;
   }
   el.innerHTML = itemFavs.map(f => `
