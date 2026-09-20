@@ -75,11 +75,30 @@ function slRefreshShipVolumes(typeIds) {
     return changed;
   }))).then(results => { if (results.some(Boolean)) slRenderAll(); });
 }
+// window.IDX (js/config.js) is the whole SDE name index - every real item, but also every
+// blueprint/reaction formula (e.g. "Damage Control II" AND "Damage Control II Blueprint" both
+// match "damage") and a fair amount of non-tradeable junk: NPC/deployable scenery ("Amarr Sentry
+// Gun", "Prison Facility" - category 11 "Entity"), stations/celestials (categories 3/2), holiday
+// event fluff like melted snowballs (category 63), and - confirmed directly by inspecting
+// EVE_CATEGORIES live - CCP's own internal QA test data that leaked into the SDE dump ("QA ES
+// below starting skills Afterburner II", category IDs 2100+/350001, nowhere near any real EVE
+// category ID range). None of that belongs in a shopping list's own item search. Blueprints are
+// filtered by name (js/config.js's isBlueprintName, the same check the Calculator's own blueprint
+// search uses in the opposite direction); the rest is filtered by category, denylist rather than
+// allowlist so an uncommon-but-legitimate category (Structures, Fighters, ...) never silently
+// disappears just because it wasn't anticipated.
+const SL_EXCLUDED_CATEGORIES = new Set([2, 3, 11, 63]);
+function slIsRealShoppableItem(typeId) {
+  const cat = window.EVE_CATEGORIES ? window.EVE_CATEGORIES[typeId] : undefined;
+  if (cat === undefined) return true; // no category data at all - don't punish it for that
+  return cat < 1000 && !SL_EXCLUDED_CATEGORIES.has(cat);
+}
 function slSearch(query, limit) {
   const q = String(query || '').toLowerCase().trim();
   if (q.length < 2 || !window.IDX) return [];
   const exact = [], starts = [], contains = [];
   for (const [k, v] of Object.entries(window.IDX)) {
+    if (window.isBlueprintName(k) || !slIsRealShoppableItem(v.id)) continue;
     if (k === q) exact.push(v);
     else if (k.startsWith(q)) starts.push(v);
     else if (k.includes(q)) contains.push(v);
@@ -330,12 +349,12 @@ function slStandaloneItemRowHTML(it, idx) {
           <button onclick="slItemQtyStep(${idx}, 1)" type="button">+</button>
         </div>
       </td>
-      ${hasStockData ? `<td class="tv" style="color:${stockQty > 0 ? 'var(--jsl-green)' : 'var(--jsl-dim)'};">${stockQty.toLocaleString()}</td>
-      <td class="tv" style="color:${netQty > 0 ? 'var(--jsl-red)' : 'var(--jsl-green)'};">${netQty.toLocaleString()}</td>` : ''}
+      ${hasStockData ? `<td class="tv" style="color:${stockQty > 0 ? 'var(--green)' : 'var(--jsl-dim)'};">${stockQty.toLocaleString()}</td>
+      <td class="tv" style="color:${netQty > 0 ? 'var(--jsl-red)' : 'var(--green)'};">${netQty.toLocaleString()}</td>` : ''}
       <td class="tv">${slFmtVol(it.volume)} m&sup3;</td>
       <td class="tp">${unitPrice > 0 ? window.formatISKCompact(unitPrice) : 'N/A'}</td>
       <td class="tp">${unitPrice > 0 ? window.formatISKCompact(totalPrice) : '—'}</td>
-      <td style="text-align:right;"><button onclick="slRemoveItem(${idx})" class="btn-g" title="Remove"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></td>
+      <td style="text-align:right;"><button onclick="slRemoveItem(${idx})" class="lp-chip-btn" title="Remove"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></td>
     </tr>
   `;
 }
@@ -352,12 +371,12 @@ function slFitItemRowHTML(it, fit, isShip) {
       <td><img src="${window.getItemIconUrl(it.typeId, it.name, 32)}" style="width:24px;height:24px;border-radius:3px;" onerror="this.style.opacity=.15" loading="lazy"></td>
       <td><div class="tn" title="${window.esc(it.name)}">${window.esc(it.name)}${isShip ? '<span class="ship-badge">SHIP</span>' : ''}</div><div class="tm">${it.qty}&times; per fit &middot; ${slFmtVol(it.volume * tq)} m&sup3;</div></td>
       <td style="text-align:center; font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--jsl-bright);">${tq.toLocaleString()}</td>
-      ${hasStockData ? `<td class="tv" style="color:${stockQty > 0 ? 'var(--jsl-green)' : 'var(--jsl-dim)'};">${stockQty.toLocaleString()}</td>
-      <td class="tv" style="color:${netQty > 0 ? 'var(--jsl-red)' : 'var(--jsl-green)'};">${netQty.toLocaleString()}</td>` : ''}
+      ${hasStockData ? `<td class="tv" style="color:${stockQty > 0 ? 'var(--green)' : 'var(--jsl-dim)'};">${stockQty.toLocaleString()}</td>
+      <td class="tv" style="color:${netQty > 0 ? 'var(--jsl-red)' : 'var(--green)'};">${netQty.toLocaleString()}</td>` : ''}
       <td class="tv">${slFmtVol(it.volume)} m&sup3;</td>
       <td class="tp">${unitPrice > 0 ? window.formatISKCompact(unitPrice) : 'N/A'}</td>
       <td class="tp">${unitPrice > 0 ? window.formatISKCompact(totalPrice) : '—'}</td>
-      <td style="text-align:right;"><button onclick="slRemoveFitItem(${fit.fitId}, ${it.typeId})" class="btn-g" title="Remove"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></td>
+      <td style="text-align:right;"><button onclick="slRemoveFitItem(${fit.fitId}, ${it.typeId})" class="lp-chip-btn" title="Remove"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></td>
     </tr>
   `;
 }
@@ -388,7 +407,6 @@ function slRenderList() {
     html += `
       <div class="fb${fit.collapsed ? ' collapsed' : ''}">
         <div class="fh" onclick="slToggleFit(${fit.fitId})">
-          <div class="fl"></div>
           <span class="collapse-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
           <span class="fn">${window.esc(fit.name)}</span>
           ${fit.shipName ? `<span class="fs">[${window.esc(fit.shipName)}]</span>` : ''}
@@ -400,8 +418,8 @@ function slRenderList() {
               <input type="number" min="1" value="${fit.copies}" onchange="slSetFitCopies(${fit.fitId}, this.value)">
               <button onclick="slFitCopiesStep(${fit.fitId}, 1)" type="button">+</button>
             </div>
-            <button class="btn-g" onclick="slCopyFitMultibuy(${fit.fitId})" title="Copy as EFT fitting">EFT</button>
-            <button class="btn-g" style="color:var(--jsl-red);" onclick="slRemoveFit(${fit.fitId})">Remove</button>
+            <button class="lp-chip-btn" onclick="slCopyFitMultibuy(${fit.fitId})" title="Copy as EFT fitting">EFT</button>
+            <button class="lp-chip-btn" style="color:var(--jsl-red);" onclick="slRemoveFit(${fit.fitId})">Remove</button>
           </div>
         </div>
         <div class="fb-body">
@@ -516,12 +534,22 @@ function slRefreshAllPrices() {
   window.fetchMarketPrices(ids).then(() => { slRenderAll(); window.showToast('Prices refreshed.', 'success'); });
 }
 
+// Multibuy is a "what do I still need to buy" list, so it has to honor the same deduct-stock
+// toggle and per-item Have amount the table itself already shows in its Buy Qty column - reported
+// directly: with deducting on, this was still copying the full raw quantity because it summed
+// i.qty straight from state without ever consulting slStockFor/slIsDeductingStock at all.
 function slCopyMultibuy() {
-  const combined = {};
-  slFits.forEach(f => f.baseItems.forEach(i => { combined[i.name] = (combined[i.name] || 0) + i.qty * f.copies; }));
-  slItems.forEach(i => { combined[i.name] = (combined[i.name] || 0) + i.qty; });
-  const lines = Object.entries(combined).map(([name, qty]) => qty > 1 ? `${name} x${qty}` : name);
-  if (!lines.length) { window.showToast('Nothing to copy.', 'info'); return; }
+  const deduct = slIsDeductingStock();
+  const combined = {}; // typeId -> {name, qty}
+  const add = (typeId, name, qty) => {
+    const netQty = deduct ? Math.max(0, qty - slStockFor(typeId)) : qty;
+    if (!combined[typeId]) combined[typeId] = { name, qty: 0 };
+    combined[typeId].qty += netQty;
+  };
+  slFits.forEach(f => f.baseItems.forEach(i => add(i.typeId, i.name, i.qty * f.copies)));
+  slItems.forEach(i => add(i.typeId, i.name, i.qty));
+  const lines = Object.values(combined).filter(e => e.qty > 0).map(({ name, qty }) => qty > 1 ? `${name} x${qty}` : name);
+  if (!lines.length) { window.showToast(deduct ? 'Nothing left to buy - stock already covers everything.' : 'Nothing to copy.', 'info'); return; }
   navigator.clipboard.writeText(lines.join('\n'))
     .then(() => window.showToast(`Copied ${lines.length} item${lines.length !== 1 ? 's' : ''} for the in-game Multibuy window.`, 'success'))
     .catch(() => window.showToast('Copy failed.', 'error'));
@@ -544,7 +572,7 @@ function slCopyFitMultibuy(fid) {
 
 // ── TABS ────────────────────────────────────────────────────────────────────────
 function slSwitchTab(name) {
-  document.querySelectorAll('#sl-tabs [data-sl-tab]').forEach(btn => btn.classList.toggle('active', btn.dataset.slTab === name));
+  document.querySelectorAll('#sl-tabs [data-sl-tab]').forEach(btn => btn.classList.toggle('nav-tab-active-violet', btn.dataset.slTab === name));
   document.querySelectorAll('.jtab-content').forEach(el => el.classList.remove('active'));
   document.getElementById('sl-tab-' + name).classList.add('active');
 }
@@ -626,7 +654,7 @@ function slRenderWishlist() {
         <button onclick="slWishQtyAdjust(${idx}, 1)" type="button">+</button>
       </div>
       <button onclick="slWishAddOne(${idx})" class="btn-g wl-add-btn">+ Add</button>
-      <button onclick="slRemoveWishEntry(${idx})" class="btn-g" style="color:var(--jsl-red);"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      <button onclick="slRemoveWishEntry(${idx})" class="lp-chip-btn" style="color:var(--jsl-red);"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
   `).join('');
 }
@@ -711,10 +739,10 @@ function slRenderFavorites() {
   if (!slFavorites.length) { grid.innerHTML = `<div class="empty" style="grid-column:1/-1;"><div>No favorites or saved lists yet.</div></div>`; return; }
   grid.innerHTML = slFavorites.map((f, idx) => {
     const isItem = f.kind === 'item', isFit = f.kind === 'fit', isList = f.kind === 'list';
-    const borderColor = isFit ? 'var(--jsl-gold)' : isList ? 'var(--jsl-accent)' : 'rgba(255,255,255,0.14)';
+    const borderColor = isFit ? 'var(--jsl-gold)' : isList ? 'var(--accent)' : 'rgba(255,255,255,0.14)';
     const icon = isItem ? `<img src="${window.getItemIconUrl(f.typeId, f.name, 32)}" style="width:32px;height:32px;border-radius:4px;flex-shrink:0;" onerror="this.style.opacity=.15">`
       : isFit && f.shipTypeId ? `<img src="${window.getItemIconUrl(f.shipTypeId, f.shipName, 64)}" style="width:32px;height:32px;border-radius:4px;flex-shrink:0;" onerror="this.style.opacity=.15">`
-      : `<div style="width:32px;height:32px;border-radius:4px;background:rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--jsl-accent2);">${isList ? '&#9776;' : '&#9658;'}</div>`;
+      : `<div style="width:32px;height:32px;border-radius:4px;background:rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--accent);">${isList ? '&#9776;' : '&#9658;'}</div>`;
     const sub = isFit ? `${f.shipName ? window.esc(f.shipName) + ' &middot; ' : ''}fit <span style="cursor:pointer;text-decoration:underline;" onclick="slOpenFitPopup('fav', ${idx})">view</span>`
       : isList ? `${(f.fits || []).length} fit${(f.fits || []).length !== 1 ? 's' : ''}, ${(f.items || []).length} item${(f.items || []).length !== 1 ? 's' : ''} <span style="cursor:pointer;text-decoration:underline;" onclick="slViewFavoriteList(${idx})">view</span>` : '';
     return `
@@ -725,8 +753,8 @@ function slRenderFavorites() {
           ${sub ? `<div class="fav-sub">${sub}</div>` : ''}
         </div>
         <div class="fav-plus" onclick="slUseFavorite(${idx})" title="Add to current list">+</div>
-        ${isList ? `<button onclick="slReplaceWithFavorite(${idx})" class="btn-g" title="Replace current list with this">&#8644;</button>` : ''}
-        <button onclick="slRemoveFavorite(${idx})" class="btn-g" style="color:var(--jsl-red); position:relative; z-index:2;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+        ${isList ? `<button onclick="slReplaceWithFavorite(${idx})" class="lp-chip-btn" title="Replace current list with this">&#8644;</button>` : ''}
+        <button onclick="slRemoveFavorite(${idx})" class="lp-chip-btn" style="color:var(--jsl-red); position:relative; z-index:2;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
       </div>
     `;
   }).join('');
