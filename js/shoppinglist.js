@@ -548,20 +548,21 @@ function slUpdateTotals() {
     return;
   }
   // Reported directly: with Deducting Stock on, each row's own Total column already nets out
-  // owned stock - but these header totals summed the full raw quantity regardless, so "Total
-  // Price"/"Total Volume"/"Total Quantity" disagreed with what the rows underneath actually add
-  // up to. Same net-quantity math as the rows themselves (slStandaloneItemRowHTML/slFitItemRowHTML)
-  // now applied here too, so the header totals always match the table.
+  // owned stock - but "Total Price"/"Total Quantity" didn't, disagreeing with the table underneath.
+  // Fixed to match - but Volume deliberately stays on the FULL raw amount regardless of deducting,
+  // reported directly right after: deducting stock only means you don't have to BUY those units,
+  // not that you don't have to HAUL them - they still take up cargo space on the trip, so cutting
+  // them from Total Volume (and the hauler-capacity warning bar it drives) would be wrong.
   let vol = 0, price = 0, qty = 0;
   const deduct = slIsDeductingStock();
   slFits.forEach(f => f.baseItems.forEach(i => {
     const tq = i.qty * f.copies;
     const netQty = deduct ? Math.max(0, tq - slStockFor(i.typeId)) : tq;
-    vol += i.volume * netQty; price += slPrice(i.typeId) * netQty; qty += netQty;
+    vol += i.volume * tq; price += slPrice(i.typeId) * netQty; qty += netQty;
   }));
   slItems.forEach(i => {
     const netQty = deduct ? Math.max(0, i.qty - slStockFor(i.typeId)) : i.qty;
-    vol += i.volume * netQty; price += slPrice(i.typeId) * netQty; qty += netQty;
+    vol += i.volume * i.qty; price += slPrice(i.typeId) * netQty; qty += netQty;
   });
   const typeCount = slFits.reduce((s, f) => s + f.baseItems.length, 0) + slItems.length;
   wrap.style.display = 'block';
@@ -728,22 +729,24 @@ function slRenderWishlist() {
     const sub = isFit ? (w.shipName || 'fit') : 'item';
     const viewFn = `slOpenFitPopup('wish', ${idx})`;
     return `
-      <div class="fav-card" style="border-left:3px solid ${borderColor};">
+      <div class="fav-card" style="border-left:3px solid ${borderColor}; flex-wrap:wrap; align-items:flex-start;">
         <div style="cursor:${isFit ? 'pointer' : 'default'}; display:contents;" ${isFit ? `onclick="${viewFn}"` : ''}>
           ${icon}
-          <div style="flex:1; min-width:0;">
+          <div style="flex:1; min-width:120px;">
             <div class="fav-label">${window.esc(label)}</div>
             <div class="fav-sub">${window.esc(sub)}</div>
           </div>
         </div>
-        <div class="qty qty-sm">
-          <button onclick="slWishQtyAdjust(${idx}, -1)" type="button">&minus;</button>
-          <input type="number" min="1" value="${isFit ? (w.copies || 1) : (w.qty || 1)}" onchange="slWishQtySet(${idx}, this.value)">
-          <button onclick="slWishQtyAdjust(${idx}, 1)" type="button">+</button>
+        <div style="flex-basis:100%; display:flex; align-items:center; justify-content:flex-end; gap:8px;">
+          <div class="qty qty-sm">
+            <button onclick="slWishQtyAdjust(${idx}, -1)" type="button">&minus;</button>
+            <input type="number" min="1" value="${isFit ? (w.copies || 1) : (w.qty || 1)}" onchange="slWishQtySet(${idx}, this.value)">
+            <button onclick="slWishQtyAdjust(${idx}, 1)" type="button">+</button>
+          </div>
+          ${isFit ? `<button onclick="${viewFn}" class="lp-chip-btn" title="View Fit"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12z"/><circle cx="12" cy="12" r="3"/></svg></button>` : ''}
+          <div class="fav-plus" onclick="slWishAddOne(${idx})" title="Add to shopping list">+</div>
+          <button onclick="slRemoveWishEntry(${idx})" class="lp-chip-btn" style="color:var(--jsl-red); position:relative; z-index:2;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
         </div>
-        ${isFit ? `<button onclick="${viewFn}" class="lp-chip-btn" title="View Fit"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12z"/><circle cx="12" cy="12" r="3"/></svg></button>` : ''}
-        <div class="fav-plus" onclick="slWishAddOne(${idx})" title="Add to shopping list">+</div>
-        <button onclick="slRemoveWishEntry(${idx})" class="lp-chip-btn" style="color:var(--jsl-red); position:relative; z-index:2;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
       </div>
     `;
   }).join('');
