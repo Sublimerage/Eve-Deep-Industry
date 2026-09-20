@@ -54,6 +54,14 @@
 .jsl .pt { font-size: 14px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text); }
 .jsl .pb { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--jsl-dim); letter-spacing: 0.05em; margin-left: auto; }
 .jsl .pd { padding: 6px 24px 22px; font-size: 13.5px; }
+/* Reported directly: the left column's stack of primary actions (Import Fitting, Add All to List,
+   Deducting Stock), each full-width and each using .btn-glass's solid accent-gradient fill, added
+   up to an overbearing wall of green. Narrowed to content-width instead of stretching the row -
+   #deduct-stock-mode specifically needs !important since it's a shared component
+   (js/config.js's updateDeductStockButtonVisual, also used by the Calculator/Ledger) that
+   re-applies its own hardcoded w-full class on every toggle; this only touches its width on this
+   page, not the shared function itself. */
+.jsl #deduct-stock-mode { width: auto !important; }
 
 /* ---- text fields: reuse the site's own .field-box (primary, filled) and .field-line (secondary,
    invisible-until-focus) recipes directly via those classes in the markup - these rules only add
