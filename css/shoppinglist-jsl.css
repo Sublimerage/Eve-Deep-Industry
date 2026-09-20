@@ -101,6 +101,13 @@
 .jsl .collapse-icon svg { width: 12px; height: 12px; }
 .jsl .fb.collapsed .collapse-icon { transform: rotate(-90deg); }
 .jsl .fb.collapsed .fb-body { display: none; }
+/* Reported directly: the table's right edge (icons, the qty stepper, the Remove button) was
+   getting silently clipped whenever the column was narrower than the table's own fixed-width
+   columns - .panel/.fb's own overflow:hidden (needed for their rounded corners) was swallowing the
+   overflow instead of showing it. A dedicated scroll container around just the table fixes this
+   properly: the table can now scroll horizontally within its own box instead of being clipped, and
+   the panel's rounded corners are untouched since this overflow lives one level further in. */
+.jsl .fb-body, .jsl .sl-table-wrap { overflow-x: auto; }
 .jsl .ship-row { background: rgba(var(--jsl-gold-rgb),0.07); }
 .jsl .ship-row .tn { color: var(--cost); }
 .jsl .ship-badge { font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; color: var(--cost); letter-spacing: 0.06em; margin-left: 4px; }
@@ -158,7 +165,11 @@
    handles fits and whole saved lists, and needs a tab switch to reach). Each entry is its own
    two-line row (name on top, qty stepper + Add underneath) rather than a one-click chip - reported
    directly: clicking a favorite should let you say how many, not silently add exactly 1. ---- */
-.jsl .qfav-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.jsl .qfav-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.jsl .qfav-filter { background: rgba(255,255,255,0.05); border: none; border-radius: 999px; padding: 5px 12px; font-size: 11px; font-weight: 700; letter-spacing: 0.03em; color: var(--jsl-dim); cursor: pointer; transition: background .15s ease, color .15s ease; }
+.jsl .qfav-filter:hover { color: var(--text); }
+.jsl .qfav-filter.active { background: rgba(var(--accent-rgb),0.18); color: var(--accent); }
+.jsl .qfav-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-top: 10px; }
 .jsl .qfav-card { display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: var(--radius-btn); padding: 10px 30px 10px 12px; cursor: pointer; transition: background .15s ease, border-color .15s ease; position: relative; }
 .jsl .qfav-card:hover { background: rgba(var(--accent-rgb),0.1); border-color: rgba(var(--accent-rgb),0.3); }
 .jsl .qfav-card img { width: 32px; height: 32px; border-radius: var(--radius-sm); flex-shrink: 0; }

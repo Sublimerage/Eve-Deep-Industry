@@ -1986,10 +1986,13 @@ body.page-calc .glass-card {
    historical price line and this app has no genuine price history to plot honestly.
    Ledger's job queue and Invention's comparison table are each their own page's biggest/main
    content area, same role #viewport plays on the calculator - they get the identical treatment
-   so the signature dot-grid + glow backdrop reads as "this site's look", not "one page's look". */
+   so the signature dot-grid + glow backdrop reads as "this site's look", not "one page's look".
+   #sl-main-area (Shopping List) joins the same list for the same reason - reported directly as
+   missing once the page existed alongside the others. */
 body.page-calc #viewport,
 body.page-calc #journal-main-area,
-body.page-calc #invention-main-area {
+body.page-calc #invention-main-area,
+body.page-calc #sl-main-area {
   background:
     radial-gradient(ellipse 1100px 620px at 50% 100%, rgba(var(--accent-rgb),.14), transparent 72%),
     radial-gradient(rgba(var(--accent-rgb),.07) 1px, transparent 1.5px) 0 0/20px 20px,
