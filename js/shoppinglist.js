@@ -88,7 +88,18 @@ function slRefreshShipVolumes(typeIds) {
 // allowlist so an uncommon-but-legitimate category (Structures, Fighters, ...) never silently
 // disappears just because it wasn't anticipated.
 const SL_EXCLUDED_CATEGORIES = new Set([2, 3, 11, 63]);
-function slIsRealShoppableItem(typeId) {
+// Category alone isn't fine-grained enough - reported directly: "Limited Synth Exile Booster Mk V"
+// (category 20, "Implant/Booster") was still showing up, sitting in the exact same category as a
+// real, tradeable booster like "Synth Blue Pill Booster". The category-vs-category comparison came
+// back identical for both (both group into EVE's own "Booster" group too - checked directly, that
+// doesn't separate them either), because this app's local item index has no signal at all for
+// "does this actually have a market listing" (CCP's own marketGroupID, which the current eve_db.js
+// generation pipeline doesn't capture - a real fix needs a data regen, not just a JS filter change).
+// "Limited " is CCP's own naming prefix for non-tradeable reward/new-player-experience/alpha-clone
+// item variants - never listed on the market, regardless of category - so filtering on that name
+// pattern catches this whole class of item without needing that data regen.
+function slIsRealShoppableItem(typeId, name) {
+  if (name && /^Limited\s/i.test(name)) return false;
   const cat = window.EVE_CATEGORIES ? window.EVE_CATEGORIES[typeId] : undefined;
   if (cat === undefined) return true; // no category data at all - don't punish it for that
   return cat < 1000 && !SL_EXCLUDED_CATEGORIES.has(cat);
@@ -98,7 +109,7 @@ function slSearch(query, limit) {
   if (q.length < 2 || !window.IDX) return [];
   const exact = [], starts = [], contains = [];
   for (const [k, v] of Object.entries(window.IDX)) {
-    if (window.isBlueprintName(k) || !slIsRealShoppableItem(v.id)) continue;
+    if (window.isBlueprintName(k) || !slIsRealShoppableItem(v.id, v.name)) continue;
     if (k === q) exact.push(v);
     else if (k.startsWith(q)) starts.push(v);
     else if (k.includes(q)) contains.push(v);
