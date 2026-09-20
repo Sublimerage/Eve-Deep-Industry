@@ -71,6 +71,19 @@
 .jsl .lp-chip-btn { padding: 7px 14px; font-size: 12.5px; }
 .jsl .lp-chip-btn svg { width: 14px; height: 14px; }
 
+/* ---- control chip: a small bordered, icon-led widget for a standalone numeric setting (Min
+   Spread, Hauler Capacity) - reported directly as feeling too basic as a bare label+input row.
+   Gives each one its own visual weight (icon, caption label, live value) instead of disappearing
+   into the surrounding row of plain text and buttons. ---- */
+.jsl .ctrl-chip { display: inline-flex; align-items: center; gap: 10px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: var(--radius-btn); padding: 7px 12px; transition: border-color .15s ease; }
+.jsl .ctrl-chip:focus-within { border-color: rgba(var(--accent-rgb),0.45); }
+.jsl .ctrl-chip-icon { width: 20px; height: 20px; color: var(--accent); stroke: currentColor; fill: none; flex-shrink: 0; }
+.jsl .ctrl-chip-label { display: block; font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--jsl-dim); margin-bottom: 2px; white-space: nowrap; }
+.jsl .ctrl-chip-value { display: flex; align-items: baseline; gap: 3px; }
+.jsl .ctrl-chip-value input[type=number] { background: transparent !important; border: none !important; padding: 0 !important; color: var(--text); font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 14px !important; outline: none; }
+.jsl .ctrl-chip-value .fs { margin: 0; }
+.jsl .ctrl-chip .btn-glass { margin-left: 2px; }
+
 /* ---- text fields: reuse the site's own .field-box (primary, filled) and .field-line (secondary,
    invisible-until-focus) recipes directly via those classes in the markup - these rules only add
    the layout properties (width/resize/min-height) those shared classes don't set themselves. ---- */
@@ -157,20 +170,6 @@
 .jsl .ptoggle button { background: none; border: none; color: var(--jsl-dim); font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; padding: 7px 13px; cursor: pointer; transition: all .15s; }
 .jsl .ptoggle button.on { background: rgba(var(--accent-rgb),0.18); color: var(--accent); }
 
-/* ---- compact "add a fit" strip (Wishlist + Favorites tabs) - a single row instead of the old
-   stacked, full-width green button, since both tabs only ever add one thing (a pasted fit) now
-   that single-item add lives on the Shopping List tab instead. ---- */
-.jsl .wladd-bar { display: flex; align-items: center; gap: 10px; padding: 12px 22px 16px; border-top: 1px solid rgba(255,255,255,0.08); }
-.jsl .wladd-bar .fs { flex-shrink: 0; white-space: nowrap; }
-.jsl .wladd-bar textarea { flex: 1; min-width: 0; resize: vertical; }
-
-/* ---- wishlist entries ---- */
-.jsl .wl-entry { border-bottom: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; gap: 8px; padding: 10px 18px; font-size: 13.5px; }
-.jsl .wl-entry:last-child { border-bottom: none; }
-.jsl .wl-entry-fit { border-left: 3px solid var(--jsl-gold); }
-.jsl .wl-entry-item { border-left: 3px solid transparent; padding-left: 15px; }
-.jsl .wl-add-btn { opacity: 0; transition: opacity .15s; }
-.jsl .wl-entry:hover .wl-add-btn { opacity: 1; }
 
 /* ---- favorites grid - sub-cards within a panel, so they get the flatter .fo-card-weight
    surface (same literal fill body.page-calc .fo-card uses) rather than full glass, keeping the
