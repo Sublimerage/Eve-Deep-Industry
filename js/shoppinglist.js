@@ -806,8 +806,8 @@ function slRenderFavorites() {
   grid.innerHTML = entries.map((f) => {
     const idx = f.idx, isFit = f.kind === 'fit', isList = f.kind === 'list';
     const borderColor = isFit ? 'var(--jsl-gold)' : 'var(--accent)';
-    const icon = isFit && f.shipTypeId ? `<img src="${window.getItemIconUrl(f.shipTypeId, f.shipName, 64)}" style="width:32px;height:32px;border-radius:4px;flex-shrink:0;" onerror="this.style.opacity=.15">`
-      : `<div style="width:32px;height:32px;border-radius:4px;background:rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--accent);">${isList ? '&#9776;' : '&#9658;'}</div>`;
+    const icon = isFit && f.shipTypeId ? `<img src="${window.getItemIconUrl(f.shipTypeId, f.shipName, 128)}" style="width:80px;height:80px;border-radius:6px;flex-shrink:0;" onerror="this.style.opacity=.15">`
+      : `<div style="width:80px;height:80px;border-radius:6px;background:rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--accent);font-size:28px;">${isList ? '&#9776;' : '&#9658;'}</div>`;
     const sub = isFit ? (f.shipName ? window.esc(f.shipName) : 'fit')
       : `${(f.fits || []).length} fit${(f.fits || []).length !== 1 ? 's' : ''}, ${(f.items || []).length} item${(f.items || []).length !== 1 ? 's' : ''}`;
     const viewFn = isFit ? `slOpenFitPopup('fav', ${idx})` : `slViewFavoriteList(${idx})`;
