@@ -547,9 +547,22 @@ function slUpdateTotals() {
     if (typeCountEl) typeCountEl.textContent = '0 Types';
     return;
   }
+  // Reported directly: with Deducting Stock on, each row's own Total column already nets out
+  // owned stock - but these header totals summed the full raw quantity regardless, so "Total
+  // Price"/"Total Volume"/"Total Quantity" disagreed with what the rows underneath actually add
+  // up to. Same net-quantity math as the rows themselves (slStandaloneItemRowHTML/slFitItemRowHTML)
+  // now applied here too, so the header totals always match the table.
   let vol = 0, price = 0, qty = 0;
-  slFits.forEach(f => f.baseItems.forEach(i => { vol += i.volume * i.qty * f.copies; price += slPrice(i.typeId) * i.qty * f.copies; qty += i.qty * f.copies; }));
-  slItems.forEach(i => { vol += i.volume * i.qty; price += slPrice(i.typeId) * i.qty; qty += i.qty; });
+  const deduct = slIsDeductingStock();
+  slFits.forEach(f => f.baseItems.forEach(i => {
+    const tq = i.qty * f.copies;
+    const netQty = deduct ? Math.max(0, tq - slStockFor(i.typeId)) : tq;
+    vol += i.volume * netQty; price += slPrice(i.typeId) * netQty; qty += netQty;
+  }));
+  slItems.forEach(i => {
+    const netQty = deduct ? Math.max(0, i.qty - slStockFor(i.typeId)) : i.qty;
+    vol += i.volume * netQty; price += slPrice(i.typeId) * netQty; qty += netQty;
+  });
   const typeCount = slFits.reduce((s, f) => s + f.baseItems.length, 0) + slItems.length;
   wrap.style.display = 'block';
   if (typeCountEl) typeCountEl.textContent = `${typeCount} Type${typeCount !== 1 ? 's' : ''}`;
@@ -695,28 +708,45 @@ function slWishQtySet(idx, val) {
   if (w.kind === 'item') w.qty = v; else w.copies = v;
   slSaveWishlist();
 }
+// Reported directly: wanted this to look and feel like the Favorites grid right next to it -
+// same card, same 80px icon, same grid instead of a list of thin rows. Only real difference is
+// the qty/copies stepper (meaningful here - "I want 3 of this fit" - which Favorites has no
+// equivalent of), folded into the same card instead of a separate row style.
 function slRenderWishlist() {
   const el = document.getElementById('sl-wishlist-body'); if (!el) return;
   const badge = document.getElementById('sl-wishlist-badge');
   if (badge) badge.textContent = `${slWishlist.length} Fit${slWishlist.length !== 1 ? 's' : ''}`;
-  if (!slWishlist.length) { el.innerHTML = `<div class="empty" style="padding:20px;"><div>No wishlist entries yet.</div></div>`; return; }
-  el.innerHTML = slWishlist.map((w, idx) => `
-    <div class="wl-entry ${w.kind === 'fit' ? 'wl-entry-fit' : 'wl-entry-item'}">
-      ${w.kind === 'fit'
-        ? `<div style="cursor:pointer;flex-shrink:0;" onclick="slOpenFitPopup('wish', ${idx})">${w.shipTypeId ? `<img src="${window.getItemIconUrl(w.shipTypeId, w.shipName, 64)}" style="width:32px;height:32px;border-radius:3px;" onerror="this.style.opacity=.15">` : `<div style="width:32px;height:32px;border-radius:3px;background:rgba(var(--jsl-gold-rgb),0.15);display:flex;align-items:center;justify-content:center;color:var(--jsl-gold);">&#9658;</div>`}</div>
-        <div style="flex:1; min-width:0; cursor:pointer;" onclick="slOpenFitPopup('wish', ${idx})"><div class="fn" style="font-size:12px;">${window.esc(w.fitName)}</div><div class="fs">${w.shipName ? window.esc(w.shipName) : ''}</div></div>
-        <button onclick="slOpenFitPopup('wish', ${idx})" class="lp-chip-btn" title="View Fit"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12z"/><circle cx="12" cy="12" r="3"/></svg></button>`
-        : `<img src="${window.getItemIconUrl(w.typeId, w.name, 64)}" style="width:26px;height:26px;border-radius:3px;flex-shrink:0;" onerror="this.style.opacity=.15">
-        <span class="tn" style="flex:1;">${window.esc(w.name)}</span>`}
-      <div class="qty qty-sm">
-        <button onclick="slWishQtyAdjust(${idx}, -1)" type="button">&minus;</button>
-        <input type="number" min="1" value="${w.kind === 'item' ? (w.qty || 1) : (w.copies || 1)}" onchange="slWishQtySet(${idx}, this.value)">
-        <button onclick="slWishQtyAdjust(${idx}, 1)" type="button">+</button>
+  if (!slWishlist.length) { el.innerHTML = `<div class="empty" style="grid-column:1/-1;"><div>No wishlist fits yet.</div></div>`; return; }
+  el.innerHTML = slWishlist.map((w, idx) => {
+    const isFit = w.kind === 'fit';
+    const borderColor = isFit ? 'var(--jsl-gold)' : 'rgba(255,255,255,0.14)';
+    const icon = isFit
+      ? (w.shipTypeId ? `<img src="${window.getItemIconUrl(w.shipTypeId, w.shipName, 128)}" style="width:80px;height:80px;border-radius:6px;flex-shrink:0;" onerror="this.style.opacity=.15">`
+        : `<div style="width:80px;height:80px;border-radius:6px;background:rgba(var(--jsl-gold-rgb),0.15);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--jsl-gold);font-size:28px;">&#9658;</div>`)
+      : `<img src="${window.getItemIconUrl(w.typeId, w.name, 128)}" style="width:80px;height:80px;border-radius:6px;flex-shrink:0;" onerror="this.style.opacity=.15">`;
+    const label = isFit ? w.fitName : w.name;
+    const sub = isFit ? (w.shipName || 'fit') : 'item';
+    const viewFn = `slOpenFitPopup('wish', ${idx})`;
+    return `
+      <div class="fav-card" style="border-left:3px solid ${borderColor};">
+        <div style="cursor:${isFit ? 'pointer' : 'default'}; display:contents;" ${isFit ? `onclick="${viewFn}"` : ''}>
+          ${icon}
+          <div style="flex:1; min-width:0;">
+            <div class="fav-label">${window.esc(label)}</div>
+            <div class="fav-sub">${window.esc(sub)}</div>
+          </div>
+        </div>
+        <div class="qty qty-sm">
+          <button onclick="slWishQtyAdjust(${idx}, -1)" type="button">&minus;</button>
+          <input type="number" min="1" value="${isFit ? (w.copies || 1) : (w.qty || 1)}" onchange="slWishQtySet(${idx}, this.value)">
+          <button onclick="slWishQtyAdjust(${idx}, 1)" type="button">+</button>
+        </div>
+        ${isFit ? `<button onclick="${viewFn}" class="lp-chip-btn" title="View Fit"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12z"/><circle cx="12" cy="12" r="3"/></svg></button>` : ''}
+        <div class="fav-plus" onclick="slWishAddOne(${idx})" title="Add to shopping list">+</div>
+        <button onclick="slRemoveWishEntry(${idx})" class="lp-chip-btn" style="color:var(--jsl-red); position:relative; z-index:2;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
       </div>
-      <button onclick="slWishAddOne(${idx})" class="lp-chip-btn wl-add-btn">+ Add</button>
-      <button onclick="slRemoveWishEntry(${idx})" class="lp-chip-btn" style="color:var(--jsl-red);"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 }
 function slSaveWishlist() { try { localStorage.setItem(SL_WISHLIST_KEY, JSON.stringify(slWishlist)); } catch (e) {} }
 function slLoadWishlist() { slWishlist = window.safeParseJSON(localStorage.getItem(SL_WISHLIST_KEY), []); }
