@@ -37,7 +37,6 @@ const slSearchState = { item: { res: [], idx: -1 }, qfav: { res: [], idx: -1 } }
 const SL_ITEMS_KEY = 'eve_sl_session_v1';
 const SL_WISHLIST_KEY = 'eve_sl_wishlist_v1';
 const SL_FAVORITES_KEY = 'eve_sl_favorites_v1';
-const SL_NOTES_KEY = 'eve_sl_notes_v1';
 
 // ── ITEM LOOKUP (local index, no network) ───────────────────────────────────────
 // EVE's own in-game copy/paste (fitting window, cargo/container select-all) always uses the exact
@@ -699,13 +698,14 @@ function slWishQtySet(idx, val) {
 function slRenderWishlist() {
   const el = document.getElementById('sl-wishlist-body'); if (!el) return;
   const badge = document.getElementById('sl-wishlist-badge');
-  if (badge) { badge.textContent = slWishlist.length; badge.classList.toggle('hidden', !slWishlist.length); }
+  if (badge) badge.textContent = `${slWishlist.length} Fit${slWishlist.length !== 1 ? 's' : ''}`;
   if (!slWishlist.length) { el.innerHTML = `<div class="empty" style="padding:20px;"><div>No wishlist entries yet.</div></div>`; return; }
   el.innerHTML = slWishlist.map((w, idx) => `
     <div class="wl-entry ${w.kind === 'fit' ? 'wl-entry-fit' : 'wl-entry-item'}">
       ${w.kind === 'fit'
         ? `<div style="cursor:pointer;flex-shrink:0;" onclick="slOpenFitPopup('wish', ${idx})">${w.shipTypeId ? `<img src="${window.getItemIconUrl(w.shipTypeId, w.shipName, 64)}" style="width:32px;height:32px;border-radius:3px;" onerror="this.style.opacity=.15">` : `<div style="width:32px;height:32px;border-radius:3px;background:rgba(var(--jsl-gold-rgb),0.15);display:flex;align-items:center;justify-content:center;color:var(--jsl-gold);">&#9658;</div>`}</div>
-        <div style="flex:1; min-width:0;"><div class="fn" style="font-size:12px;">${window.esc(w.fitName)}</div><div class="fs">${w.shipName ? window.esc(w.shipName) + ' &middot; ' : ''}<span style="cursor:pointer;text-decoration:underline;" onclick="slOpenFitPopup('wish', ${idx})">view fit</span></div></div>`
+        <div style="flex:1; min-width:0; cursor:pointer;" onclick="slOpenFitPopup('wish', ${idx})"><div class="fn" style="font-size:12px;">${window.esc(w.fitName)}</div><div class="fs">${w.shipName ? window.esc(w.shipName) : ''}</div></div>
+        <button onclick="slOpenFitPopup('wish', ${idx})" class="lp-chip-btn" title="View Fit"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12z"/><circle cx="12" cy="12" r="3"/></svg></button>`
         : `<img src="${window.getItemIconUrl(w.typeId, w.name, 64)}" style="width:26px;height:26px;border-radius:3px;flex-shrink:0;" onerror="this.style.opacity=.15">
         <span class="tn" style="flex:1;">${window.esc(w.name)}</span>`}
       <div class="qty qty-sm">
@@ -720,9 +720,6 @@ function slRenderWishlist() {
 }
 function slSaveWishlist() { try { localStorage.setItem(SL_WISHLIST_KEY, JSON.stringify(slWishlist)); } catch (e) {} }
 function slLoadWishlist() { slWishlist = window.safeParseJSON(localStorage.getItem(SL_WISHLIST_KEY), []); }
-
-function slSaveNotes() { try { localStorage.setItem(SL_NOTES_KEY, document.getElementById('sl-wish-notes').value); } catch (e) {} }
-function slClearNotes() { if (!confirm('Clear all notes?')) return; document.getElementById('sl-wish-notes').value = ''; try { localStorage.removeItem(SL_NOTES_KEY); } catch (e) {} }
 
 // ── FAVORITES / SAVED LISTS ──────────────────────────────────────────────────────
 // "list" kind covers what used to be two separate features (Favorites' own full-list save, and a
@@ -795,27 +792,35 @@ function slReplaceWithFavorite(idx) {
   window.showToast(`Replaced current list with "${f.name}".`, 'success');
   slRefreshShipVolumes(ids);
 }
+// This tab is fits-and-saved-lists only (reported directly: single items belong to the Shopping
+// List tab's own favoriting flow, not here) - filtered down but keeping each entry's REAL index
+// into slFavorites (not the filtered position), same pattern slRenderQuickFavorites uses, since
+// slUseFavorite/slRemoveFavorite/etc. all need the real index.
 function slRenderFavorites() {
   slRenderQuickFavorites();
   const grid = document.getElementById('sl-favorites-grid'); if (!grid) return;
+  const entries = slFavorites.map((f, idx) => ({ ...f, idx })).filter(f => f.kind !== 'item');
   const badge = document.getElementById('sl-favorites-badge');
-  if (badge) { badge.textContent = slFavorites.length; badge.classList.toggle('hidden', !slFavorites.length); }
-  if (!slFavorites.length) { grid.innerHTML = `<div class="empty" style="grid-column:1/-1;"><div>No favorites or saved lists yet.</div></div>`; return; }
-  grid.innerHTML = slFavorites.map((f, idx) => {
-    const isItem = f.kind === 'item', isFit = f.kind === 'fit', isList = f.kind === 'list';
-    const borderColor = isFit ? 'var(--jsl-gold)' : isList ? 'var(--accent)' : 'rgba(255,255,255,0.14)';
-    const icon = isItem ? `<img src="${window.getItemIconUrl(f.typeId, f.name, 32)}" style="width:32px;height:32px;border-radius:4px;flex-shrink:0;" onerror="this.style.opacity=.15">`
-      : isFit && f.shipTypeId ? `<img src="${window.getItemIconUrl(f.shipTypeId, f.shipName, 64)}" style="width:32px;height:32px;border-radius:4px;flex-shrink:0;" onerror="this.style.opacity=.15">`
+  if (badge) badge.textContent = `${entries.length} Saved`;
+  if (!entries.length) { grid.innerHTML = `<div class="empty" style="grid-column:1/-1;"><div>No favorite fits or saved lists yet.</div></div>`; return; }
+  grid.innerHTML = entries.map((f) => {
+    const idx = f.idx, isFit = f.kind === 'fit', isList = f.kind === 'list';
+    const borderColor = isFit ? 'var(--jsl-gold)' : 'var(--accent)';
+    const icon = isFit && f.shipTypeId ? `<img src="${window.getItemIconUrl(f.shipTypeId, f.shipName, 64)}" style="width:32px;height:32px;border-radius:4px;flex-shrink:0;" onerror="this.style.opacity=.15">`
       : `<div style="width:32px;height:32px;border-radius:4px;background:rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--accent);">${isList ? '&#9776;' : '&#9658;'}</div>`;
-    const sub = isFit ? `${f.shipName ? window.esc(f.shipName) + ' &middot; ' : ''}fit <span style="cursor:pointer;text-decoration:underline;" onclick="slOpenFitPopup('fav', ${idx})">view</span>`
-      : isList ? `${(f.fits || []).length} fit${(f.fits || []).length !== 1 ? 's' : ''}, ${(f.items || []).length} item${(f.items || []).length !== 1 ? 's' : ''} <span style="cursor:pointer;text-decoration:underline;" onclick="slViewFavoriteList(${idx})">view</span>` : '';
+    const sub = isFit ? (f.shipName ? window.esc(f.shipName) : 'fit')
+      : `${(f.fits || []).length} fit${(f.fits || []).length !== 1 ? 's' : ''}, ${(f.items || []).length} item${(f.items || []).length !== 1 ? 's' : ''}`;
+    const viewFn = isFit ? `slOpenFitPopup('fav', ${idx})` : `slViewFavoriteList(${idx})`;
     return `
       <div class="fav-card" style="border-left:3px solid ${borderColor};">
-        ${icon}
-        <div style="flex:1; min-width:0;">
-          <div class="fav-label">${window.esc(f.name)}</div>
-          ${sub ? `<div class="fav-sub">${sub}</div>` : ''}
+        <div style="cursor:pointer; display:contents;" onclick="${viewFn}">
+          ${icon}
+          <div style="flex:1; min-width:0;">
+            <div class="fav-label">${window.esc(f.name)}</div>
+            <div class="fav-sub">${sub}</div>
+          </div>
         </div>
+        <button onclick="${viewFn}" class="lp-chip-btn" title="${isFit ? 'View Fit' : 'View List'}"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
         <div class="fav-plus" onclick="slUseFavorite(${idx})" title="Add to current list">+</div>
         ${isList ? `<button onclick="slReplaceWithFavorite(${idx})" class="lp-chip-btn" title="Replace current list with this">&#8644;</button>` : ''}
         <button onclick="slRemoveFavorite(${idx})" class="lp-chip-btn" style="color:var(--jsl-red); position:relative; z-index:2;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
@@ -997,7 +1002,6 @@ window.onload = function () {
   slLoadSession();
   slLoadWishlist(); slRenderWishlist();
   slLoadFavorites(); slRenderFavorites();
-  try { const notes = localStorage.getItem(SL_NOTES_KEY); if (notes) document.getElementById('sl-wish-notes').value = notes; } catch (e) {}
   slRenderAll();
   if (slItems.length || slFits.length) {
     const ids = [...slItems.map(i => i.typeId), ...slFits.flatMap(f => f.baseItems.map(i => i.typeId))];
