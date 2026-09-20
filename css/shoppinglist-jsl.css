@@ -63,6 +63,14 @@
    page, not the shared function itself. */
 .jsl #deduct-stock-mode { width: auto !important; }
 
+/* Reported directly: buttons across this page read as too small/fiddly to hit - the shared
+   .lp-chip-btn pill (view/remove/export/import/etc.) is deliberately compact everywhere else on
+   the site (a lot of them sit in dense toolbars), but this page's own action buttons carry more
+   weight (they're often the only way to do something, not one of many toolbar icons), so they get
+   a page-scoped size bump here rather than changing the shared component sitewide. */
+.jsl .lp-chip-btn { padding: 7px 14px; font-size: 12.5px; }
+.jsl .lp-chip-btn svg { width: 14px; height: 14px; }
+
 /* ---- text fields: reuse the site's own .field-box (primary, filled) and .field-line (secondary,
    invisible-until-focus) recipes directly via those classes in the markup - these rules only add
    the layout properties (width/resize/min-height) those shared classes don't set themselves. ---- */
@@ -76,8 +84,8 @@
 .jsl .qty button { background: none; border: none; color: var(--jsl-dim); width: 30px; height: 34px; cursor: pointer; font-size: 17px; transition: color .15s ease; }
 .jsl .qty button:hover { color: var(--accent); }
 .jsl .qty input[type=number] { background: none !important; border: none !important; color: var(--text); font-family: 'IBM Plex Mono', monospace; font-size: 13.5px; width: 54px; text-align: center; outline: none; padding: 0 !important; }
-.jsl .qty.qty-sm input[type=number] { width: 38px; }
-.jsl .qty.qty-sm button { width: 24px; height: 28px; font-size: 14px; }
+.jsl .qty.qty-sm input[type=number] { width: 40px; }
+.jsl .qty.qty-sm button { width: 28px; height: 32px; font-size: 16px; }
 
 /* ---- autocomplete dropdown (shared by all three search boxes) ---- */
 .jsl .acw { position: relative; }
@@ -167,12 +175,14 @@
 /* ---- favorites grid - sub-cards within a panel, so they get the flatter .fo-card-weight
    surface (same literal fill body.page-calc .fo-card uses) rather than full glass, keeping the
    hierarchy readable: panel = glass, cards-within-a-panel = flat. ---- */
-.jsl .fav-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px,1fr)); gap: 12px; padding: 4px 22px 18px; }
+.jsl .fav-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px,1fr)); gap: 12px; padding: 4px 22px 18px; }
 .jsl .fav-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: var(--radius-btn); display: flex; align-items: center; gap: 10px; padding: 12px 14px; transition: border-color .15s; position: relative; }
 .jsl .fav-card:hover { border-color: rgba(255,255,255,0.16); }
-.jsl .fav-label { font-size: 13.5px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.jsl .fav-sub { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: var(--jsl-dim); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.jsl .fav-plus { flex-shrink: 0; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; background: rgba(var(--accent-rgb),0.14); color: var(--accent); cursor: pointer; transition: background .15s; border-radius: var(--radius-sm); font-weight: 700; font-size: 15px; }
+/* Reported directly: the fit name was cut off with "..." and unreadable - wraps instead of
+   truncating now, and the card grows to fit instead of forcing everything onto one line. */
+.jsl .fav-label { font-size: 14.5px; font-weight: 600; color: var(--text); overflow-wrap: break-word; }
+.jsl .fav-sub { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--jsl-dim); margin-top: 3px; overflow-wrap: break-word; }
+.jsl .fav-plus { flex-shrink: 0; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; background: rgba(var(--accent-rgb),0.14); color: var(--accent); cursor: pointer; transition: background .15s; border-radius: var(--radius-sm); font-weight: 700; font-size: 19px; }
 .jsl .fav-plus:hover { background: rgba(var(--accent-rgb),0.28); }
 
 /* ---- quick-favorites panel (Shopping List tab, its own right-hand column) - a narrow, tall rail
