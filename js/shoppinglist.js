@@ -27,11 +27,12 @@ let slFavorites = []; // [{kind:'item',typeId,name} | {kind:'fit',name,shipName,
 let slPriceMode = 'sell'; // 'sell' or 'buy' - which side of window.priceCache totals/rows read from
 let slSessionReady = false; // guards against saving a blank session before loadSlSession has run
 
-// Per-search-box "the user actually clicked a specific result" state - three independent search
-// boxes (Add Single Item, Wishlist, Favorites) each need their own, so picking a result in one
-// doesn't clobber what was picked in another.
-const slPicked = { item: null, wish: null, fav: null, qfav: null };
-const slSearchState = { item: { res: [], idx: -1 }, wish: { res: [], idx: -1 }, fav: { res: [], idx: -1 }, qfav: { res: [], idx: -1 } };
+// Per-search-box "the user actually clicked a specific result" state - two independent search
+// boxes (Add Single Item on the Shopping List tab, and the Quick Favorites rail) each need their
+// own, so picking a result in one doesn't clobber what was picked in the other. Wishlist and
+// Favorites only accept pasted fits now, so they have no search box of their own.
+const slPicked = { item: null, qfav: null };
+const slSearchState = { item: { res: [], idx: -1 }, qfav: { res: [], idx: -1 } };
 
 const SL_ITEMS_KEY = 'eve_sl_session_v1';
 const SL_WISHLIST_KEY = 'eve_sl_wishlist_v1';
@@ -176,8 +177,8 @@ document.addEventListener('mousedown', (e) => {
   const it = slSearchState[kind].res[idx];
   if (!it) return;
   slPicked[kind] = it;
-  const inputIds = { item: 'sl-item-search', wish: 'sl-wish-search', fav: 'sl-fav-search', qfav: 'sl-quickfav-search' };
-  const resultIds = { item: 'sl-search-results', wish: 'sl-wish-search-results', fav: 'sl-fav-search-results', qfav: 'sl-quickfav-search-results' };
+  const inputIds = { item: 'sl-item-search', qfav: 'sl-quickfav-search' };
+  const resultIds = { item: 'sl-search-results', qfav: 'sl-quickfav-search-results' };
   document.getElementById(inputIds[kind]).value = it.name;
   document.getElementById(resultIds[kind]).classList.add('hidden');
 });
@@ -185,14 +186,6 @@ document.addEventListener('mousedown', (e) => {
 function slSearchItem(q) {
   slPicked.item = null;
   slRenderSearchDropdown('item', document.getElementById('sl-item-search'), document.getElementById('sl-search-results'), slSearch(q));
-}
-function slWishSearchItem(q) {
-  slPicked.wish = null;
-  slRenderSearchDropdown('wish', document.getElementById('sl-wish-search'), document.getElementById('sl-wish-search-results'), slSearch(q));
-}
-function slFavSearchItem(q) {
-  slPicked.fav = null;
-  slRenderSearchDropdown('fav', document.getElementById('sl-fav-search'), document.getElementById('sl-fav-search-results'), slSearch(q));
 }
 function slQuickFavSearchItem(q) {
   slPicked.qfav = null;
@@ -661,22 +654,6 @@ function slSwitchTab(name) {
 }
 
 // ── WISHLIST ─────────────────────────────────────────────────────────────────────
-function slAddWishItem() {
-  let it = slPicked.wish;
-  if (!it) {
-    const q = document.getElementById('sl-wish-search').value.trim();
-    if (!q) { window.showToast('Type an item name first.', 'info'); return; }
-    it = slSearch(q, 1)[0] || slLookupByName(q);
-    if (!it) { window.showToast(`Not found: ${q}`, 'error'); return; }
-  }
-  const qty = Math.max(1, parseInt(document.getElementById('sl-wish-qty').value) || 1);
-  const ex = slWishlist.find(w => w.kind === 'item' && w.typeId === it.id);
-  if (ex) ex.qty += qty; else slWishlist.push({ kind: 'item', typeId: it.id, name: it.name, qty });
-  document.getElementById('sl-wish-search').value = ''; document.getElementById('sl-wish-qty').value = 1;
-  slPicked.wish = null;
-  slSaveWishlist(); slRenderWishlist();
-  window.showToast(`Added to wishlist: ${it.name}`, 'success');
-}
 function slAddWishFit() {
   const text = document.getElementById('sl-wish-eft').value.trim();
   if (!text) { window.showToast('Paste a fitting first.', 'info'); return; }
@@ -727,16 +704,16 @@ function slRenderWishlist() {
   el.innerHTML = slWishlist.map((w, idx) => `
     <div class="wl-entry ${w.kind === 'fit' ? 'wl-entry-fit' : 'wl-entry-item'}">
       ${w.kind === 'fit'
-        ? `<div style="cursor:pointer;flex-shrink:0;" onclick="slOpenFitPopup('wish', ${idx})">${w.shipTypeId ? `<img src="${window.getItemIconUrl(w.shipTypeId, w.shipName, 40)}" style="width:32px;height:32px;border-radius:3px;" onerror="this.style.opacity=.15">` : `<div style="width:32px;height:32px;border-radius:3px;background:rgba(var(--jsl-gold-rgb),0.15);display:flex;align-items:center;justify-content:center;color:var(--jsl-gold);">&#9658;</div>`}</div>
+        ? `<div style="cursor:pointer;flex-shrink:0;" onclick="slOpenFitPopup('wish', ${idx})">${w.shipTypeId ? `<img src="${window.getItemIconUrl(w.shipTypeId, w.shipName, 64)}" style="width:32px;height:32px;border-radius:3px;" onerror="this.style.opacity=.15">` : `<div style="width:32px;height:32px;border-radius:3px;background:rgba(var(--jsl-gold-rgb),0.15);display:flex;align-items:center;justify-content:center;color:var(--jsl-gold);">&#9658;</div>`}</div>
         <div style="flex:1; min-width:0;"><div class="fn" style="font-size:12px;">${window.esc(w.fitName)}</div><div class="fs">${w.shipName ? window.esc(w.shipName) + ' &middot; ' : ''}<span style="cursor:pointer;text-decoration:underline;" onclick="slOpenFitPopup('wish', ${idx})">view fit</span></div></div>`
-        : `<img src="${window.getItemIconUrl(w.typeId, w.name, 32)}" style="width:26px;height:26px;border-radius:3px;flex-shrink:0;" onerror="this.style.opacity=.15">
+        : `<img src="${window.getItemIconUrl(w.typeId, w.name, 64)}" style="width:26px;height:26px;border-radius:3px;flex-shrink:0;" onerror="this.style.opacity=.15">
         <span class="tn" style="flex:1;">${window.esc(w.name)}</span>`}
       <div class="qty qty-sm">
         <button onclick="slWishQtyAdjust(${idx}, -1)" type="button">&minus;</button>
         <input type="number" min="1" value="${w.kind === 'item' ? (w.qty || 1) : (w.copies || 1)}" onchange="slWishQtySet(${idx}, this.value)">
         <button onclick="slWishQtyAdjust(${idx}, 1)" type="button">+</button>
       </div>
-      <button onclick="slWishAddOne(${idx})" class="btn-g wl-add-btn">+ Add</button>
+      <button onclick="slWishAddOne(${idx})" class="lp-chip-btn wl-add-btn">+ Add</button>
       <button onclick="slRemoveWishEntry(${idx})" class="lp-chip-btn" style="color:var(--jsl-red);"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
   `).join('');
@@ -763,18 +740,9 @@ function slSaveCurrentAsFavorite() {
   saveSlFavorites(); nameEl.value = ''; slRenderFavorites();
   window.showToast(`Saved list: ${name}`, 'success');
 }
-function slAddFavItem() {
-  if (!slPicked.fav) { window.showToast('Search for and select an item first.', 'info'); return; }
-  const it = slPicked.fav;
-  if (slFavorites.find(f => f.kind === 'item' && f.typeId === it.id)) { window.showToast('Already in favorites.', 'info'); return; }
-  slFavorites.unshift({ kind: 'item', typeId: it.id, name: it.name });
-  saveSlFavorites(); document.getElementById('sl-fav-search').value = ''; slPicked.fav = null; slRenderFavorites();
-  window.showToast(`Added to favorites: ${it.name}`, 'success');
-}
-// Same as slAddFavItem, but for the compact search box inside the Shopping List tab's own
-// Favorite Items panel - kept as its own function/picked-state slot (slPicked.qfav) rather than
-// reusing slPicked.fav, since the Favorites tab's own search box can be open at the same time and
-// picking a result in one must not clobber what's picked in the other.
+// Single items are favorited from the Shopping List tab itself (this search box, or the star
+// button on any list row) - the Favorites tab only accepts pasted fits (slAddFavFit below), so
+// its own grid stays focused on fits/saved lists rather than mixing in individual items too.
 function slAddQuickFavItem() {
   if (!slPicked.qfav) { window.showToast('Search for and select an item first.', 'info'); return; }
   const it = slPicked.qfav;
