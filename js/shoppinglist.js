@@ -793,38 +793,50 @@ function slRenderQuickFavorites() {
   if (!el) return;
   const itemFavs = slFavorites.map((f, idx) => ({ ...f, idx })).filter(f => f.kind === 'item');
   if (!itemFavs.length) {
-    el.innerHTML = `<div class="empty" style="padding:16px 0;">No favorite items yet - search above to add some.</div>`;
+    el.innerHTML = `<div class="empty" style="padding:16px 0; grid-column:1/-1;">No favorite items yet - search above to add some.</div>`;
     return;
   }
   el.innerHTML = itemFavs.map(f => `
-    <div class="qfav-row">
-      <div class="qfav-top">
-        <img src="${window.getItemIconUrl(f.typeId, f.name, 32)}" onerror="this.style.opacity=.15" loading="lazy">
-        <span class="tn" title="${window.esc(f.name)}">${window.esc(f.name)}</span>
-        <button class="lp-chip-btn" style="color:var(--jsl-red);" onclick="slRemoveFavorite(${f.idx})" title="Remove from favorites"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
-      </div>
-      <div class="qfav-bottom">
-        <div class="qty qty-sm"><button onclick="slQuickFavQtyStep(${f.idx}, -1)" type="button">&minus;</button><input type="number" id="sl-qfav-qty-${f.idx}" min="1" value="1"><button onclick="slQuickFavQtyStep(${f.idx}, 1)" type="button">+</button></div>
-        <button class="lp-chip-btn" onclick="slQuickFavAddOne(${f.idx})">+ Add</button>
-      </div>
+    <div class="qfav-card" onclick="slOpenQuickFavQtyPopup(${f.idx})">
+      <img src="${window.getItemIconUrl(f.typeId, f.name, 32)}" onerror="this.style.opacity=.15" loading="lazy">
+      <span class="tn" title="${window.esc(f.name)}">${window.esc(f.name)}</span>
+      <button class="lp-chip-btn qfav-remove" style="color:var(--jsl-red);" onclick="event.stopPropagation(); slRemoveFavorite(${f.idx})" title="Remove from favorites"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
   `).join('');
 }
-// Reads whatever quantity is currently sitting in that favorite's own stepper - reported directly:
-// clicking a favorite used to silently add exactly 1 with no way to say how many you actually want.
-function slQuickFavAddOne(idx) {
+
+// Click a favorite -> ask how many, rather than silently adding exactly 1 with no way to say
+// otherwise (reported directly) or cluttering every card with its own permanent stepper.
+let _slQuickFavPopupIdx = null;
+function slOpenQuickFavQtyPopup(idx) {
   const f = slFavorites[idx]; if (!f || f.kind !== 'item') return;
-  const qtyInput = document.getElementById('sl-qfav-qty-' + idx);
-  const qty = Math.max(1, parseInt(qtyInput?.value) || 1);
+  _slQuickFavPopupIdx = idx;
+  document.getElementById('sl-qfav-popup-icon').src = window.getItemIconUrl(f.typeId, f.name, 64);
+  document.getElementById('sl-qfav-popup-name').textContent = f.name;
+  const qtyInput = document.getElementById('sl-qfav-popup-qty');
+  qtyInput.value = 1;
+  document.getElementById('sl-qfav-popup-bg').classList.remove('hidden');
+  qtyInput.focus();
+  qtyInput.select();
+}
+function slCloseQuickFavQtyPopup() {
+  document.getElementById('sl-qfav-popup-bg').classList.add('hidden');
+  _slQuickFavPopupIdx = null;
+}
+function slQuickFavPopupQtyStep(delta) {
+  const input = document.getElementById('sl-qfav-popup-qty');
+  input.value = Math.max(1, (parseInt(input.value) || 1) + delta);
+}
+function slConfirmQuickFavAdd() {
+  if (_slQuickFavPopupIdx === null) return;
+  const f = slFavorites[_slQuickFavPopupIdx]; if (!f || f.kind !== 'item') { slCloseQuickFavQtyPopup(); return; }
+  const qty = Math.max(1, parseInt(document.getElementById('sl-qfav-popup-qty').value) || 1);
   slAddItemToList(f.typeId, f.name, qty);
   slRenderAll();
   window.showToast(`Added ${qty} × ${f.name}`, 'success');
+  slCloseQuickFavQtyPopup();
 }
-function slQuickFavQtyStep(idx, delta) {
-  const input = document.getElementById('sl-qfav-qty-' + idx);
-  if (!input) return;
-  input.value = Math.max(1, (parseInt(input.value) || 1) + delta);
-}
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') slCloseQuickFavQtyPopup(); });
 function slViewFavoriteList(idx) {
   const f = slFavorites[idx]; if (!f || f.kind !== 'list') return;
   const lines = [...(f.fits || []).map(ft => `▶ ${ft.name}${ft.copies > 1 ? ' ×' + ft.copies : ''}`), ...(f.items || []).map(it => `  ${it.name}${it.qty > 1 ? ' x' + it.qty : ''}`)];
