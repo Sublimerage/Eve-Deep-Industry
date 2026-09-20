@@ -39,8 +39,8 @@
    in a capped-width column with unused gutters on either side. The left column stays a sane,
    readable width (it's a stack of forms, not something that benefits from stretching edge to
    edge); the right column (the list itself) absorbs 100% of whatever space is left over. ---- */
-.jsl .cols { display: grid; grid-template-columns: minmax(380px, 460px) 1fr; gap: 22px; align-items: start; }
-@media (max-width: 1100px) { .jsl .cols { grid-template-columns: 1fr; } }
+.jsl .cols { display: grid; grid-template-columns: minmax(490px, 600px) 1fr; gap: 22px; align-items: start; }
+@media (max-width: 1300px) { .jsl .cols { grid-template-columns: 1fr; } }
 .jsl .row { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
 
 /* ---- panels: the same glass-fill/glass-shadow/radius-card recipe body.page-calc .lp-card
@@ -149,6 +149,15 @@
 .jsl .fav-sub { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: var(--jsl-dim); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .jsl .fav-plus { flex-shrink: 0; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; background: rgba(var(--accent-rgb),0.14); color: var(--accent); cursor: pointer; transition: background .15s; border-radius: var(--radius-sm); font-weight: 700; font-size: 15px; }
 .jsl .fav-plus:hover { background: rgba(var(--accent-rgb),0.28); }
+
+/* ---- quick-favorites panel (Shopping List tab, right column) - a compact, always-visible strip
+   of your favorited single items/modules for one-click adding, separate from the full Favorites
+   tab (which also handles fits and whole saved lists, and needs a tab switch to reach). ---- */
+.jsl .quickfav-grid { display: flex; flex-wrap: wrap; gap: 10px; }
+.jsl .quickfav-chip { display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: var(--radius-btn); padding: 7px 12px 7px 7px; cursor: pointer; transition: background .15s ease, border-color .15s ease; max-width: 220px; }
+.jsl .quickfav-chip:hover { background: rgba(var(--accent-rgb),0.12); border-color: rgba(var(--accent-rgb),0.3); }
+.jsl .quickfav-chip img { width: 28px; height: 28px; border-radius: var(--radius-sm); flex-shrink: 0; }
+.jsl .quickfav-chip span { font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---- fit popup body ---- */
 .jsl .fit-popup-body { font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; color: var(--text-soft); line-height: 1.8; white-space: pre-wrap; background: rgba(0,0,0,0.2); }
