@@ -654,13 +654,13 @@ function slSwitchTab(name) {
 
 // ── WISHLIST ─────────────────────────────────────────────────────────────────────
 function slAddWishFit() {
-  const text = document.getElementById('sl-wish-eft').value.trim();
+  const text = document.getElementById('sl-favwish-eft').value.trim();
   if (!text) { window.showToast('Paste a fitting first.', 'info'); return; }
   const { fitName, shipName } = slParseEFT(text);
   let shipTypeId = 0;
   if (shipName) { const hit = slLookupByName(shipName); if (hit) shipTypeId = hit.id; }
   slWishlist.push({ kind: 'fit', fitName, shipName, shipTypeId, copies: 1, fitText: text });
-  document.getElementById('sl-wish-eft').value = '';
+  document.getElementById('sl-favwish-eft').value = '';
   slSaveWishlist(); slRenderWishlist();
   window.showToast(`Added fit to wishlist: ${fitName}`, 'success');
 }
@@ -749,13 +749,13 @@ function slAddQuickFavItem() {
   window.showToast(`Added to favorites: ${it.name}`, 'success');
 }
 function slAddFavFit() {
-  const text = document.getElementById('sl-fav-eft').value.trim();
+  const text = document.getElementById('sl-favwish-eft').value.trim();
   if (!text) { window.showToast('Paste a fitting first.', 'info'); return; }
   const { fitName, shipName } = slParseEFT(text);
   let shipTypeId = 0;
   if (shipName) { const hit = slLookupByName(shipName); if (hit) shipTypeId = hit.id; }
   slFavorites.unshift({ kind: 'fit', name: fitName, shipName, shipTypeId, fitText: text });
-  saveSlFavorites(); document.getElementById('sl-fav-eft').value = ''; slRenderFavorites();
+  saveSlFavorites(); document.getElementById('sl-favwish-eft').value = ''; slRenderFavorites();
   window.showToast(`Favorited fit: ${fitName}`, 'success');
 }
 function slRemoveFavorite(idx) {
