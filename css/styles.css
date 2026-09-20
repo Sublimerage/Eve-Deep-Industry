@@ -2607,3 +2607,102 @@ body.page-calc .fo-btn-row {
   grid-template-columns: 1fr 1fr;
   gap: 6px;
 }
+
+/* ============================================================
+   Shopping List page (shoppinglist.html, js/shoppinglist.js)
+   ============================================================ */
+/* Quantity stepper - a tactile −/+ control around a number field, restoring the affordance every
+   qty/copies field had before (fit copies, item qty, wishlist qty) instead of a bare number input
+   that gave no visual hint it could be nudged up/down. Built from the app's own pill/chip visual
+   language (.lp-chip-btn's rounded, tinted-on-hover idea) rather than a bespoke box. */
+body.page-calc .sl-qty {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(255,255,255,0.045);
+  border-radius: var(--radius-input);
+  flex-shrink: 0;
+}
+body.page-calc .sl-qty button {
+  background: none;
+  border: none;
+  color: var(--text-mute);
+  width: 22px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s ease;
+  flex-shrink: 0;
+}
+body.page-calc .sl-qty button:hover { color: var(--accent); }
+body.page-calc .sl-qty input {
+  background: none !important;
+  border: none !important;
+  color: var(--text);
+  text-align: center;
+  width: 40px;
+  padding: 0 !important;
+  font-size: 12px;
+}
+body.page-calc .sl-qty input:focus { outline: none; }
+body.page-calc .sl-qty.sl-qty-sm input { width: 30px; }
+
+/* Fit group card - each imported fitting is its own boxed, collapsible unit (same idea as a Ledger
+   job card grouping its own materials), not just a plain divider row - so a fit visually reads as
+   "one thing" whether it's collapsed to its summary line or expanded to its full item table. The
+   cost-gold left border marks it as "a fit", the same way job cards use their own left border
+   color to mark build status. */
+body.page-calc .sl-fit-card {
+  background: var(--glass-fill);
+  border-radius: var(--radius-card);
+  border-left: 3px solid var(--cost);
+  box-shadow: var(--glass-shadow);
+  overflow: hidden;
+}
+body.page-calc .sl-fit-card + .sl-fit-card { margin-top: 10px; }
+body.page-calc .sl-list-items-table { margin-top: 10px; }
+body.page-calc .sl-fit-card-head {
+  cursor: pointer;
+  background: rgba(255,255,255,0.03);
+  transition: background 0.15s ease;
+}
+body.page-calc .sl-fit-card-head:hover { background: rgba(255,255,255,0.055); }
+body.page-calc .sl-fit-card-ship-row { background: rgba(var(--accent-rgb),0.06); border-left: 2px solid var(--cost); }
+body.page-calc .sl-divider-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  padding: 10px 4px 6px;
+}
+/* Item tables (a fit's own module list, and the standalone items table) - table-layout:fixed plus
+   an explicit width on every column BUT the item name is what makes the columns actually line up
+   under their headers instead of the browser auto-sizing each column by its widest cell's content
+   (which is what was happening without this: a long item name stretched its column enormously,
+   crushing every numeric column into a squeezed cluster at the far right edge and leaving the
+   header row's own text misaligned with the data under it). Tailwind's preflight reset also zeroes
+   out every table cell's default padding/border - restored here, along with a visible per-row
+   divider, so rows actually read as separated lines instead of text mashed together. */
+body.page-calc .sl-item-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+body.page-calc .sl-item-table th {
+  text-align: left;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  padding: 8px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+body.page-calc .sl-item-table td {
+  padding: 8px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  vertical-align: middle;
+  overflow: hidden;
+}
+body.page-calc .sl-item-table tbody tr:last-child td { border-bottom: none; }
+body.page-calc .sl-item-table tbody tr:hover td { background: rgba(255,255,255,0.025); }
