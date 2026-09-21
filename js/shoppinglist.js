@@ -782,20 +782,14 @@ function slWishAddOne(idx) {
   window.showToast(`Added: ${w.kind === 'item' ? w.name : w.fitName}`, 'success');
 }
 function slRemoveWishEntry(idx) { slWishlist.splice(idx, 1); slSaveWishlist(); slRenderWishlist(); }
-function slWishQtyAdjust(idx, delta) {
-  const w = slWishlist[idx]; if (!w) return;
-  if (w.kind === 'item') w.qty = Math.max(1, (w.qty || 1) + delta); else w.copies = Math.max(1, (w.copies || 1) + delta);
-  slSaveWishlist(); slRenderWishlist();
-}
-function slWishQtySet(idx, val) {
-  const v = Math.max(1, parseInt(val) || 1); const w = slWishlist[idx]; if (!w) return;
-  if (w.kind === 'item') w.qty = v; else w.copies = v;
-  slSaveWishlist();
-}
-// Reported directly: wanted this to look and feel like the Favorites grid right next to it -
-// same card, same 80px icon, same grid instead of a list of thin rows. Only real difference is
-// the qty/copies stepper (meaningful here - "I want 3 of this fit" - which Favorites has no
-// equivalent of), folded into the same card instead of a separate row style.
+// Reported directly: this needs to actually LOOK like the Favorites grid next to it, not just use
+// the same class names - a permanent qty stepper on every card was wider than Favorites' cards
+// ever needed to be, which squeezed the name column down to nothing (a real, separately-reported
+// bug) and left the two grids visibly mismatched even after that was patched. The stepper is gone;
+// clicking "+" now asks how many via the same popup the Favorite Items rail already uses
+// (slOpenQtyPopup) instead of keeping a permanent control on the card face, which is exactly the
+// same tradeoff that popup was originally built for. The stored copies/qty still shows as a small
+// "×N" badge on the icon when it's more than 1, so it's not lost, just not a standing widget.
 function slRenderWishlist() {
   const el = document.getElementById('sl-wishlist-body'); if (!el) return;
   const badge = document.getElementById('sl-wishlist-badge');
@@ -804,6 +798,8 @@ function slRenderWishlist() {
   el.innerHTML = slWishlist.map((w, idx) => {
     const isFit = w.kind === 'fit';
     const borderColor = isFit ? 'var(--jsl-gold)' : 'rgba(255,255,255,0.14)';
+    const count = isFit ? (w.copies || 1) : (w.qty || 1);
+    const countBadge = count > 1 ? `<span class="fav-count-badge">&times;${count}</span>` : '';
     const icon = isFit
       ? (w.shipTypeId ? `<img src="${window.getItemIconUrl(w.shipTypeId, w.shipName, 128)}" style="width:80px;height:80px;border-radius:6px;flex-shrink:0;" onerror="this.style.opacity=.15">`
         : `<div style="width:80px;height:80px;border-radius:6px;background:rgba(var(--jsl-gold-rgb),0.15);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--jsl-gold);font-size:28px;">&#9658;</div>`)
@@ -812,24 +808,17 @@ function slRenderWishlist() {
     const sub = isFit ? (w.shipName || 'fit') : 'item';
     const viewFn = `slOpenFitPopup('wish', ${idx})`;
     return `
-      <div class="fav-card" style="border-left:3px solid ${borderColor}; flex-wrap:wrap; align-items:flex-start;">
+      <div class="fav-card" style="border-left:3px solid ${borderColor};">
         <div style="cursor:${isFit ? 'pointer' : 'default'}; display:contents;" ${isFit ? `onclick="${viewFn}"` : ''}>
-          ${icon}
-          <div style="flex:1; min-width:120px;">
+          <div style="position:relative; flex-shrink:0;">${icon}${countBadge}</div>
+          <div style="flex:1; min-width:0;">
             <div class="fav-label">${window.esc(label)}</div>
             <div class="fav-sub">${window.esc(sub)}</div>
           </div>
         </div>
-        <div style="flex-basis:100%; display:flex; align-items:center; justify-content:flex-end; gap:8px;">
-          <div class="qty qty-sm">
-            <button onclick="slWishQtyAdjust(${idx}, -1)" type="button">&minus;</button>
-            <input type="number" min="1" value="${isFit ? (w.copies || 1) : (w.qty || 1)}" onchange="slWishQtySet(${idx}, this.value)">
-            <button onclick="slWishQtyAdjust(${idx}, 1)" type="button">+</button>
-          </div>
-          ${isFit ? `<button onclick="${viewFn}" class="lp-chip-btn" title="View Fit"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12z"/><circle cx="12" cy="12" r="3"/></svg></button>` : ''}
-          <div class="fav-plus" onclick="slWishAddOne(${idx})" title="Add to shopping list">+</div>
-          <button onclick="slRemoveWishEntry(${idx})" class="lp-chip-btn" style="color:var(--jsl-red); position:relative; z-index:2;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
-        </div>
+        ${isFit ? `<button onclick="${viewFn}" class="lp-chip-btn" title="View Fit"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12z"/><circle cx="12" cy="12" r="3"/></svg></button>` : ''}
+        <div class="fav-plus" onclick="slOpenQtyPopup('wish', ${idx})" title="Add to shopping list">+</div>
+        <button onclick="slRemoveWishEntry(${idx})" class="lp-chip-btn" style="color:var(--jsl-red); position:relative; z-index:2;"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
       </div>
     `;
   }).join('');
@@ -995,7 +984,7 @@ function slRenderQuickFavorites() {
     return;
   }
   el.innerHTML = itemFavs.map(f => `
-    <div class="qfav-card" onclick="slOpenQuickFavQtyPopup(${f.idx})">
+    <div class="qfav-card" onclick="slOpenQtyPopup('qfav', ${f.idx})">
       <img src="${window.getItemIconUrl(f.typeId, f.name, 32)}" onerror="this.style.opacity=.15" loading="lazy">
       <span class="tn" title="${window.esc(f.name)}">${window.esc(f.name)}</span>
       <button class="lp-chip-btn qfav-remove" style="color:var(--jsl-red);" onclick="event.stopPropagation(); slRemoveFavorite(${f.idx})" title="Remove from favorites"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
@@ -1003,38 +992,57 @@ function slRenderQuickFavorites() {
   `).join('');
 }
 
-// Click a favorite -> ask how many, rather than silently adding exactly 1 with no way to say
-// otherwise (reported directly) or cluttering every card with its own permanent stepper.
-let _slQuickFavPopupIdx = null;
-function slOpenQuickFavQtyPopup(idx) {
-  const f = slFavorites[idx]; if (!f || f.kind !== 'item') return;
-  _slQuickFavPopupIdx = idx;
-  document.getElementById('sl-qfav-popup-icon').src = window.getItemIconUrl(f.typeId, f.name, 64);
-  document.getElementById('sl-qfav-popup-name').textContent = f.name;
-  const qtyInput = document.getElementById('sl-qfav-popup-qty');
-  qtyInput.value = 1;
-  document.getElementById('sl-qfav-popup-bg').classList.remove('hidden');
+// Click a favorite item, or a wishlist fit's own "+" -> ask how many, rather than silently
+// adding exactly 1 with no way to say otherwise, or cluttering every card with its own permanent
+// stepper (reported directly for both: the Favorite Items rail originally, and the Wishlist grid
+// once its cards needed to actually look like the Favorites grid next to them - a stepper on every
+// card was the one thing standing in the way of that). One shared popup, keyed by the same
+// source-string pattern slOpenFitPopup already uses ('qfav' | 'wish') rather than one popup per
+// feature, since "click it, ask how many, add it" is identical either way - only which array (and
+// whether it's a fit or a plain item) the confirmed index resolves to differs.
+let _slQtyPopup = null; // { source: 'qfav' | 'wish', idx } | null
+function slOpenQtyPopup(source, idx) {
+  const rec = source === 'wish' ? slWishlist[idx] : slFavorites[idx];
+  if (!rec) return;
+  if (source === 'qfav' && rec.kind !== 'item') return;
+  _slQtyPopup = { source, idx };
+  const isFit = rec.kind === 'fit';
+  const typeId = isFit ? rec.shipTypeId : rec.typeId;
+  const name = isFit ? rec.fitName : rec.name;
+  document.getElementById('sl-qty-popup-icon').src = typeId ? window.getItemIconUrl(typeId, name, 64) : '';
+  document.getElementById('sl-qty-popup-name').textContent = name;
+  const qtyInput = document.getElementById('sl-qty-popup-qty');
+  qtyInput.value = source === 'wish' ? (isFit ? (rec.copies || 1) : (rec.qty || 1)) : 1;
+  document.getElementById('sl-qty-popup-bg').classList.remove('hidden');
   qtyInput.focus();
   qtyInput.select();
 }
-function slCloseQuickFavQtyPopup() {
-  document.getElementById('sl-qfav-popup-bg').classList.add('hidden');
-  _slQuickFavPopupIdx = null;
+function slCloseQtyPopup() {
+  document.getElementById('sl-qty-popup-bg').classList.add('hidden');
+  _slQtyPopup = null;
 }
-function slQuickFavPopupQtyStep(delta) {
-  const input = document.getElementById('sl-qfav-popup-qty');
+function slQtyPopupStep(delta) {
+  const input = document.getElementById('sl-qty-popup-qty');
   input.value = Math.max(1, (parseInt(input.value) || 1) + delta);
 }
-function slConfirmQuickFavAdd() {
-  if (_slQuickFavPopupIdx === null) return;
-  const f = slFavorites[_slQuickFavPopupIdx]; if (!f || f.kind !== 'item') { slCloseQuickFavQtyPopup(); return; }
-  const qty = Math.max(1, parseInt(document.getElementById('sl-qfav-popup-qty').value) || 1);
-  slAddItemToList(f.typeId, f.name, qty);
-  slRenderAll();
-  window.showToast(`Added ${qty} × ${f.name}`, 'success');
-  slCloseQuickFavQtyPopup();
+function slConfirmQtyPopup() {
+  if (!_slQtyPopup) return;
+  const { source, idx } = _slQtyPopup;
+  const qty = Math.max(1, parseInt(document.getElementById('sl-qty-popup-qty').value) || 1);
+  if (source === 'qfav') {
+    const f = slFavorites[idx]; if (!f || f.kind !== 'item') { slCloseQtyPopup(); return; }
+    slAddItemToList(f.typeId, f.name, qty);
+    slRenderAll();
+    window.showToast(`Added ${qty} × ${f.name}`, 'success');
+  } else {
+    const w = slWishlist[idx]; if (!w) { slCloseQtyPopup(); return; }
+    if (w.kind === 'item') w.qty = qty; else w.copies = qty;
+    slSaveWishlist();
+    slWishAddOne(idx);
+  }
+  slCloseQtyPopup();
 }
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') slCloseQuickFavQtyPopup(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') slCloseQtyPopup(); });
 function slViewFavoriteList(idx) {
   const f = slFavorites[idx]; if (!f || f.kind !== 'list') return;
   const lines = [...(f.fits || []).map(ft => `▶ ${ft.name}${ft.copies > 1 ? ' ×' + ft.copies : ''}`), ...(f.items || []).map(it => `  ${it.name}${it.qty > 1 ? ' x' + it.qty : ''}`)];
