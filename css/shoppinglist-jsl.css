@@ -197,6 +197,10 @@
 .jsl .fav-sub { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--jsl-dim); margin-top: 3px; overflow-wrap: break-word; }
 .jsl .fav-plus { flex-shrink: 0; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; background: rgba(var(--accent-rgb),0.14); color: var(--accent); cursor: pointer; transition: background .15s; border-radius: var(--radius-sm); font-weight: 700; font-size: 19px; }
 .jsl .fav-plus:hover { background: rgba(var(--accent-rgb),0.28); }
+/* Wishlist-only: how many copies of a fit (or units of a legacy item entry) are queued to add -
+   an icon-corner badge instead of a permanent on-card stepper, so the card stays the same single
+   row Favorites uses (no stepper to make room for). */
+.jsl .fav-count-badge { position: absolute; bottom: -4px; right: -4px; background: var(--jsl-gold); color: #1a1400; font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 800; padding: 1px 6px; border-radius: 999px; line-height: 1.4; box-shadow: 0 1px 4px rgba(0,0,0,0.5); }
 
 /* ---- quick-favorites panel (Shopping List tab, its own right-hand column) - a narrow, tall rail
    of your favorited single items/modules, separate from the full Favorites tab (which also
