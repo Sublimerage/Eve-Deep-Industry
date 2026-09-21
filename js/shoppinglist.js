@@ -26,6 +26,7 @@ let slWishlist = []; // [{kind:'item',typeId,name,qty} | {kind:'fit',fitName,shi
 let slFavorites = []; // [{kind:'item',typeId,name} | {kind:'fit',name,shipName,shipTypeId,fitText} | {kind:'list',name,ts,items,fits}]
 let slPriceMode = 'sell'; // 'sell' or 'buy' - which side of window.priceCache totals/rows read from
 let slSessionReady = false; // guards against saving a blank session before loadSlSession has run
+let slPullChecked = {}; // { [typeId]: true } - "Already Have" panel's own checkmarks, keyed by typeId
 
 // Per-search-box "the user actually clicked a specific result" state - two independent search
 // boxes (Add Single Item on the Shopping List tab, and the Quick Favorites rail) each need their
@@ -37,6 +38,7 @@ const slSearchState = { item: { res: [], idx: -1 }, qfav: { res: [], idx: -1 } }
 const SL_ITEMS_KEY = 'eve_sl_session_v1';
 const SL_WISHLIST_KEY = 'eve_sl_wishlist_v1';
 const SL_FAVORITES_KEY = 'eve_sl_favorites_v1';
+const SL_PULL_CHECKED_KEY = 'eve_sl_pull_checked_v1';
 
 // ── ITEM LOOKUP (local index, no network) ───────────────────────────────────────
 // EVE's own in-game copy/paste (fitting window, cargo/container select-all) always uses the exact
@@ -313,6 +315,61 @@ function slIsDeductingStock() {
   return btn ? btn.value === 'true' : true;
 }
 
+// ── PULL LIST ("Already Have") ──────────────────────────────────────────────────
+// Requested directly: a checklist of what's already owned (at whatever location/can is currently
+// selected above) that still has to physically go into the hauler - separate from "Buy Qty",
+// which is about what to purchase. Consolidated by typeId across every fit and standalone item
+// (unlike the table's own per-row Have display, which lets two different fits needing the same
+// item each separately "claim" the full stock amount) - physically you only pull a given item
+// off the shelf once, not once per fit that happens to need it.
+function slConsolidatedNeeds() {
+  const map = {};
+  slItems.forEach(i => { if (!map[i.typeId]) map[i.typeId] = { name: i.name, qty: 0 }; map[i.typeId].qty += i.qty; });
+  slFits.forEach(f => f.baseItems.forEach(i => {
+    if (!map[i.typeId]) map[i.typeId] = { name: i.name, qty: 0 };
+    map[i.typeId].qty += i.qty * f.copies;
+  }));
+  return map;
+}
+function slTogglePullChecked(typeId) {
+  if (slPullChecked[typeId]) delete slPullChecked[typeId]; else slPullChecked[typeId] = true;
+  saveSlPullChecked();
+  slRenderPullList();
+}
+function slClearPullChecks() {
+  slPullChecked = {};
+  saveSlPullChecked();
+  slRenderPullList();
+}
+function saveSlPullChecked() { try { localStorage.setItem(SL_PULL_CHECKED_KEY, JSON.stringify(slPullChecked)); } catch (e) {} }
+function loadSlPullChecked() { slPullChecked = window.safeParseJSON(localStorage.getItem(SL_PULL_CHECKED_KEY), {}); }
+function slRenderPullList() {
+  const wrap = document.getElementById('sl-pulllist-wrap');
+  const body = document.getElementById('sl-pulllist-body');
+  if (!wrap || !body) return;
+  const hasStockData = !!(window.userStockMap && Object.keys(window.userStockMap).length);
+  const rows = hasStockData ? Object.entries(slConsolidatedNeeds())
+    .map(([typeId, d]) => ({ typeId: +typeId, name: d.name, pullQty: Math.min(d.qty, slStockFor(+typeId)) }))
+    .filter(r => r.pullQty > 0)
+    .sort((a, b) => a.name.localeCompare(b.name)) : [];
+  if (!rows.length) { wrap.style.display = 'none'; return; }
+  wrap.style.display = 'block';
+  const doneCount = rows.filter(r => slPullChecked[r.typeId]).length;
+  const badge = document.getElementById('sl-pulllist-badge');
+  if (badge) badge.textContent = `${doneCount}/${rows.length} Grabbed`;
+  body.innerHTML = rows.map(r => {
+    const checked = !!slPullChecked[r.typeId];
+    return `
+      <div class="pull-row${checked ? ' pull-row-done' : ''}" onclick="slTogglePullChecked(${r.typeId})">
+        <span class="pull-check">${checked ? '<svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : ''}</span>
+        <img src="${window.getItemIconUrl(r.typeId, r.name, 64)}" onerror="this.style.opacity=.15" loading="lazy">
+        <span class="tn" style="flex:1;">${window.esc(r.name)}</span>
+        <span class="pull-qty">${r.pullQty.toLocaleString()}</span>
+      </div>
+    `;
+  }).join('');
+}
+
 // ── PRICE / VOLUME HELPERS ──────────────────────────────────────────────────────
 // Per-item buy-strategy override set by the Market Spread optimizer below - same idea as the
 // Calculator's own window.customBuyModes, just scoped to this page's own item set. Empty until
@@ -337,6 +394,7 @@ function slFmtVol(v) {
 function slRenderAll() {
   slRenderList();
   slUpdateTotals();
+  slRenderPullList();
   slSaveSession();
 }
 
@@ -1035,6 +1093,7 @@ window.onload = function () {
   slLoadSession();
   slLoadWishlist(); slRenderWishlist();
   slLoadFavorites(); slRenderFavorites();
+  loadSlPullChecked();
   slRenderAll();
   if (slItems.length || slFits.length) {
     const ids = [...slItems.map(i => i.typeId), ...slFits.flatMap(f => f.baseItems.map(i => i.typeId))];
