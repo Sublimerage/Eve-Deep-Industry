@@ -351,20 +351,37 @@ function slClearPullChecks() {
 }
 function saveSlPullChecked() { try { localStorage.setItem(SL_PULL_CHECKED_KEY, JSON.stringify(slPullChecked)); } catch (e) {} }
 function loadSlPullChecked() { slPullChecked = window.safeParseJSON(localStorage.getItem(SL_PULL_CHECKED_KEY), {}); }
+// Reported directly: this was reflecting whatever the Check Against My Stock filter happened to
+// be set to - which defaults to "All Locations (Combined Assets)", meaning it was really showing
+// "everything you own anywhere that's also on your list," not "what's in the can." That's not the
+// same thing at all once you own the same common items (minerals, ammo, T2 modules) scattered
+// across several hangars/ships/other cans too - it stopped meaning "go empty this one can" and
+// just became a second, redundant view of the shopping list. Now requires the filter to actually
+// be scoped to one specific container (js/esi.js's own `container_<id>` filter value) before
+// showing real rows at all - a bare station/system/"all locations" selection gets a prompt instead
+// of silently substituting broader stock for what was asked for.
 function slRenderPullList() {
   const wrap = document.getElementById('sl-pulllist-wrap');
   const body = document.getElementById('sl-pulllist-body');
+  const badge = document.getElementById('sl-pulllist-badge');
   if (!wrap || !body) return;
-  const hasStockData = !!(window.userStockMap && Object.keys(window.userStockMap).length);
-  const rows = hasStockData ? Object.entries(slConsolidatedNeeds())
+  const hasAnyAssetData = !!(window.rawAssetItems && window.rawAssetItems.length);
+  const hasListItems = !!(slItems.length || slFits.length);
+  if (!hasAnyAssetData || !hasListItems) { wrap.style.display = 'none'; return; }
+  wrap.style.display = 'block';
+  const filterVal = document.getElementById('stock-location-filter')?.value || 'all';
+  if (!filterVal.startsWith('container_')) {
+    if (badge) badge.textContent = '—';
+    body.innerHTML = `<div class="empty" style="padding:14px 18px;">Select a specific container above, under Check Against My Stock, to see what to pull from it.</div>`;
+    return;
+  }
+  const rows = Object.entries(slConsolidatedNeeds())
     .map(([typeId, d]) => ({ typeId: +typeId, name: d.name, pullQty: Math.min(d.qty, slStockFor(+typeId)) }))
     .filter(r => r.pullQty > 0)
-    .sort((a, b) => a.name.localeCompare(b.name)) : [];
-  if (!rows.length) { wrap.style.display = 'none'; return; }
-  wrap.style.display = 'block';
+    .sort((a, b) => a.name.localeCompare(b.name));
   const doneCount = rows.filter(r => slPullChecked[r.typeId]).length;
-  const badge = document.getElementById('sl-pulllist-badge');
   if (badge) badge.textContent = `${doneCount}/${rows.length} Grabbed`;
+  if (!rows.length) { body.innerHTML = `<div class="empty" style="padding:14px 18px;">Nothing in this container matches your current list.</div>`; return; }
   body.innerHTML = rows.map(r => {
     const checked = !!slPullChecked[r.typeId];
     return `
