@@ -265,15 +265,17 @@
           </div>
 
           <!-- Requested directly: a checklist of what you already own (per the location/can
-               currently selected in Check Against My Stock) that still needs to physically go into
-               the hauler - separate from what needs buying. Hidden entirely until there's real
-               stock data to compare against. -->
+               specific container selected in Check Against My Stock) that still needs to physically
+               come out of that can - separate from what needs buying. Reported directly: this must
+               only ever reflect ONE actual can, not your combined stock everywhere, or it stops
+               meaning "what to pull from this can" and just becomes a second copy of the shopping
+               list. Requires a container to actually be selected above, not a station/system/"all
+               locations" - see slRenderPullList's own comment (js/shoppinglist.js) for why. -->
           <div class="panel" id="sl-pulllist-wrap" style="display:none;">
             <div class="ph">
               <span class="pt">Already Have</span><span class="pb" id="sl-pulllist-badge">0/0 Grabbed</span>
               <button class="lp-chip-btn" style="margin-left:auto;" onclick="slClearPullChecks()" title="Reset all checkmarks">Reset</button>
             </div>
-            <div class="hint" style="padding:0 18px 10px;">Reflects whatever location's selected in Check Against My Stock - narrow it to one specific can so this matches a single real haul.</div>
             <div id="sl-pulllist-body"></div>
           </div>
         </div>
@@ -388,6 +390,6 @@
   <script src="js/config.js?v=8.0.47" defer></script>
   <script src="js/esi.js?v=8.0.42" defer></script>
   <script src="js/custom-select.js?v=1.5.0" defer></script>
-  <script src="js/shoppinglist.js?v=1.0.25" defer></script>
+  <script src="js/shoppinglist.js?v=1.0.26" defer></script>
 </body>
 </html>
