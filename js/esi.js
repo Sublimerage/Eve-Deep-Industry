@@ -1148,6 +1148,15 @@ async function fetchUserAndCorpAssets(charId, accessToken) {
         if (typeof window.updateStockLastSyncedDisplay === 'function') window.updateStockLastSyncedDisplay();
       }
     }
+    // Shared choke point every caller (the manual Refresh button, switching active character, and
+    // the automatic re-fetch on page load when already logged in) funnels through, fired only once
+    // window.userStockMap itself is actually final - unlike 'eve:active-character-changed' (fired at
+    // the START of a character switch, before any fetch has even begun), this is safe for a listener
+    // that needs the real, current stock data, not just "something changed." Pages whose own
+    // recalculation this file already knows how to call directly (Calculator/Invention, via
+    // applyStockLocationFilter's own tail end) don't need this - it's for pages like the Shopping
+    // List, which esi.js has no direct knowledge of.
+    window.dispatchEvent(new CustomEvent('eve:assets-refreshed'));
     return fullySucceeded;
   } catch (err) {
     console.warn('Assets fetch error:', err);

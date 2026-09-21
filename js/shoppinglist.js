@@ -307,6 +307,14 @@ function slOnStockFilterChanged() {
   if (typeof applyStockLocationFilter === 'function') applyStockLocationFilter();
   slRenderAll();
 }
+// Reported directly: the stock-dependent parts of this page (the table's Have/Buy Qty columns,
+// the new Already Have panel) only ever updated after manually touching the location filter or
+// Personal/Corp checkboxes - clicking "Refresh Assets" itself, or just having the page auto-sync
+// an already-logged-in character on load, silently updated window.userStockMap without this page
+// ever finding out, since js/esi.js only knows how to re-render the Calculator/Invention pages
+// directly. 'eve:assets-refreshed' (js/esi.js) is the fix: it fires once userStockMap is actually
+// current, from every path that can update it, so this page hears about all of them the same way.
+window.addEventListener('eve:assets-refreshed', () => { slRenderAll(); });
 function slStockFor(typeId) {
   return (window.userStockMap && window.userStockMap[typeId]) || 0;
 }
