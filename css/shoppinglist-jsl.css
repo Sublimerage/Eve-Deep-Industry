@@ -170,6 +170,20 @@
 .jsl .ptoggle button { background: none; border: none; color: var(--jsl-dim); font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; padding: 7px 13px; cursor: pointer; transition: all .15s; }
 .jsl .ptoggle button.on { background: rgba(var(--accent-rgb),0.18); color: var(--accent); }
 
+/* ---- pull list - a checklist of what's already owned (at whatever location/can is currently
+   selected in Check Against My Stock) that still needs to physically go in the hauler. Checking a
+   row just dims/strikes it - nothing is removed, so it's safe to click around while sorting a can
+   by hand without losing your place. ---- */
+.jsl .pull-row { display: flex; align-items: center; gap: 10px; padding: 8px 18px; border-bottom: 1px solid rgba(255,255,255,0.06); cursor: pointer; transition: background .15s ease; }
+.jsl .pull-row:last-child { border-bottom: none; }
+.jsl .pull-row:hover { background: rgba(255,255,255,0.03); }
+.jsl .pull-row img { width: 26px; height: 26px; border-radius: 3px; flex-shrink: 0; }
+.jsl .pull-check { width: 18px; height: 18px; border-radius: 4px; border: 1.5px solid rgba(255,255,255,0.25); flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #06110a; transition: background .15s ease, border-color .15s ease; }
+.jsl .pull-check svg { width: 12px; height: 12px; stroke: currentColor; stroke-width: 3; fill: none; }
+.jsl .pull-row-done .pull-check { background: var(--accent); border-color: var(--accent); }
+.jsl .pull-row-done .tn { text-decoration: line-through; opacity: 0.5; }
+.jsl .pull-qty { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--jsl-dim); flex-shrink: 0; }
+
 
 /* ---- favorites grid - sub-cards within a panel, so they get the flatter .fo-card-weight
    surface (same literal fill body.page-calc .fo-card uses) rather than full glass, keeping the
