@@ -350,6 +350,102 @@ function hasExplicitBatchYield(recipe) {
 }
 window.hasExplicitBatchYield = hasExplicitBatchYield;
 
+// Walks the STATIC recipe structure only - no full node construction, no quantity/ME/TE math, no
+// supplemental time/batch-yield network lookups, none of what buildRecursiveRecipeTree itself does
+// - purely to find every blueprint reachable from blueprintTypeId down to maxDepth and mark each one
+// buildSelfOverrides[id] = true. Exists because buildRecursiveRecipeTree only ever recurses into a
+// node's own children when THAT node is already marked to build (see its own isBuildingSelf check
+// below) - so revealing a genuinely deep tree with everything set to Build used to need one full
+// tree rebuild PER LEVEL (buildAllComponents' own now-removed guard loop, up to 25 rebuilds for one
+// click - see its own comment in js/optimizers.js). Calling this once, first, to populate every
+// override the eventual real build will need, means that real build can recurse to full depth in a
+// single pass instead. Safe to do eagerly and relatively cheaply: eve_db.js/recipeMap are bundled
+// with the page, not fetched over the network, so resolving "what materials does this blueprint
+// need, and which of THOSE are themselves buildable" is local, synchronous-cost work all the way
+// down - unlike prices or supplemental build-time data, which stay exactly where they always were,
+// fetched lazily by the real build/recalculate that follows this, not touched here.
+async function markBuildableDescendantsRecursive(blueprintTypeId, currentDepth, maxDepth, visited) {
+  if (currentDepth >= maxDepth || visited.has(blueprintTypeId)) return;
+  const recipe = await fetchBlueprintData(blueprintTypeId);
+  if (!recipe) return;
+
+  const allowReactions = document.getElementById('include-reactions')?.value !== 'false';
+  let rawMaterials = recipe.mfgMaterials || recipe.materials || recipe.mats || recipe.m;
+  if ((!rawMaterials || rawMaterials.length === 0) && allowReactions && recipe.reactionMaterials && recipe.reactionMaterials.length > 0) {
+    rawMaterials = recipe.reactionMaterials;
+  }
+  if (!rawMaterials || rawMaterials.length === 0) return;
+
+  const nextVisited = new Set(visited);
+  nextVisited.add(blueprintTypeId);
+  await Promise.all(rawMaterials.map(async (m) => {
+    const matTypeId = parseInt(m.typeId || m.typeid || m.id || m.materialTypeID);
+    const matName = m.name || (window.TYPE_ID_TO_NAME ? window.TYPE_ID_TO_NAME[matTypeId] : '');
+    const childBlueprintTypeId = findBlueprintTypeIdForProduct(matTypeId) || resolveBlueprintIdFromProductName(matName);
+    if (!childBlueprintTypeId) return;
+    window.buildSelfOverrides[childBlueprintTypeId] = true;
+    await markBuildableDescendantsRecursive(childBlueprintTypeId, currentDepth + 1, maxDepth, nextVisited);
+  }));
+}
+window.markBuildableDescendantsRecursive = markBuildableDescendantsRecursive;
+
+// Same walk as markBuildableDescendantsRecursive just above, collecting type IDs into `out` instead
+// of setting build overrides - every blueprint AND its manufactured product, reachable from
+// blueprintTypeId down to maxDepth, regardless of current build/buy state (unlike collectAllTypeIds
+// in this same file, which only walks the tree object that's already been built - this walks the
+// recipe DATA, so it finds materials that haven't been revealed as real nodes yet at all).
+async function collectAllReachableTypeIds(blueprintTypeId, currentDepth, maxDepth, visited, out) {
+  if (currentDepth >= maxDepth || visited.has(blueprintTypeId)) return;
+  visited.add(blueprintTypeId);
+  const recipe = await fetchBlueprintData(blueprintTypeId);
+  if (!recipe) { out.add(blueprintTypeId); return; }
+
+  const productTypeId = (window.BLUEPRINT_TO_PRODUCT_MAP && window.BLUEPRINT_TO_PRODUCT_MAP[blueprintTypeId]) || blueprintTypeId;
+  out.add(productTypeId);
+
+  const allowReactions = document.getElementById('include-reactions')?.value !== 'false';
+  let rawMaterials = recipe.mfgMaterials || recipe.materials || recipe.mats || recipe.m;
+  if ((!rawMaterials || rawMaterials.length === 0) && allowReactions && recipe.reactionMaterials && recipe.reactionMaterials.length > 0) {
+    rawMaterials = recipe.reactionMaterials;
+  }
+  if (!rawMaterials || rawMaterials.length === 0) return;
+
+  await Promise.all(rawMaterials.map(async (m) => {
+    const matTypeId = parseInt(m.typeId || m.typeid || m.id || m.materialTypeID);
+    if (!isNaN(matTypeId)) out.add(matTypeId);
+    const matName = m.name || (window.TYPE_ID_TO_NAME ? window.TYPE_ID_TO_NAME[matTypeId] : '');
+    const childBlueprintTypeId = findBlueprintTypeIdForProduct(matTypeId) || resolveBlueprintIdFromProductName(matName);
+    if (childBlueprintTypeId) {
+      await collectAllReachableTypeIds(childBlueprintTypeId, currentDepth + 1, maxDepth, visited, out);
+    }
+  }));
+}
+
+// Quietly prefetches prices for the WHOLE potential tree beneath blueprintTypeId, not just whatever
+// happens to be currently expanded - called from selectItem() itself (js/app.js), fire-and-forget,
+// never awaited, so it can't slow down or block the initial render at all. Reported directly: Build
+// All / +1 Layer visibly lag on a big tree - part of that is the rebuild itself
+// (markBuildableDescendantsRecursive's own comment covers that piece), but every newly-revealed
+// material that's never been priced this session still needs its own real network-backed fetch the
+// first time it's seen, same as any other item, regardless of how fast the rebuild itself gets.
+// Since the full recipe structure is already known the instant an item is selected (bundled data,
+// not fetched - see collectAllReachableTypeIds above), there's no reason to wait for the user to
+// actually press Build All before finding out what it would need priced. Safe specifically because
+// this app's price cache (window.priceCache, js/esi.js fetchMarketPrices) has no expiry within a
+// session to begin with - a price fetched once is reused for the rest of the session regardless of
+// how old it gets, so prefetching it earlier doesn't make anything more stale than fetching it
+// later in that same session already would; it only changes WHEN the one-time fetch happens, not
+// how fresh its result is treated afterward.
+async function preloadPricesForFullTree(blueprintTypeId) {
+  try {
+    if (!blueprintTypeId || typeof window.fetchMarketPrices !== 'function') return;
+    const typeIds = new Set();
+    await collectAllReachableTypeIds(blueprintTypeId, 0, 10, new Set(), typeIds);
+    if (typeIds.size > 0) await window.fetchMarketPrices(Array.from(typeIds));
+  } catch (e) {}
+}
+window.preloadPricesForFullTree = preloadPricesForFullTree;
+
 // Parallel Multi-Layer SDE Blueprint-Centric Tree Generator
 async function buildRecursiveRecipeTree(blueprintTypeId, name, qtyNeeded, currentDepth, maxDepth, visitedPath = new Set(), parentNode = null, jobCount = 1) {
   // NOTE: window.recipeTreeRootProductTypeId is only valid for the ROOT node (depth 0) - it is

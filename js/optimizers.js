@@ -309,17 +309,18 @@ async function buildAllComponents() {
 
     const btn = document.getElementById('build-all-btn');
     const originalLabel = btn ? btn.innerHTML : null;
-    if (btn) btn.disabled = true;
+    if (btn) { btn.disabled = true; btn.innerHTML = 'Building all...'; }
 
-    let changed = markAllBuild(root);
-    let guard = 0;
-    while (changed && guard < 25) {
-      if (btn) btn.innerHTML = `Building all${'.'.repeat((guard % 3) + 1)}`;
-      await window.selectItem(window.currentProduct.id, window.currentProduct.name, true);
-      changed = markAllBuild(window.recipeTreeRoot);
-      guard++;
-    }
-    if (guard === 0 && typeof window.recalculate === 'function') await window.recalculate();
+    // Pre-populate buildSelfOverrides for the WHOLE reachable tree before ever rebuilding - see
+    // markBuildableDescendantsRecursive's own comment (js/tree.js) for why: buildRecursiveRecipeTree
+    // only ever recurses one level deeper than what's ALREADY marked to build, so revealing a
+    // genuinely deep tree used to take one full rebuild PER LEVEL - a guard loop of up to 25
+    // rebuilds for a single click, measured directly as the dominant cost behind "Build All feels
+    // laggy on a big tree" (not network/price latency, which stays exactly where it always was,
+    // fetched lazily by the real rebuild below). One real rebuild is all that's needed now.
+    await window.markBuildableDescendantsRecursive(window.currentProduct.id, 0, 10, new Set());
+    markAllBuild(root);
+    await window.selectItem(window.currentProduct.id, window.currentProduct.name, true);
 
     if (btn) {
       btn.disabled = false;

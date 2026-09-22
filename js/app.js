@@ -2089,12 +2089,44 @@ async function selectItem(typeId, name, preserveView = false, anchorInstanceId =
   window.fetchMarketPrices(Array.from(allTypeIds)).finally(async () => {
     if (statusDot) statusDot.className = 'w-2.5 h-2.5 rounded-full bg-green-400';
     if (statusText) statusText.textContent = 'RECIPES & PRICES LOADED';
+    // Reported directly, three times over, each one caught by a live trace rather than guessed:
+    // (1) When selectItem() is itself called from inside an OUTER withRootPanAnchor-wrapped action
+    // (Build All, +1 Layer, ... - any of the many callers that rebuild via selectItem with
+    // preserveView), this deferred correction could claim its own turn WHILE that outer one's own
+    // action() was still finishing - a live trace caught it capturing its own "before" position
+    // AFTER the rebuild had already shifted things, but BEFORE the outer call had gotten a chance
+    // to correct that shift back - so this correction settled on the ALREADY-WRONG position as if
+    // it were correct, and (because it claims a newer generation once it does start) the outer
+    // call's own, genuinely-correct-baseline correction got superseded before it ever ran, once a
+    // warm price cache (which resolves this near-instantly) made that ordering the common case
+    // rather than a rare fluke. (2) Making this wait for any ALREADY-ACTIVE correction to finish
+    // first didn't fully fix it either - the outer call's own settle loop hadn't necessarily even
+    // STARTED yet (still inside its own action(), same microtask turn as this fetch resolving), so
+    // there was nothing yet to wait for. Yielding a full macrotask first - not just a microtask -
+    // guarantees any pending continuation from that outer call's own action() resolving (its own
+    // generation claim included) has already run by the time this checks anything.
+    // (3) An earlier version of the "wait for active" idea alone also risked this correction getting
+    // queued behind several unrelated actions and firing minutes later against a stale reference -
+    // capped below at 3s specifically so a genuinely stuck/unusual case still resolves the price
+    // data via a plain recalculate() rather than waiting indefinitely for a correction opportunity
+    // that may never cleanly arrive.
+    await new Promise(r => setTimeout(r, 0));
+    const waitStart = performance.now();
+    while (_panAnchorActiveCount > 0 && performance.now() - waitStart < 3000) {
+      await new Promise(r => setTimeout(r, 50));
+    }
     if (typeof window.withRootPanAnchor === 'function') {
       await window.withRootPanAnchor(async () => { await recalculate(); });
     } else {
       recalculate();
     }
   });
+
+  // Fire-and-forget - see preloadPricesForFullTree's own comment (js/tree.js) for the full
+  // reasoning. Deliberately not awaited and not wired into anything above: it can only ever help
+  // (prices Build All/+1 Layer would otherwise have to fetch on demand are already cached by the
+  // time either runs) and can never block or slow down the render this function is already doing.
+  if (typeof window.preloadPricesForFullTree === 'function') window.preloadPricesForFullTree(typeId);
 }
 
 function collectGlobalDemand(node, demandMap = {}) {
@@ -2160,6 +2192,15 @@ function loadSavedState() {
   } catch (e) { selectItem(944, 'Punisher Blueprint'); }
 }
 
+// If you're adding a new button/action that ends up calling this function (directly, or via
+// selectItem()) in response to something the USER clicked - not from inside an action that's
+// already wrapped - wrap that whole action in withRootPanAnchor(async () => { ... }) (js/app.js).
+// That one rule is the entire lesson of a very long bug hunt: every camera-jumps-on-click report
+// this app has ever had traced back to some code path that rebuilt the tree without going through
+// that shared helper. withRootPanAnchor keeps every card laid out for real and keeps root's on-
+// screen position pinned through the rebuild - skip it, and content-visibility:auto's own delayed
+// settling on a big tree WILL visibly move the camera, sooner or later, on whatever this new code
+// path is. See withRootPanAnchor's own comment for why it works this way and what it costs.
 function recalculate() {
   if (!window.recipeTreeRoot) return;
   const activeEl = document.activeElement;
