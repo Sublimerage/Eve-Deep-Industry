@@ -2810,6 +2810,28 @@ async function withRootPanAnchor(action, cleanup) {
   // actually skip/shrink an off-screen card again isn't synchronous with anything this loop can
   // observe via getBoundingClientRect() (forces layout, not the full render pipeline's relevance
   // check), so it can lag behind in a way frame count doesn't capture.
+  //
+  // Also periodically redraws the connecting lines through this same window, not just root's own
+  // pan - reported directly, with a screenshot, still happening after root's own position was
+  // already confirmed rock-solid: lines from OTHER cards pointing at the wrong spot on a card for
+  // "a second or two". Root cause: this loop only ever tracked ROOT's own rect - a card elsewhere
+  // in the tree that's still settling its own height (the same delayed content-visibility effect
+  // already fixed for root specifically) never gets caught here at all, since it can't move root's
+  // OWN measured position even while it's genuinely still wrong. Redrawing lines only on an actual
+  // root correction (the original, cheaper idea) misses this exact case for the same reason. A
+  // period between redraws, not every single frame, deliberately - drawConnectingLines() forces its
+  // own getBoundingClientRect() across every card with children, and doing that on every one of a
+  // multi-second window's ~60fps frames on a 200+ card tree would reintroduce the same per-frame
+  // cost blur-suspend above exists to avoid, just from a different cause.
+  let lastLineRedraw = 0;
+  function maybeRedrawLines(force) {
+    if (typeof window.drawConnectingLines !== 'function') return;
+    const now = performance.now();
+    if (force || now - lastLineRedraw >= 350) {
+      window.drawConnectingLines();
+      lastLineRedraw = now;
+    }
+  }
   async function settle(budgetMs, stableMs) {
     const deadline = performance.now() + budgetMs;
     let stableSince = null;
@@ -2824,14 +2846,17 @@ async function withRootPanAnchor(action, cleanup) {
         window.panX -= dLeft;
         window.panY -= dTop;
         updateTransform();
+        maybeRedrawLines(true); // root itself just moved - always worth a fresh draw, not throttled
         stableSince = null;
       } else {
+        maybeRedrawLines(false);
         const now = performance.now();
         if (stableSince === null) stableSince = now;
-        if (now - stableSince >= stableMs) return 'settled';
+        if (now - stableSince >= stableMs) { maybeRedrawLines(true); return 'settled'; }
       }
       await new Promise(r => requestAnimationFrame(r));
     }
+    maybeRedrawLines(true);
     return 'timeout';
   }
 
