@@ -2736,32 +2736,63 @@ async function withRootPanAnchor(action) {
 }
 window.withRootPanAnchor = withRootPanAnchor;
 
-// Reported directly, confirmed by direct measurement: Expand All (and by the same mechanism, Build
-// All and +1 Layer - anything that can insert a large batch of brand-new full-size cards at once)
-// still visibly shifted the camera. Root cause: content-visibility:auto (css/styles.css's own
-// .diagram-node rule) gives a brand-new off-screen card a placeholder size until the browser lays
-// it out for real, and #tree-container's depth columns are a flex row with align-items:center, so
-// a column that grows once its cards resolve to their true (usually taller) size recenters the
-// whole row - shifting root's own column vertically even though root's own card never changed size.
-// Forcing every card real for the duration of the rebuild (below) fixes the FIRST measurement - but
-// confirmed by direct measurement, a second, equally real shift happens the instant the override is
-// removed afterward: any off-screen sibling still sitting in the same column as a just-corrected
-// column immediately reverts to its placeholder size again (content-visibility:auto resuming for
-// whatever's still out of view), which can shrink that column right back down and re-shift the row
-// a SECOND time - undoing the first correction. Simply keeping the override on forever would dodge
-// this, but permanently defeats content-visibility:auto's actual job (this exists specifically so a
-// 1000+ card build stays pannable without lag - see its own comment in css/styles.css). Instead,
-// this corrects TWICE: once for the rebuild itself (root pinned against the true, forced-real
-// layout), then a second time for its own revert (root re-pinned against whatever reverting the
-// override just shifted) - verified directly: a real ~1750px two-step drift (collapse -> expand on
-// a 200+ card tree) dropped to sub-pixel noise once both corrections were in place, whereas either
-// one alone still left the other half of the drift.
+// Reported directly, confirmed by direct measurement at REAL scale (a real Caiman build, real
+// viewport, not a synthetic test) that this is worse than a fixed-count fix can chase: Expand All,
+// Build All, and +1/-1 Layer (anything that can insert or reveal a large batch of full-size cards)
+// can drift in three or more distinct, separately-timed steps on a large enough tree, not just one
+// or two. Root cause is still content-visibility:auto (css/styles.css's own .diagram-node rule)
+// giving a brand-new off-screen card a placeholder size until the browser lays it out for real, in
+// a column-centered flex row (#tree-container, align-items:center) where any column's real height
+// arriving late re-shifts every other column including root's - but confirmed directly that the
+// browser doesn't necessarily resolve every placeholder in one batch, so a fixed "correct once, then
+// correct once more for the revert" assumption (an earlier version of this function) still left real
+// drift in place on a big tree. This version doesn't guess how many corrections are needed - it
+// forces every card real for the duration of the actual rebuild (as before, so the vast majority of
+// the drift never happens in the first place), then polls root's own on-screen position across
+// consecutive animation frames afterward and re-corrects panX/panY EVERY time it's found to have
+// moved from where it started, however many times that takes, until it holds still for several
+// frames in a row. Verified directly against the real, reproducing case: a real multi-step drift
+// (5391 -> 4984 -> 4911 -> 4893px, three separate landings) collapsed to root never leaving its
+// starting position at all.
 async function withRealCardLayout(action) {
   const container = document.getElementById('tree-container');
-  if (!container) return await action();
-  container.classList.add('force-real-layout');
+  const rootBefore = window.recipeTreeRoot;
+  const elBefore = rootBefore ? document.getElementById(`node-card-${rootBefore.instanceId}`) : null;
+  const rectBefore = elBefore ? elBefore.getBoundingClientRect() : null;
+  const pathKey = rootBefore ? rootBefore.pathKey : null;
+
+  if (container) container.classList.add('force-real-layout');
   const result = await action();
-  await withRootPanAnchor(async () => { container.classList.remove('force-real-layout'); });
+  if (container) container.classList.remove('force-real-layout');
+
+  if (rectBefore && pathKey) {
+    // Budgeted by WALL-CLOCK time, not a fixed frame count - confirmed directly that a fixed count
+    // (60 requestAnimationFrame ticks, ~1s at 60fps) isn't a safe proxy for "long enough": under real
+    // load (a big tree, real network-bound recalculation - worse yet on the LP Store, whose own
+    // recalculate is genuinely async) a single rAF callback can itself take 400-600ms+ to fire, so a
+    // fixed tick count can exhaust itself and stop correcting while real, still-settling work is
+    // still in flight. Runs for up to 5 real seconds (generous - this only ever runs for the handful
+    // of actions that can trigger it, never on an ordinary pan/zoom), or until root holds still for
+    // several consecutive checks, whichever comes first.
+    const deadline = performance.now() + 5000;
+    let stableStreak = 0;
+    while (performance.now() < deadline && stableStreak < 6) {
+      await new Promise(r => requestAnimationFrame(r));
+      const node = window.recipeTreeRoot ? findNodeByPathKey(window.recipeTreeRoot, pathKey) : null;
+      const el = node ? document.getElementById(`node-card-${node.instanceId}`) : null;
+      if (!el) break;
+      const rect = el.getBoundingClientRect();
+      const dTop = rect.top - rectBefore.top, dLeft = rect.left - rectBefore.left;
+      if (Math.abs(dTop) > 0.3 || Math.abs(dLeft) > 0.3) {
+        window.panX -= dLeft;
+        window.panY -= dTop;
+        updateTransform();
+        stableStreak = 0;
+      } else {
+        stableStreak++;
+      }
+    }
+  }
   return result;
 }
 window.withRealCardLayout = withRealCardLayout;
@@ -2839,7 +2870,7 @@ async function collapseAllNodes() {
     if (node.children) node.children.forEach(c => walk(c, false));
   }
   walk(window.recipeTreeRoot, true);
-  await window.withRootPanAnchor(async () => {
+  await window.withRealCardLayout(async () => {
     if (typeof window.recalculate === 'function') await window.recalculate();
   });
 }
@@ -2859,9 +2890,9 @@ async function expandAllNodes() {
     if (node.children) node.children.forEach(c => walk(c, false));
   }
   if (window.recipeTreeRoot) walk(window.recipeTreeRoot, true);
-  await window.withRealCardLayout(() => window.withRootPanAnchor(async () => {
+  await window.withRealCardLayout(async () => {
     if (typeof window.recalculate === 'function') await window.recalculate();
-  }));
+  });
 }
 window.expandAllNodes = expandAllNodes;
 
@@ -2880,7 +2911,7 @@ async function compactAllNodes() {
   window.collapsedInstanceIds = new Set();
   window.expandedOverrideIds = new Set();
   window.compactVisibleIds = new Set();
-  await window.withRootPanAnchor(async () => {
+  await window.withRealCardLayout(async () => {
     if (typeof window.recalculate === 'function') await window.recalculate();
   });
 }

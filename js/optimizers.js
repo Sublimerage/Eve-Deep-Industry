@@ -293,7 +293,7 @@ async function buildAllComponents() {
   // of brand-new full-size cards at once, and content-visibility:auto's own real-layout pass for
   // them lands on the browser's own schedule, well after a plain withRootPanAnchor correction would
   // have already measured (and locked in) a wrong position.
-  await window.withRealCardLayout(() => window.withRootPanAnchor(async () => {
+  await window.withRealCardLayout(async () => {
     const root = window.recipeTreeRoot;
 
     // An LP Store isolated direct-sell offer's root is a hand-built synthetic node with no real
@@ -325,7 +325,7 @@ async function buildAllComponents() {
       btn.disabled = false;
       btn.innerHTML = originalLabel;
     }
-  }));
+  });
 }
 
 // --- Action: +1 Layer of Build ---
@@ -336,7 +336,7 @@ async function buildAllComponents() {
 async function buildOneLayerDeeper() {
   if (!window.recipeTreeRoot) return;
   // withRealCardLayout (js/app.js) - same reasoning as buildAllComponents above.
-  await window.withRealCardLayout(() => window.withRootPanAnchor(async () => {
+  await window.withRealCardLayout(async () => {
     const root = window.recipeTreeRoot;
 
     const isLPSynthetic = root.isLPIsolatedRoot && !root.recipe;
@@ -354,7 +354,7 @@ async function buildOneLayerDeeper() {
       return;
     }
     await window.selectItem(window.currentProduct.id, window.currentProduct.name, true);
-  }));
+  });
 }
 window.buildOneLayerDeeper = buildOneLayerDeeper;
 
@@ -382,7 +382,10 @@ function findBuildFrontier(node, isRoot, frontier) {
 // withRootPanAnchor (app.js) for the same reason as buildAllComponents above.
 async function buildOneLayerShallower() {
   if (!window.recipeTreeRoot) return;
-  await window.withRootPanAnchor(async () => {
+  // withRealCardLayout (js/app.js) - reported directly that -1 Layer drifts too, same as +1 Layer -
+  // its own settle-loop corrects for whatever's still moving after the rebuild regardless of the
+  // exact cause, not just the "brand-new card" case the force-real-layout half of it targets.
+  await window.withRealCardLayout(async () => {
     const root = window.recipeTreeRoot;
     const frontier = [];
     findBuildFrontier(root, true, frontier);
