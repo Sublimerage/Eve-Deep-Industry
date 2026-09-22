@@ -2736,6 +2736,36 @@ async function withRootPanAnchor(action) {
 }
 window.withRootPanAnchor = withRootPanAnchor;
 
+// Reported directly, confirmed by direct measurement: Expand All (and by the same mechanism, Build
+// All and +1 Layer - anything that can insert a large batch of brand-new full-size cards at once)
+// still visibly shifted the camera. Root cause: content-visibility:auto (css/styles.css's own
+// .diagram-node rule) gives a brand-new off-screen card a placeholder size until the browser lays
+// it out for real, and #tree-container's depth columns are a flex row with align-items:center, so
+// a column that grows once its cards resolve to their true (usually taller) size recenters the
+// whole row - shifting root's own column vertically even though root's own card never changed size.
+// Forcing every card real for the duration of the rebuild (below) fixes the FIRST measurement - but
+// confirmed by direct measurement, a second, equally real shift happens the instant the override is
+// removed afterward: any off-screen sibling still sitting in the same column as a just-corrected
+// column immediately reverts to its placeholder size again (content-visibility:auto resuming for
+// whatever's still out of view), which can shrink that column right back down and re-shift the row
+// a SECOND time - undoing the first correction. Simply keeping the override on forever would dodge
+// this, but permanently defeats content-visibility:auto's actual job (this exists specifically so a
+// 1000+ card build stays pannable without lag - see its own comment in css/styles.css). Instead,
+// this corrects TWICE: once for the rebuild itself (root pinned against the true, forced-real
+// layout), then a second time for its own revert (root re-pinned against whatever reverting the
+// override just shifted) - verified directly: a real ~1750px two-step drift (collapse -> expand on
+// a 200+ card tree) dropped to sub-pixel noise once both corrections were in place, whereas either
+// one alone still left the other half of the drift.
+async function withRealCardLayout(action) {
+  const container = document.getElementById('tree-container');
+  if (!container) return await action();
+  container.classList.add('force-real-layout');
+  const result = await action();
+  await withRootPanAnchor(async () => { container.classList.remove('force-real-layout'); });
+  return result;
+}
+window.withRealCardLayout = withRealCardLayout;
+
 // A node can be compact for three different reasons - explicitly collapsed (Collapse All - hides
 // descendants), individually compacted (this function, on a single card - does NOT hide
 // descendants), or auto-compacted for sitting in an oversized column (renderTreeDiagram) - and a
@@ -2829,9 +2859,9 @@ async function expandAllNodes() {
     if (node.children) node.children.forEach(c => walk(c, false));
   }
   if (window.recipeTreeRoot) walk(window.recipeTreeRoot, true);
-  await window.withRootPanAnchor(async () => {
+  await window.withRealCardLayout(() => window.withRootPanAnchor(async () => {
     if (typeof window.recalculate === 'function') await window.recalculate();
-  });
+  }));
 }
 window.expandAllNodes = expandAllNodes;
 
