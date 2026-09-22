@@ -248,7 +248,7 @@ function removeCharacter(charId) {
   if (typeof updateJournalStockCountBadge === 'function') updateJournalStockCountBadge();
   if (typeof populateJournalLocationDropdown === 'function') populateJournalLocationDropdown();
   if (typeof recalculate === 'function') {
-    if (typeof window.withRootPanAnchor === 'function') window.withRootPanAnchor(async () => { recalculate(); });
+    if (typeof window.withRootPanAnchor === 'function') window.withRootPanAnchor(async () => { await recalculate(); });
     else recalculate();
   } else if (typeof renderJournalPage === 'function') {
     renderJournalPage();
@@ -378,7 +378,7 @@ async function fetchAdjustedPrices() {
           });
           if (typeof updateEivIndicator === 'function') updateEivIndicator('ready');
           if (window.recipeTreeRoot && typeof recalculate === 'function') {
-            if (typeof window.withRootPanAnchor === 'function') window.withRootPanAnchor(async () => { recalculate(); });
+            if (typeof window.withRootPanAnchor === 'function') window.withRootPanAnchor(async () => { await recalculate(); });
             else recalculate();
           }
           return;
@@ -1450,7 +1450,7 @@ function applyStockLocationFilter() {
   // toggleDeductStockButton's own comment (js/config.js) for why this is conditional.
   if (typeof window.recalculate === 'function') {
     if (typeof window.withRootPanAnchor === 'function') {
-      window.withRootPanAnchor(async () => { window.recalculate(); });
+      window.withRootPanAnchor(async () => { await window.recalculate(); });
     } else {
       window.recalculate();
     }
@@ -1482,7 +1482,7 @@ function clearUserStock() {
   updateStockDisplayCount();
   populateLocationDropdown();
   if (typeof recalculate === 'function') {
-    if (typeof window.withRootPanAnchor === 'function') window.withRootPanAnchor(async () => { recalculate(); });
+    if (typeof window.withRootPanAnchor === 'function') window.withRootPanAnchor(async () => { await recalculate(); });
     else recalculate();
   }
   closePasteModal();
@@ -1493,7 +1493,7 @@ function clearUserStock() {
       updateStockDisplayCount();
       populateLocationDropdown();
       if (typeof recalculate === 'function') {
-        if (typeof window.withRootPanAnchor === 'function') window.withRootPanAnchor(async () => { recalculate(); });
+        if (typeof window.withRootPanAnchor === 'function') window.withRootPanAnchor(async () => { await recalculate(); });
         else recalculate();
       }
     } } });

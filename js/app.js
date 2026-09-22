@@ -103,7 +103,7 @@ window.computeMissingSkills = computeMissingSkills;
 async function toggleSimulateSkillsToFive() {
   window.simulateSkillsToFive = !window.simulateSkillsToFive;
   await window.withRootPanAnchor(async () => {
-    if (typeof window.recalculate === 'function') window.recalculate();
+    if (typeof window.recalculate === 'function') await window.recalculate();
   });
 }
 window.toggleSimulateSkillsToFive = toggleSimulateSkillsToFive;
@@ -359,7 +359,7 @@ async function selectRigForSlot(slotNum, typeId, name) {
   setRigSlotFilledState(slotNum, !!typeId);
   localStorage.setItem(`eve_rig_slot_${slotNum}`, typeId ? String(typeId) : '');
   saveTaxSettings();
-  await window.withRootPanAnchor(async () => { recalculate(); });
+  await window.withRootPanAnchor(async () => { await recalculate(); });
 }
 window.selectRigForSlot = selectRigForSlot;
 
@@ -1227,7 +1227,7 @@ async function applyProductionSnapshot(snapshot) {
   [1, 2, 3].forEach(slot => localStorage.setItem(`eve_rig_slot_${slot}`, snapshot[`rig${slot}`] || ''));
   restoreRigSlotInputs();
   await window.withRootPanAnchor(async () => {
-    if (typeof window.recalculate === 'function') window.recalculate();
+    if (typeof window.recalculate === 'function') await window.recalculate();
   });
 }
 window.applyProductionSnapshot = applyProductionSnapshot;
@@ -1297,7 +1297,7 @@ async function findBestProductionStation() {
     // withRootPanAnchor like every other bare recalculate() in this file - nesting inside the
     // loadProductionPreset/applyProductionSnapshot calls above is safe, see optimizers.js's own note.
     await window.withRootPanAnchor(async () => {
-      if (typeof window.recalculate === 'function') window.recalculate();
+      if (typeof window.recalculate === 'function') await window.recalculate();
     });
   }
 }
@@ -1388,7 +1388,7 @@ async function loadProductionPreset(name) {
   if (presetSelect) presetSelect.value = name;
 
   await window.withRootPanAnchor(async () => {
-    if (typeof window.recalculate === 'function') window.recalculate();
+    if (typeof window.recalculate === 'function') await window.recalculate();
   });
 }
 window.loadProductionPreset = loadProductionPreset;
@@ -2090,7 +2090,7 @@ async function selectItem(typeId, name, preserveView = false, anchorInstanceId =
     if (statusDot) statusDot.className = 'w-2.5 h-2.5 rounded-full bg-green-400';
     if (statusText) statusText.textContent = 'RECIPES & PRICES LOADED';
     if (typeof window.withRootPanAnchor === 'function') {
-      await window.withRootPanAnchor(async () => { recalculate(); });
+      await window.withRootPanAnchor(async () => { await recalculate(); });
     } else {
       recalculate();
     }
@@ -2810,7 +2810,7 @@ async function collapseAllNodes() {
   }
   walk(window.recipeTreeRoot, true);
   await window.withRootPanAnchor(async () => {
-    if (typeof window.recalculate === 'function') window.recalculate();
+    if (typeof window.recalculate === 'function') await window.recalculate();
   });
 }
 window.collapseAllNodes = collapseAllNodes;
@@ -2830,7 +2830,7 @@ async function expandAllNodes() {
   }
   if (window.recipeTreeRoot) walk(window.recipeTreeRoot, true);
   await window.withRootPanAnchor(async () => {
-    if (typeof window.recalculate === 'function') window.recalculate();
+    if (typeof window.recalculate === 'function') await window.recalculate();
   });
 }
 window.expandAllNodes = expandAllNodes;
@@ -2851,7 +2851,7 @@ async function compactAllNodes() {
   window.expandedOverrideIds = new Set();
   window.compactVisibleIds = new Set();
   await window.withRootPanAnchor(async () => {
-    if (typeof window.recalculate === 'function') window.recalculate();
+    if (typeof window.recalculate === 'function') await window.recalculate();
   });
 }
 window.compactAllNodes = compactAllNodes;
@@ -4210,7 +4210,7 @@ let bomCategoryFilter = 'all'; // 'all' | 'minerals' | 'pigas' | 'fuel' | 'ships
 async function setBOMCategoryFilter(cat) {
   bomCategoryFilter = cat;
   await window.withRootPanAnchor(async () => {
-    if (typeof window.recalculate === 'function') window.recalculate();
+    if (typeof window.recalculate === 'function') await window.recalculate();
   });
 }
 window.setBOMCategoryFilter = setBOMCategoryFilter;
@@ -4228,7 +4228,7 @@ async function toggleBomViewMode() {
   localStorage.setItem('eve_bom_view_mode', bomViewMode);
   updateBomViewModeButtonLabel();
   await window.withRootPanAnchor(async () => {
-    if (typeof window.recalculate === 'function') window.recalculate();
+    if (typeof window.recalculate === 'function') await window.recalculate();
   });
 }
 window.toggleBomViewMode = toggleBomViewMode;
@@ -4244,7 +4244,7 @@ async function setBOMOrderFilter(type) {
   if (btnBuy) { btnBuy.className = `lp-pill${type === 'buy' ? ' active' : ''}`; btnBuy.style.cssText = pillStyle; }
   if (btnSell) { btnSell.className = `lp-pill${type === 'sell' ? ' active' : ''}`; btnSell.style.cssText = pillStyle; }
   await window.withRootPanAnchor(async () => {
-    if (typeof window.recalculate === 'function') window.recalculate();
+    if (typeof window.recalculate === 'function') await window.recalculate();
   });
 }
 window.setBOMOrderFilter = setBOMOrderFilter;
@@ -4259,7 +4259,7 @@ let isCalcAcquiredBomSectionExpanded = false;
 async function toggleCalcAcquiredBomSection() {
   isCalcAcquiredBomSectionExpanded = !isCalcAcquiredBomSectionExpanded;
   await window.withRootPanAnchor(async () => {
-    if (typeof recalculate === 'function') recalculate();
+    if (typeof recalculate === 'function') await recalculate();
   });
 }
 window.toggleCalcAcquiredBomSection = toggleCalcAcquiredBomSection;

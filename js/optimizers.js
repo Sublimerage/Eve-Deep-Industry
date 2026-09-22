@@ -79,7 +79,7 @@ async function applyBulkMETarget(me, te) {
     if (window.currentProduct) {
       await window.selectItem(window.currentProduct.id, window.currentProduct.name, true);
     } else if (typeof window.recalculate === 'function') {
-      window.recalculate();
+      await window.recalculate();
     }
     if (typeof window.updateBulkMEStatusUI === 'function') window.updateBulkMEStatusUI();
 
@@ -102,7 +102,7 @@ window.applyBulkMETargetMax = applyBulkMETargetMax;
 async function clearBulkMETarget() {
   await window.withRootPanAnchor(async () => {
     window.bulkMETarget = null;
-    if (typeof window.recalculate === 'function') window.recalculate();
+    if (typeof window.recalculate === 'function') await window.recalculate();
     if (typeof window.updateBulkMEStatusUI === 'function') window.updateBulkMEStatusUI();
     if (typeof window.showToast === 'function') {
       window.showToast('Stopped auto-applying bulk ME/TE to newly built components. Values already set are unchanged.', 'info');
@@ -126,7 +126,7 @@ async function resetBulkMETarget() {
     if (window.currentProduct) {
       await window.selectItem(window.currentProduct.id, window.currentProduct.name, true);
     } else if (typeof window.recalculate === 'function') {
-      window.recalculate();
+      await window.recalculate();
     }
     if (typeof window.updateBulkMEStatusUI === 'function') window.updateBulkMEStatusUI();
     if (typeof window.showToast === 'function') {
@@ -299,7 +299,7 @@ async function buildAllComponents() {
     if (isLPSynthetic || !window.currentProduct) {
       markAllBuild(root);
       syncTreeBuildStates(root);
-      if (typeof window.recalculate === 'function') window.recalculate();
+      if (typeof window.recalculate === 'function') await window.recalculate();
       return;
     }
 
@@ -315,7 +315,7 @@ async function buildAllComponents() {
       changed = markAllBuild(window.recipeTreeRoot);
       guard++;
     }
-    if (guard === 0 && typeof window.recalculate === 'function') window.recalculate();
+    if (guard === 0 && typeof window.recalculate === 'function') await window.recalculate();
 
     if (btn) {
       btn.disabled = false;
@@ -338,7 +338,7 @@ async function buildOneLayerDeeper() {
     if (isLPSynthetic || !window.currentProduct) {
       const changed = markAllBuild(root);
       syncTreeBuildStates(root);
-      if (typeof window.recalculate === 'function') window.recalculate();
+      if (typeof window.recalculate === 'function') await window.recalculate();
       if (!changed && typeof window.showToast === 'function') window.showToast('Already fully built - nothing deeper to reveal.', 'info');
       return;
     }
@@ -393,7 +393,7 @@ async function buildOneLayerShallower() {
     const isLPSynthetic = root.isLPIsolatedRoot && !root.recipe;
     if (isLPSynthetic || !window.currentProduct) {
       syncTreeBuildStates(root);
-      if (typeof window.recalculate === 'function') window.recalculate();
+      if (typeof window.recalculate === 'function') await window.recalculate();
       return;
     }
     await window.selectItem(window.currentProduct.id, window.currentProduct.name, true);
@@ -423,14 +423,14 @@ async function resetSmartBuyModes() {
   await window.withRootPanAnchor(async () => {
     window.customBuyModes = {};
     if (typeof window.recalculate === 'function') {
-      window.recalculate();
+      await window.recalculate();
     }
   });
   if (typeof window.showToast === 'function') {
     window.showToast('Reset every component\'s buy/build override back to default.', 'info', { action: { label: 'Undo', onClick: async () => {
       window.customBuyModes = snapshot;
       await window.withRootPanAnchor(async () => {
-        if (typeof window.recalculate === 'function') window.recalculate();
+        if (typeof window.recalculate === 'function') await window.recalculate();
       });
     } } });
   }
@@ -600,7 +600,7 @@ async function applyBuildProfitOptimizer() {
   // Re-apply final optimal tree state - see buildAllComponents() above for why this stays a flag
   // sync + recalculate instead of a full selectItem() rebuild.
   syncTreeBuildStates(window.recipeTreeRoot);
-  if (typeof window.recalculate === 'function') window.recalculate();
+  if (typeof window.recalculate === 'function') await window.recalculate();
 
   }); // withRootPanAnchor
 }
@@ -633,7 +633,7 @@ async function applyComponentSpreadOptimizer() {
       window.collectAllTypeIds(window.recipeTreeRoot, allTypeIds);
       await window.fetchMarketPrices(Array.from(allTypeIds));
     }
-    if (typeof window.recalculate === 'function') window.recalculate();
+    if (typeof window.recalculate === 'function') await window.recalculate();
   }
 
   function optimizeNode(node) {
@@ -663,7 +663,7 @@ async function applyComponentSpreadOptimizer() {
   }
 
   optimizeNode(window.recipeTreeRoot);
-  if (typeof window.recalculate === 'function') window.recalculate();
+  if (typeof window.recalculate === 'function') await window.recalculate();
 
   }); // withRootPanAnchor
 }
@@ -690,7 +690,7 @@ async function applyBudgetImpactOptimizer() {
       window.collectAllTypeIds(window.recipeTreeRoot, allTypeIds);
       await window.fetchMarketPrices(Array.from(allTypeIds));
     }
-    if (typeof window.recalculate === 'function') window.recalculate();
+    if (typeof window.recalculate === 'function') await window.recalculate();
   }
 
   function optimizeNode(node) {
@@ -730,7 +730,7 @@ async function applyBudgetImpactOptimizer() {
   }
 
   optimizeNode(window.recipeTreeRoot);
-  if (typeof window.recalculate === 'function') window.recalculate();
+  if (typeof window.recalculate === 'function') await window.recalculate();
 
   }); // withRootPanAnchor
 }

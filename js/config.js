@@ -314,7 +314,7 @@ async function toggleDeductStockButton(btn, recalcFnName) {
   updateDeductStockButtonVisual(btn);
   if (!recalcFnName || typeof window[recalcFnName] !== 'function') return;
   if (typeof window.withRootPanAnchor === 'function') {
-    await window.withRootPanAnchor(async () => { window[recalcFnName](); });
+    await window.withRootPanAnchor(async () => { await window[recalcFnName](); });
   } else {
     window[recalcFnName]();
   }
