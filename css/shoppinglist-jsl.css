@@ -130,6 +130,14 @@
 .jsl .collapse-icon svg { width: 12px; height: 12px; }
 .jsl .fb.collapsed .collapse-icon { transform: rotate(-90deg); }
 .jsl .fb.collapsed .fb-body { display: none; }
+
+/* ---- panel-level minimize, requested directly for Favorite Items and Already Have - any panel
+   with this button just hides everything but its own header when collapsed, reusing the exact
+   same chevron/rotate language .fb's own collapse already uses rather than inventing a second
+   visual for "this is collapsible." ---- */
+.jsl .panel.collapsed > *:not(.ph) { display: none; }
+.jsl .panel-collapse-btn { flex-shrink: 0; }
+.jsl .panel.collapsed .panel-collapse-btn .collapse-icon { transform: rotate(-90deg); }
 /* Reported directly: the table's right edge (icons, the qty stepper, the Remove button) was
    getting silently clipped whenever the column was narrower than the table's own fixed-width
    columns - .panel/.fb's own overflow:hidden (needed for their rounded corners) was swallowing the
@@ -174,7 +182,7 @@
    selected in Check Against My Stock) that still needs to physically go in the hauler. Checking a
    row just dims/strikes it - nothing is removed, so it's safe to click around while sorting a can
    by hand without losing your place. ---- */
-.jsl .pull-row { display: flex; align-items: center; gap: 10px; padding: 8px 18px; border-bottom: 1px solid rgba(255,255,255,0.06); cursor: pointer; transition: background .15s ease; }
+.jsl .pull-row { display: flex; align-items: center; gap: 10px; padding: 8px 18px; border-bottom: 1px solid rgba(255,255,255,0.06); cursor: pointer; transition: background .15s ease; font-size: 13px; }
 .jsl .pull-row:last-child { border-bottom: none; }
 .jsl .pull-row:hover { background: rgba(255,255,255,0.03); }
 .jsl .pull-row img { width: 26px; height: 26px; border-radius: 3px; flex-shrink: 0; }
