@@ -2704,96 +2704,99 @@ async function recalculateWithPanAnchor(e) {
 }
 window.recalculateWithPanAnchor = recalculateWithPanAnchor;
 
-// Anchors on the root card through an arbitrary async action, regardless of page - for bulk
-// sidebar buttons (Build All, Buy All, +1/-1 Layer) that have no single clicked card to pin the
-// way per-card controls do (selectItem's own anchorInstanceId, recalculateWithPanAnchor's
-// e.target lookup): they're triggered from the Build flyout panel, not a diagram card, and can
-// insert or remove any number of columns anywhere in the tree at once. Root (and whatever's
-// rendered right after it) is what you're actually watching to see the overall effect of a bulk
-// change, same reasoning as recalculateWithPanAnchor's own LP Store branch - just generalized to
-// every page and every bulk action instead of one page's per-card clicks. Reported directly: Build
-// All, Buy All, and the two Layer buttons all visibly moved the camera, unlike every other control.
-// Measures root ONCE before and ONCE after the whole action (not per intermediate rebuild inside
-// it, e.g. Build All's own mark-then-rebuild loop) via pathKey, which survives a rebuild's fresh
-// instanceIds the same way every other anchor lookup here already relies on.
+// Anchors on the root card through an arbitrary async action, regardless of page - for EVERY bulk
+// control that has no single clicked card to pin the way per-card controls do (Build All, Buy All,
+// +1/-1 Layer, Collapse/Compact/Expand All, the three Smart Optimizers, Bulk ME/TE, the BOM
+// filters, the stock/character controls in js/esi.js and js/config.js - ~20 call sites in total).
+// Reported directly, repeatedly, across several of these individually (Build All and the Layer
+// buttons, then Collapse/Compact/Expand All, then Buy All) before it became clear this needed
+// fixing ONCE, here, rather than chasing it button by button - every caller of this shared function
+// gets the same protection automatically, including ones never individually reported.
+//
+// Confirmed directly, at real scale (a real Caiman build on the live site, not a synthetic test),
+// that a single before/after measurement isn't enough: content-visibility:auto (css/styles.css's
+// own .diagram-node rule) gives a brand-new or newly-revealed off-screen card a placeholder size
+// until the browser lays it out for real, in a column-centered flex row (#tree-container,
+// align-items:center) where any column's real height arriving late re-shifts every other column
+// including root's - and that settling can land in three or more distinct, separately-timed steps
+// on a big enough tree, not just one or two, over as long as a couple of real seconds under load.
+// So this doesn't guess how many corrections are needed or how long to wait - it polls root's own
+// on-screen position every animation frame and re-corrects panX/panY every time it's moved from
+// where it started, however many times that takes, budgeted by WALL-CLOCK time (up to 5 real
+// seconds) rather than a fixed frame count, since a single rAF callback can itself take several
+// hundred ms to fire under the real load of a big rebuild - confirmed directly that a fixed tick
+// count can exhaust itself and stop correcting while genuine work is still in flight.
+//
+// Reported directly, again, once the drift itself stopped happening: correcting AFTER a wrong
+// position has already been painted is still a visible flash-then-snap-back, even when the final
+// position ends up exactly right. Small (sub-pixel-ish) corrections are left alone - not worth
+// hiding anything for - but the moment a correction large enough to actually be seen is needed,
+// the whole diagram (#pan-zoom-content - cards AND the connecting-lines SVG together, so the two
+// can never visibly disagree with each other for a moment) is hidden for the rest of the settle
+// loop and only revealed once position has held steady, with lines explicitly redrawn right before
+// that reveal so what appears is already final in every respect - never a jump the user has to see.
 async function withRootPanAnchor(action) {
   const rootBefore = window.recipeTreeRoot;
   const anchorElBefore = rootBefore ? document.getElementById(`node-card-${rootBefore.instanceId}`) : null;
   const rectBefore = anchorElBefore ? anchorElBefore.getBoundingClientRect() : null;
   const anchorPathKey = rootBefore ? rootBefore.pathKey : null;
 
-  await action();
+  const result = await action();
 
-  if (!rectBefore || !anchorPathKey || !window.recipeTreeRoot) return;
-  const anchorNodeAfter = findNodeByPathKey(window.recipeTreeRoot, anchorPathKey);
-  const anchorElAfter = anchorNodeAfter ? document.getElementById(`node-card-${anchorNodeAfter.instanceId}`) : null;
-  if (anchorElAfter) {
+  if (!rectBefore || !anchorPathKey || !window.recipeTreeRoot) return result;
+
+  const panZoomContent = document.getElementById('pan-zoom-content');
+  const MASK_THRESHOLD = 3; // px - only hide the diagram for a correction actually big enough to see
+  let masked = false;
+  const deadline = performance.now() + 5000;
+  let stableStreak = 0;
+  while (performance.now() < deadline && stableStreak < 6) {
+    const anchorNodeAfter = findNodeByPathKey(window.recipeTreeRoot, anchorPathKey);
+    const anchorElAfter = anchorNodeAfter ? document.getElementById(`node-card-${anchorNodeAfter.instanceId}`) : null;
+    if (!anchorElAfter) break;
     const rectAfter = anchorElAfter.getBoundingClientRect();
-    window.panX -= (rectAfter.left - rectBefore.left);
-    window.panY -= (rectAfter.top - rectBefore.top);
-    updateTransform();
+    const dTop = rectAfter.top - rectBefore.top, dLeft = rectAfter.left - rectBefore.left;
+    if (Math.abs(dTop) > 0.3 || Math.abs(dLeft) > 0.3) {
+      if (!masked && panZoomContent && (Math.abs(dTop) > MASK_THRESHOLD || Math.abs(dLeft) > MASK_THRESHOLD)) {
+        panZoomContent.style.visibility = 'hidden';
+        masked = true;
+      }
+      window.panX -= dLeft;
+      window.panY -= dTop;
+      updateTransform();
+      stableStreak = 0;
+    } else {
+      stableStreak++;
+    }
+    await new Promise(r => requestAnimationFrame(r));
   }
+  if (masked && panZoomContent) {
+    if (typeof drawConnectingLines === 'function') drawConnectingLines();
+    panZoomContent.style.visibility = '';
+  }
+  return result;
 }
 window.withRootPanAnchor = withRootPanAnchor;
 
-// Reported directly, confirmed by direct measurement at REAL scale (a real Caiman build, real
-// viewport, not a synthetic test) that this is worse than a fixed-count fix can chase: Expand All,
-// Build All, and +1/-1 Layer (anything that can insert or reveal a large batch of full-size cards)
-// can drift in three or more distinct, separately-timed steps on a large enough tree, not just one
-// or two. Root cause is still content-visibility:auto (css/styles.css's own .diagram-node rule)
-// giving a brand-new off-screen card a placeholder size until the browser lays it out for real, in
-// a column-centered flex row (#tree-container, align-items:center) where any column's real height
-// arriving late re-shifts every other column including root's - but confirmed directly that the
-// browser doesn't necessarily resolve every placeholder in one batch, so a fixed "correct once, then
-// correct once more for the revert" assumption (an earlier version of this function) still left real
-// drift in place on a big tree. This version doesn't guess how many corrections are needed - it
-// forces every card real for the duration of the actual rebuild (as before, so the vast majority of
-// the drift never happens in the first place), then polls root's own on-screen position across
-// consecutive animation frames afterward and re-corrects panX/panY EVERY time it's found to have
-// moved from where it started, however many times that takes, until it holds still for several
-// frames in a row. Verified directly against the real, reproducing case: a real multi-step drift
-// (5391 -> 4984 -> 4911 -> 4893px, three separate landings) collapsed to root never leaving its
-// starting position at all.
+// Thin wrapper around withRootPanAnchor specifically for the actions that can insert or reveal a
+// large BATCH of brand-new full-size cards at once (Expand All, Build All, +1/-1 Layer, Collapse/
+// Compact All) - forcing every card to lay out for real (content-visibility: visible, via
+// #tree-container.force-real-layout) for the duration of exactly that one rebuild means the vast
+// majority of the drift withRootPanAnchor's own settle-loop would otherwise have to chase never
+// happens in the first place. Deliberately NOT applied to every withRootPanAnchor caller - forcing
+// real layout has a real cost on a huge tree, which is exactly what content-visibility:auto exists
+// to avoid (see its own comment in css/styles.css) - only the handful of actions that actually
+// reveal large batches of previously-placeholder-sized cards need it; everything else (Smart
+// Optimizers, Bulk ME/TE, per-card controls, ...) gets withRootPanAnchor's settle-loop and masking
+// on their own, which is what actually fixes the visible jump either way.
 async function withRealCardLayout(action) {
   const container = document.getElementById('tree-container');
-  const rootBefore = window.recipeTreeRoot;
-  const elBefore = rootBefore ? document.getElementById(`node-card-${rootBefore.instanceId}`) : null;
-  const rectBefore = elBefore ? elBefore.getBoundingClientRect() : null;
-  const pathKey = rootBefore ? rootBefore.pathKey : null;
-
-  if (container) container.classList.add('force-real-layout');
-  const result = await action();
-  if (container) container.classList.remove('force-real-layout');
-
-  if (rectBefore && pathKey) {
-    // Budgeted by WALL-CLOCK time, not a fixed frame count - confirmed directly that a fixed count
-    // (60 requestAnimationFrame ticks, ~1s at 60fps) isn't a safe proxy for "long enough": under real
-    // load (a big tree, real network-bound recalculation - worse yet on the LP Store, whose own
-    // recalculate is genuinely async) a single rAF callback can itself take 400-600ms+ to fire, so a
-    // fixed tick count can exhaust itself and stop correcting while real, still-settling work is
-    // still in flight. Runs for up to 5 real seconds (generous - this only ever runs for the handful
-    // of actions that can trigger it, never on an ordinary pan/zoom), or until root holds still for
-    // several consecutive checks, whichever comes first.
-    const deadline = performance.now() + 5000;
-    let stableStreak = 0;
-    while (performance.now() < deadline && stableStreak < 6) {
-      await new Promise(r => requestAnimationFrame(r));
-      const node = window.recipeTreeRoot ? findNodeByPathKey(window.recipeTreeRoot, pathKey) : null;
-      const el = node ? document.getElementById(`node-card-${node.instanceId}`) : null;
-      if (!el) break;
-      const rect = el.getBoundingClientRect();
-      const dTop = rect.top - rectBefore.top, dLeft = rect.left - rectBefore.left;
-      if (Math.abs(dTop) > 0.3 || Math.abs(dLeft) > 0.3) {
-        window.panX -= dLeft;
-        window.panY -= dTop;
-        updateTransform();
-        stableStreak = 0;
-      } else {
-        stableStreak++;
-      }
-    }
-  }
-  return result;
+  return window.withRootPanAnchor(async () => {
+    if (container) container.classList.add('force-real-layout');
+    const result = await action();
+    if (container) container.classList.remove('force-real-layout');
+    return result;
+  });
 }
 window.withRealCardLayout = withRealCardLayout;
 
