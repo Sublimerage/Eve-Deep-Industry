@@ -2708,33 +2708,28 @@ window.recalculateWithPanAnchor = recalculateWithPanAnchor;
 // control that has no single clicked card to pin the way per-card controls do (Build All, Buy All,
 // +1/-1 Layer, Collapse/Compact/Expand All, the three Smart Optimizers, Bulk ME/TE, the BOM
 // filters, the stock/character controls in js/esi.js and js/config.js - ~20 call sites in total).
-// Reported directly, repeatedly, across several of these individually (Build All and the Layer
-// buttons, then Collapse/Compact/Expand All, then Buy All) before it became clear this needed
-// fixing ONCE, here, rather than chasing it button by button - every caller of this shared function
-// gets the same protection automatically, including ones never individually reported.
+// Fixed here once, in the shared function, rather than button by button - every caller gets the
+// same protection automatically, including ones never individually reported.
 //
 // Confirmed directly, at real scale (a real Caiman build on the live site, not a synthetic test),
 // that a single before/after measurement isn't enough: content-visibility:auto (css/styles.css's
 // own .diagram-node rule) gives a brand-new or newly-revealed off-screen card a placeholder size
 // until the browser lays it out for real, in a column-centered flex row (#tree-container,
 // align-items:center) where any column's real height arriving late re-shifts every other column
-// including root's - and that settling can land in three or more distinct, separately-timed steps
-// on a big enough tree, not just one or two, over as long as a couple of real seconds under load.
-// So this doesn't guess how many corrections are needed or how long to wait - it polls root's own
-// on-screen position every animation frame and re-corrects panX/panY every time it's moved from
-// where it started, however many times that takes, budgeted by WALL-CLOCK time (up to 5 real
-// seconds) rather than a fixed frame count, since a single rAF callback can itself take several
-// hundred ms to fire under the real load of a big rebuild - confirmed directly that a fixed tick
-// count can exhaust itself and stop correcting while genuine work is still in flight.
+// including root's - and that settling can land in several distinct, separately-timed steps on a
+// big enough tree. So this polls root's own on-screen position every animation frame and
+// re-corrects panX/panY every time it's moved from where it started, however many times that
+// takes, until it holds still for several frames running.
 //
-// Reported directly, again, once the drift itself stopped happening: correcting AFTER a wrong
-// position has already been painted is still a visible flash-then-snap-back, even when the final
-// position ends up exactly right. Small (sub-pixel-ish) corrections are left alone - not worth
-// hiding anything for - but the moment a correction large enough to actually be seen is needed,
-// the whole diagram (#pan-zoom-content - cards AND the connecting-lines SVG together, so the two
-// can never visibly disagree with each other for a moment) is hidden for the rest of the settle
-// loop and only revealed once position has held steady, with lines explicitly redrawn right before
-// that reveal so what appears is already final in every respect - never a jump the user has to see.
+// A previous version of this tried to hide that correction behind a visibility:hidden mask so
+// nothing would ever be visibly seen mid-correction - reported directly, correctly, as much worse
+// than the problem it solved: on a real, slow, network-bound rebuild (a big tree's own price
+// fetches, not this loop) that meant the ENTIRE diagram vanishing for several real seconds, which
+// reads as the page being frozen or broken, not as "smoothly correcting." Removed entirely - a
+// brief, live, visible correction is a far smaller cost than a multi-second blank screen. The
+// budget is also capped tighter (1.5s, not 5) specifically because it's visible now: a correction
+// genuinely worth waiting 5 real seconds for isn't one this loop should keep visibly nudging the
+// whole time anyway; past 1.5s it settles for whatever position currently holds.
 async function withRootPanAnchor(action) {
   const rootBefore = window.recipeTreeRoot;
   const anchorElBefore = rootBefore ? document.getElementById(`node-card-${rootBefore.instanceId}`) : null;
@@ -2745,10 +2740,7 @@ async function withRootPanAnchor(action) {
 
   if (!rectBefore || !anchorPathKey || !window.recipeTreeRoot) return result;
 
-  const panZoomContent = document.getElementById('pan-zoom-content');
-  const MASK_THRESHOLD = 3; // px - only hide the diagram for a correction actually big enough to see
-  let masked = false;
-  const deadline = performance.now() + 5000;
+  const deadline = performance.now() + 1500;
   let stableStreak = 0;
   while (performance.now() < deadline && stableStreak < 6) {
     const anchorNodeAfter = findNodeByPathKey(window.recipeTreeRoot, anchorPathKey);
@@ -2757,10 +2749,6 @@ async function withRootPanAnchor(action) {
     const rectAfter = anchorElAfter.getBoundingClientRect();
     const dTop = rectAfter.top - rectBefore.top, dLeft = rectAfter.left - rectBefore.left;
     if (Math.abs(dTop) > 0.3 || Math.abs(dLeft) > 0.3) {
-      if (!masked && panZoomContent && (Math.abs(dTop) > MASK_THRESHOLD || Math.abs(dLeft) > MASK_THRESHOLD)) {
-        panZoomContent.style.visibility = 'hidden';
-        masked = true;
-      }
       window.panX -= dLeft;
       window.panY -= dTop;
       updateTransform();
@@ -2769,10 +2757,6 @@ async function withRootPanAnchor(action) {
       stableStreak++;
     }
     await new Promise(r => requestAnimationFrame(r));
-  }
-  if (masked && panZoomContent) {
-    if (typeof drawConnectingLines === 'function') drawConnectingLines();
-    panZoomContent.style.visibility = '';
   }
   return result;
 }
@@ -2787,8 +2771,8 @@ window.withRootPanAnchor = withRootPanAnchor;
 // real layout has a real cost on a huge tree, which is exactly what content-visibility:auto exists
 // to avoid (see its own comment in css/styles.css) - only the handful of actions that actually
 // reveal large batches of previously-placeholder-sized cards need it; everything else (Smart
-// Optimizers, Bulk ME/TE, per-card controls, ...) gets withRootPanAnchor's settle-loop and masking
-// on their own, which is what actually fixes the visible jump either way.
+// Optimizers, Bulk ME/TE, per-card controls, ...) gets withRootPanAnchor's own settle-loop on its
+// own, which is what actually fixes the visible jump either way.
 async function withRealCardLayout(action) {
   const container = document.getElementById('tree-container');
   return window.withRootPanAnchor(async () => {
