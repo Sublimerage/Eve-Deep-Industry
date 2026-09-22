@@ -2832,10 +2832,24 @@ async function withRootPanAnchor(action, cleanup) {
       lastLineRedraw = now;
     }
   }
+  // Reported directly, furiously, and correctly: the camera sometimes refused to pan at all -
+  // grab and drag, and it would visibly snap back to wherever it was before. Root cause: this loop
+  // now runs for several real seconds by design (see its own comment above on why frame-counted
+  // stability wasn't enough), and it had ZERO awareness that a real person might start actually
+  // using the page - dragging to pan, or scrolling to zoom - while it was still in that window. Any
+  // manual pan mid-loop moved root's on-screen position exactly the way this loop is built to
+  // detect and "fix" - so it did, fighting the user's own input to drag things back to the OLD
+  // anchor point. isPanning/isZooming are the same flags the real drag/wheel handlers already
+  // maintain (js/app.js's own pointerdown/pointermove/wheel listeners) - checking them here, and
+  // giving up on this whole correction attempt the instant either is true, means a real gesture
+  // always wins outright and immediately, never gets fought, and never needs to "finish" fighting
+  // before the user regains control - because the user already has it, checked every single frame.
+  function userTookOver() { return !!(window.isPanning || window.isZooming); }
   async function settle(budgetMs, stableMs) {
     const deadline = performance.now() + budgetMs;
     let stableSince = null;
     while (performance.now() < deadline) {
+      if (userTookOver()) return 'user-took-over';
       if (myGeneration !== _panAnchorGeneration) return 'superseded'; // a newer correction has taken over
       const anchorNode = findNodeByPathKey(window.recipeTreeRoot, anchorPathKey);
       const anchorEl = anchorNode ? document.getElementById(`node-card-${anchorNode.instanceId}`) : null;
@@ -2864,7 +2878,11 @@ async function withRootPanAnchor(action, cleanup) {
     // Phase 1: settle before cleanup runs - 250ms of quiet is enough here, this only needs to rule
     // out the immediate/synchronous drift from the rebuild itself.
     const phase1 = await settle(2500, 250);
-    if (phase1 === 'superseded') { if (cleanup) cleanup(); return result; }
+    // cleanup() still always has to run either way - it's releasing force-real-layout's own
+    // ref-count, not a camera correction, and skipping it would leave that class stuck on
+    // indefinitely. What must NOT happen once the user has taken over is phase 2 below, which only
+    // exists to keep re-asserting a camera position the user just explicitly overrode.
+    if (phase1 === 'superseded' || phase1 === 'user-took-over') { if (cleanup) cleanup(); return result; }
 
     if (cleanup) cleanup();
 
@@ -4866,6 +4884,7 @@ if (viewport) {
   // resume below, reusing its own delay), instead of paying that cost on every single tick.
   let pendingZoomRafScheduled = false;
   let wheelLinesRedrawTimeout = null;
+  let _zoomFlagResetTimeout = null;
   viewport.addEventListener('wheel', (e) => {
     e.preventDefault();
     const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
@@ -4889,6 +4908,12 @@ if (viewport) {
     // resume back out, and it only actually fires once scrolling has genuinely stopped for a beat.
     suspendCardBlurDuringPanZoom();
     resumeCardBlurAfterPanZoom(150);
+    // Same debounced flag idea, for withRootPanAnchor's own settle-loop to check (see its own
+    // comment) - a wheel gesture has no pointerup to mark a clean end, so "still zooming" is just
+    // "a wheel tick landed in the last 150ms", same window the blur-resume above already uses.
+    window.isZooming = true;
+    clearTimeout(_zoomFlagResetTimeout);
+    _zoomFlagResetTimeout = setTimeout(() => { window.isZooming = false; }, 150);
   }, { passive: false });
 }
 
