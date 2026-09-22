@@ -219,6 +219,19 @@ img {
 .diagram-node.diagram-node-compact {
   content-visibility: visible;
 }
+/* Temporary override for the duration of one rebuild that can insert a large batch of brand-new
+   full-size cards at once (Expand All, Build All, +1 Layer) - see withRealCardLayout's own comment
+   (js/app.js) for why: content-visibility:auto's own placeholder-to-real layout swap for a
+   newly-inserted card happens on the browser's own schedule, confirmed directly to land 250-500ms
+   after insertion in a real case, not within any reasonable number of animation frames - long after
+   the camera-pin correction had already measured (and gotten it wrong) against the placeholder
+   size. Forcing every card real for exactly this one rebuild means there's nothing left to pop
+   later; content-visibility:auto is restored immediately afterward for every ordinary pan/zoom.
+   #tree-container-scoped rather than a bare class so it can never leak onto some unrelated card
+   sharing the .diagram-node class elsewhere. */
+#tree-container.force-real-layout .diagram-node {
+  content-visibility: visible !important;
+}
 
 .diagram-node:hover {
   transform: translateY(-2px);
