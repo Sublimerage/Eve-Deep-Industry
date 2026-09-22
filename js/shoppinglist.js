@@ -39,6 +39,7 @@ const SL_ITEMS_KEY = 'eve_sl_session_v1';
 const SL_WISHLIST_KEY = 'eve_sl_wishlist_v1';
 const SL_FAVORITES_KEY = 'eve_sl_favorites_v1';
 const SL_PULL_CHECKED_KEY = 'eve_sl_pull_checked_v1';
+const SL_COLLAPSED_PANELS_KEY = 'eve_sl_collapsed_panels_v1';
 
 // ── ITEM LOOKUP (local index, no network) ───────────────────────────────────────
 // EVE's own in-game copy/paste (fitting window, cargo/container select-all) always uses the exact
@@ -749,6 +750,23 @@ function slSwitchTab(name) {
   document.getElementById('sl-tab-' + name).classList.add('active');
 }
 
+// ── PANEL MINIMIZE ────────────────────────────────────────────────────────────────
+// Requested directly for Favorite Items and Already Have - generic by panel id rather than two
+// one-off toggles, so any other panel that wants this later just needs the same button/id pair.
+// Persisted so a panel you've minimized stays that way across a reload, same idea as the build
+// tree's own collapse state persistence on the Calculator.
+function slTogglePanelCollapse(panelId) {
+  const panel = document.getElementById(panelId); if (!panel) return;
+  const collapsed = panel.classList.toggle('collapsed');
+  const saved = new Set(window.safeParseJSON(localStorage.getItem(SL_COLLAPSED_PANELS_KEY), []));
+  if (collapsed) saved.add(panelId); else saved.delete(panelId);
+  try { localStorage.setItem(SL_COLLAPSED_PANELS_KEY, JSON.stringify([...saved])); } catch (e) {}
+}
+function slRestoreCollapsedPanels() {
+  const saved = window.safeParseJSON(localStorage.getItem(SL_COLLAPSED_PANELS_KEY), []);
+  saved.forEach(id => { const el = document.getElementById(id); if (el) el.classList.add('collapsed'); });
+}
+
 // ── WISHLIST ─────────────────────────────────────────────────────────────────────
 function slAddWishFit() {
   const text = document.getElementById('sl-favwish-eft').value.trim();
@@ -1123,6 +1141,7 @@ function slLoadSession() {
 window.onload = function () {
   if (typeof buildPrepackedIndexes === 'function') buildPrepackedIndexes();
   try { const hc = localStorage.getItem('eve_sl_hauler_m3'); if (hc) document.getElementById('sl-hauler-capacity').value = hc; } catch (e) {}
+  slRestoreCollapsedPanels();
   slLoadSession();
   slLoadWishlist(); slRenderWishlist();
   slLoadFavorites(); slRenderFavorites();
