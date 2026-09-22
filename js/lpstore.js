@@ -953,13 +953,24 @@ function getLPRedemptionBatches(result) {
 // The root card's own "Times Redeemed" input (js/app.js createNodeCard, isLPIsolatedRoot branch)
 // calls this instead of the Calculator's normal syncCardRunsToGlobal - redemptions is the number the
 // player actually edits, translated to the runs count the rest of the Calculator's machinery expects.
+//
+// Reported directly, with a screenshot of exactly this field: editing it visibly jumped the camera
+// and the connecting lines. Root cause: this called window.recalculate() completely bare, with no
+// withRootPanAnchor protection at all - not "unawaited" (already fixed for this file's other bare
+// calls, see the comment above isolateOffer's own recalculate call) but never wrapped in the first
+// place, so a change big enough to reflow the tree (redemption count changes how many of each
+// required item are needed, which can flip a required item's own Build/Buy math) had nothing
+// correcting root's position afterward. Same fix as every other camera-jump round on this bug.
 function onLPRedemptionCountChange(e) {
   if (!_lpIsolatedResult) return;
   // Just set the one stable number - ensureLPRedemptionNodesPresent (run by the recalculate hook,
   // right below) derives window.globalRuns from this fresh on every recalculate, not the other way
   // around. See _lpRedemptionCount's own comment for why that direction matters.
   _lpRedemptionCount = Math.max(1, parseInt(e.target.value) || 1);
-  if (typeof window.recalculate === 'function') window.recalculate();
+  if (typeof window.recalculate === 'function') {
+    if (typeof window.withRootPanAnchor === 'function') window.withRootPanAnchor(async () => { await window.recalculate(); });
+    else window.recalculate();
+  }
 }
 window.onLPRedemptionCountChange = onLPRedemptionCountChange;
 
@@ -1129,6 +1140,20 @@ function installLPRecalculateHook() {
     restoreCalculatorState(_lpSavedCalculatorState); // undo this call's own saveActiveState() - see the note above CALCULATOR_STATE_KEYS
     renderLPExtraStats();
     renderLPStoreActiveStationLabel(); // picks up a structure/preset change made via the sidebar
+    // Reported directly, with a screenshot: the connecting lines briefly pointing at the top of the
+    // root card instead of its middle, only ever on this page. Root cause: original.apply() above
+    // (the real recalculate()) already drew every connecting line once, synchronously, against
+    // whatever the tree looked like at that exact moment - but renderLPExtraStats() right above this
+    // comment adds or resizes the "LP Store Economics" card as its own column, appended after
+    // root's, inside the SAME align-items:center flex row (#tree-container) every other column
+    // (including root's) is centered against. A column changing size after the fact re-centers the
+    // whole row, which can shift root - and everything else - without the lines drawn a moment ago
+    // knowing to follow. scheduleConnectingLinesRedraw() (already called inside original.apply())
+    // catches this on its own after a couple of frames, but only after a real, visible flash of
+    // wrong first - this draws fresh immediately, right after the layout that actually needs it has
+    // landed, the same "why redraw synchronously instead of waiting" reasoning recalculate() and
+    // resetPanZoom() already use elsewhere in this codebase.
+    if (typeof window.drawConnectingLines === 'function') window.drawConnectingLines();
     return result;
   };
   const wrapped = function (...args) {
@@ -2000,7 +2025,13 @@ function saveSharedTaxSettingsFromLPStore() {
   // Re-rank the list against the new fees, AND live-refresh the isolated canvas (if any) - the
   // Calculator's own recalculate() already reads these same #facility-tax/etc. ids directly.
   if (_lpActiveCorpId) loadAndRankLPStore(_lpActiveCorpId);
-  if (_lpIsolatedResult && typeof window.recalculate === 'function') window.recalculate();
+  // Wrapped in withRootPanAnchor, not a bare call - same camera-jump bug and fix as
+  // onLPRedemptionCountChange's own comment above: a tax/fee edit can change ME/TE-driven build
+  // costs enough to shift the tree's layout, with nothing correcting root's position otherwise.
+  if (_lpIsolatedResult && typeof window.recalculate === 'function') {
+    if (typeof window.withRootPanAnchor === 'function') window.withRootPanAnchor(async () => { await window.recalculate(); });
+    else window.recalculate();
+  }
 }
 window.saveSharedTaxSettingsFromLPStore = saveSharedTaxSettingsFromLPStore;
 
