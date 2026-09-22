@@ -2704,91 +2704,55 @@ async function recalculateWithPanAnchor(e) {
 }
 window.recalculateWithPanAnchor = recalculateWithPanAnchor;
 
-// Anchors on the root card through an arbitrary async action, regardless of page - for EVERY bulk
-// control that has no single clicked card to pin the way per-card controls do (Build All, Buy All,
-// +1/-1 Layer, Collapse/Compact/Expand All, the three Smart Optimizers, Bulk ME/TE, the BOM
-// filters, the stock/character controls in js/esi.js and js/config.js - ~20 call sites in total).
-// Fixed here once, in the shared function, rather than button by button - every caller gets the
-// same protection automatically, including ones never individually reported.
+// The whole camera-anchor system, rewritten from scratch after eight-plus rounds of chasing
+// symptoms one at a time on the previous version - a settle-loop that reactively detected drift
+// and corrected it, needing an ever-growing budget (up to 6.5s across two phases) to reliably catch
+// content-visibility:auto's own delayed placeholder-to-real layout swap on a big tree. That design
+// had two fatal problems, both reported directly, bluntly, and correctly: (1) "why does it have to
+// move in the first place?" - a reactive correction is, by definition, visible for however long it
+// takes to notice and fix the drift, which is exactly what "jumps, then snaps back" looks like; (2)
+// once the loop's own budget grew long enough to reliably catch that delayed settling, it grew long
+// enough to actually overlap with a real person grabbing the canvas to pan or scroll it themselves
+// - which the loop, watching only for "did root move," couldn't tell apart from the exact drift it
+// was built to fight, so it fought the user's own input too.
 //
-// Confirmed directly, at real scale (a real Caiman build on the live site, not a synthetic test),
-// that a single before/after measurement isn't enough: content-visibility:auto (css/styles.css's
-// own .diagram-node rule) gives a brand-new or newly-revealed off-screen card a placeholder size
-// until the browser lays it out for real, in a column-centered flex row (#tree-container,
-// align-items:center) where any column's real height arriving late re-shifts every other column
-// including root's - and that settling can land in several distinct, separately-timed steps on a
-// big enough tree. So this polls root's own on-screen position every animation frame and
-// re-corrects panX/panY every time it's moved from where it started, however many times that
-// takes, until it holds still for several frames running.
+// This version removes the reactive half entirely. #tree-container.force-real-layout
+// (content-visibility: visible !important on every card, css/styles.css) is switched on the first
+// time anything here runs and never switched back off - not ref-counted, not phased, not removed
+// on a timer. That's a real, deliberate trade: every card in the tree pays the layout cost
+// content-visibility:auto exists to let off-screen ones skip, for as long as the page stays open,
+// instead of just the handful of "big reveal" actions earlier rounds singled out for it. Given the
+// choice this codebase's own history has now made twice - see the masking-mask revert and the
+// blur-suspend fix - between a real performance cost and a visible correctness bug, the visible bug
+// loses. It's exactly the removal of this same class, on a timer, that was the actual source of
+// every "settle, then drift again later" measurement in every earlier round: content-visibility's
+// own decision to shrink a newly-uncovered off-screen card back down isn't synchronous with
+// anything JS can watch for, so ANY removal - no matter how carefully timed - reopens the same gap.
+// Never removing it closes that gap for good rather than chasing it further. Root's own card
+// (.diagram-node-root, css/styles.css) already opted out of content-visibility:auto permanently for
+// the same reason; this just extends that same reasoning to the rest of the tree.
 //
-// A previous version of this tried to hide that correction behind a visibility:hidden mask so
-// nothing would ever be visibly seen mid-correction - reported directly, correctly, as much worse
-// than the problem it solved: on a real, slow, network-bound rebuild (a big tree's own price
-// fetches, not this loop) that meant the ENTIRE diagram vanishing for several real seconds, which
-// reads as the page being frozen or broken, not as "smoothly correcting." Removed entirely - a
-// brief, live, visible correction is a far smaller cost than a multi-second blank screen. The
-// budget is also capped tighter (1.5s, not 5) specifically because it's visible now: a correction
-// genuinely worth waiting 5 real seconds for isn't one this loop should keep visibly nudging the
-// whole time anyway; past 1.5s it settles for whatever position currently holds.
-//
-// Reported directly, correctly, as "extreme jittering/vibrating" - confirmed by code review as a
-// real, structural gap: this function has ~20 independent call sites and had NO coordination
-// between them at all - two calls close enough together (e.g. clicking one bulk button, then a
-// different one before the first's up-to-1.5s settle-loop had finished) run fully concurrently,
-// each polling and correcting the SAME window.panX/panY every animation frame against its OWN,
-// independently-captured target. Neither loop can ever see 6 stable frames while the other is
-// actively fighting it, so both run to their full deadline visibly nudging the diagram back and
-// forth against each other - not a one-time multi-step drift (what earlier rounds found and
-// fixed), but sustained, real, ongoing interference. Fixed with a monotonic generation counter:
-// starting a new correction immediately retires any older one still running (checked once per
-// frame) - only the MOST RECENT call is ever actually allowed to touch panX/panY, so a second
-// click always wins cleanly instead of fighting the first for control of the camera. Each call's
-// own action() (the real state change/rebuild) still always runs in full, regardless of whether
-// its correction phase ends up superseded - only the camera-correction polling is coordinated.
-//
-// Reported again, still happening, plus a new symptom: cards visibly jumping on a single ordinary
-// Expand/Collapse/Compact All click (not just overlapping ones), and the tool "lagging for a
-// second or two." Measured directly this time instead of guessed at - logged every settle-loop
-// iteration's own timing on a real 200+ card tree. The individual correction (updateTransform())
-// was landing right; what was actually costing 1-2 real seconds was a SINGLE animation frame in
-// the middle of the loop taking over 1200ms to even arrive. That exact symptom - a normal ~11ms
-// frame ballooning to as much as ~2000ms - is already identified and fixed elsewhere in this file
-// for real user pan/zoom gestures: suspendCardBlurDuringPanZoom's own comment measured it directly
-// as the backdrop-filter blur() on every card having to be re-sampled on every frame the content
-// moves under it, on a big real (not content-visibility-skipped) tree. This loop calls
-// updateTransform() repeatedly to correct drift - that's a camera pan by definition, just a
-// programmatic one instead of a mouse drag - but unlike every real drag/wheel gesture, it never
-// told the page a pan was happening, so it never got that same protection and paid the full blur
-// cost on every corrected frame. Wrapped the whole correction loop in the same suspend/resume the
-// real gestures already use - covers all ~20 callers at once, not just the ones that also force
-// real card layout, since any of them can end up correcting drift on a big tree.
-//
-// With blur suspended, re-measured Expand All specifically (the heaviest case - building 190+
-// brand-new full cards from a collapsed 22-chip start) directly against a real 200+ card tree, many
-// times over: it regularly needed a SECOND, separate settling wave - looking stable for a frame or
-// two, then drifting again by real, visible amounts (tens to hundreds of px) a further 1-1.5
-// real seconds later, before finally holding for good. The old 1.5s budget was tuned back when
-// every corrected frame was itself slow (so 1.5s of wall-clock only covered a handful of actual
-// checks) - with blur no longer inflating individual frames, the same budget now expires WHILE
-// still genuinely waiting on that second wave, so the loop gives up and lands on a real, visibly
-// wrong position instead of the final correct one. Extended to 2.5s specifically because that's
-// what real measurement showed the second wave needed, not a round-number guess - and it's a safe
-// increase now: the loop still always exits the moment 6 real stable frames are seen, so a small
-// tree or a quick correction is never slower than before, and blur being suspended means the extra
-// budget is no longer paid as visible per-frame jank the way it would have been pre-fix.
-// Optional second argument, `cleanup` - runs exactly once, mid-loop, the moment root first holds
-// still for a full 6-frame streak, then the SAME loop keeps watching for another 6-frame streak
-// afterward before actually returning. Exists because withRealCardLayout's own force-real-layout
-// removal is itself a real, synchronous layout change (an off-screen placeholder-sized card can
-// shrink back the instant content-visibility:auto is back in effect) - confirmed directly: without
-// this, root measured correctly the whole time the settle-loop was watching, then landed up to
-// ~1100px off by the time the caller's OWN cleanup (removing the class after this function had
-// already returned) finished, with nothing left to catch it. Running cleanup from inside the loop,
-// then re-arming the same stability check, means any drift IT causes gets corrected exactly like
-// any other drift instead of leaking out unprotected after the fact.
+// With nothing to react to, this function now just: (1) makes sure the class is on: (2) runs the
+// action; (3) does ONE quick confirmation pass afterward, purely as a safety net for the rare case
+// content-visibility hadn't quite caught up with the DOM by the time getBoundingClientRect() first
+// ran (measured directly - a handful of frames, not the multi-second chase this used to need); and
+// (4) gives way instantly and permanently the moment a real pan or zoom gesture starts (the
+// isPanning/isZooming flags the real drag/wheel handlers already maintain), so a person's own input
+// is never fought, not even for one frame. The generation counter still coordinates overlapping
+// calls (two bulk buttons clicked close together) so only the most recent one ever touches
+// panX/panY - unrelated to the force-real-layout question, still needed on its own merits.
 let _panAnchorGeneration = 0;
 let _panAnchorActiveCount = 0;
-async function withRootPanAnchor(action, cleanup) {
+function forceCardsReal() {
+  const container = document.getElementById('tree-container');
+  if (container) container.classList.add('force-real-layout');
+}
+window.forceCardsReal = forceCardsReal;
+
+function userTookOverCamera() { return !!(window.isPanning || window.isZooming); }
+
+async function withRootPanAnchor(action) {
+  forceCardsReal();
   const rootBefore = window.recipeTreeRoot;
   const anchorElBefore = rootBefore ? document.getElementById(`node-card-${rootBefore.instanceId}`) : null;
   const rectBefore = anchorElBefore ? anchorElBefore.getBoundingClientRect() : null;
@@ -2796,33 +2760,12 @@ async function withRootPanAnchor(action, cleanup) {
 
   const result = await action();
 
-  if (!rectBefore || !anchorPathKey || !window.recipeTreeRoot) { if (cleanup) cleanup(); return result; }
+  if (!rectBefore || !anchorPathKey || !window.recipeTreeRoot) return result;
 
   const myGeneration = ++_panAnchorGeneration;
   _panAnchorActiveCount++;
   if (typeof suspendCardBlurDuringPanZoom === 'function') suspendCardBlurDuringPanZoom();
 
-  // Corrects root back to rectBefore's position for up to budgetMs, requiring stableMs of
-  // genuinely continuous stability (wall-clock, not a frame count) before considering it settled.
-  // Wall-clock, not frame count, because a full trace on a real 200+ card tree showed frame-counted
-  // stability lying: it could read 6 perfectly matching frames in a row, genuinely, and root would
-  // STILL measurably drift again well after that - content-visibility:auto's own decision to
-  // actually skip/shrink an off-screen card again isn't synchronous with anything this loop can
-  // observe via getBoundingClientRect() (forces layout, not the full render pipeline's relevance
-  // check), so it can lag behind in a way frame count doesn't capture.
-  //
-  // Also periodically redraws the connecting lines through this same window, not just root's own
-  // pan - reported directly, with a screenshot, still happening after root's own position was
-  // already confirmed rock-solid: lines from OTHER cards pointing at the wrong spot on a card for
-  // "a second or two". Root cause: this loop only ever tracked ROOT's own rect - a card elsewhere
-  // in the tree that's still settling its own height (the same delayed content-visibility effect
-  // already fixed for root specifically) never gets caught here at all, since it can't move root's
-  // OWN measured position even while it's genuinely still wrong. Redrawing lines only on an actual
-  // root correction (the original, cheaper idea) misses this exact case for the same reason. A
-  // period between redraws, not every single frame, deliberately - drawConnectingLines() forces its
-  // own getBoundingClientRect() across every card with children, and doing that on every one of a
-  // multi-second window's ~60fps frames on a 200+ card tree would reintroduce the same per-frame
-  // cost blur-suspend above exists to avoid, just from a different cause.
   let lastLineRedraw = 0;
   function maybeRedrawLines(force) {
     if (typeof window.drawConnectingLines !== 'function') return;
@@ -2832,150 +2775,51 @@ async function withRootPanAnchor(action, cleanup) {
       lastLineRedraw = now;
     }
   }
-  // Reported directly, furiously, and correctly: the camera sometimes refused to pan at all -
-  // grab and drag, and it would visibly snap back to wherever it was before. Root cause: this loop
-  // now runs for several real seconds by design (see its own comment above on why frame-counted
-  // stability wasn't enough), and it had ZERO awareness that a real person might start actually
-  // using the page - dragging to pan, or scrolling to zoom - while it was still in that window. Any
-  // manual pan mid-loop moved root's on-screen position exactly the way this loop is built to
-  // detect and "fix" - so it did, fighting the user's own input to drag things back to the OLD
-  // anchor point. isPanning/isZooming are the same flags the real drag/wheel handlers already
-  // maintain (js/app.js's own pointerdown/pointermove/wheel listeners) - checking them here, and
-  // giving up on this whole correction attempt the instant either is true, means a real gesture
-  // always wins outright and immediately, never gets fought, and never needs to "finish" fighting
-  // before the user regains control - because the user already has it, checked every single frame.
-  function userTookOver() { return !!(window.isPanning || window.isZooming); }
-  async function settle(budgetMs, stableMs) {
-    const deadline = performance.now() + budgetMs;
+
+  try {
+    // A short, bounded confirmation pass, not an open-ended chase - with force-real-layout never
+    // coming back off, there's no delayed second wave left to wait out, just the ordinary chance
+    // that the very first getBoundingClientRect() above landed a frame or two before layout had
+    // caught up with the DOM this action just changed.
+    const deadline = performance.now() + 800;
     let stableSince = null;
     while (performance.now() < deadline) {
-      if (userTookOver()) return 'user-took-over';
-      if (myGeneration !== _panAnchorGeneration) return 'superseded'; // a newer correction has taken over
+      if (userTookOverCamera()) return result; // a real gesture always wins, instantly, full stop
+      if (myGeneration !== _panAnchorGeneration) return result; // a newer correction has taken over
       const anchorNode = findNodeByPathKey(window.recipeTreeRoot, anchorPathKey);
       const anchorEl = anchorNode ? document.getElementById(`node-card-${anchorNode.instanceId}`) : null;
-      if (!anchorEl) return 'no-anchor';
+      if (!anchorEl) break;
       const rect = anchorEl.getBoundingClientRect();
       const dTop = rect.top - rectBefore.top, dLeft = rect.left - rectBefore.left;
       if (Math.abs(dTop) > 0.3 || Math.abs(dLeft) > 0.3) {
         window.panX -= dLeft;
         window.panY -= dTop;
         updateTransform();
-        maybeRedrawLines(true); // root itself just moved - always worth a fresh draw, not throttled
+        maybeRedrawLines(true);
         stableSince = null;
       } else {
         maybeRedrawLines(false);
         const now = performance.now();
         if (stableSince === null) stableSince = now;
-        if (now - stableSince >= stableMs) { maybeRedrawLines(true); return 'settled'; }
+        if (now - stableSince >= 120) { maybeRedrawLines(true); break; }
       }
       await new Promise(r => requestAnimationFrame(r));
     }
-    maybeRedrawLines(true);
-    return 'timeout';
-  }
-
-  try {
-    // Phase 1: settle before cleanup runs - 250ms of quiet is enough here, this only needs to rule
-    // out the immediate/synchronous drift from the rebuild itself.
-    const phase1 = await settle(2500, 250);
-    // cleanup() still always has to run either way - it's releasing force-real-layout's own
-    // ref-count, not a camera correction, and skipping it would leave that class stuck on
-    // indefinitely. What must NOT happen once the user has taken over is phase 2 below, which only
-    // exists to keep re-asserting a camera position the user just explicitly overrode.
-    if (phase1 === 'superseded' || phase1 === 'user-took-over') { if (cleanup) cleanup(); return result; }
-
-    if (cleanup) cleanup();
-
-    // Phase 2 - ALWAYS runs if there's a cleanup to verify, regardless of how phase 1 ended
-    // (cleanly settled or timed out). Reported directly, confirmed by a full per-frame trace:
-    // when phase 1's own budget got entirely eaten by one pathologically slow frame (repainting
-    // 200+ real cards can genuinely take seconds), the OLD code called cleanup() with the loop
-    // already exited and no follow-up check of any kind - reproducing, exactly, the bug this whole
-    // mechanism exists to prevent. cleanup's own effect (content-visibility reverting on off-screen
-    // cards, which the earlier isolate-mode round of this bug already established isn't synchronous
-    // with removing the class) needs its own guaranteed, independent verification pass no matter
-    // what happened before it - it must never inherit however much (or little, or negative) budget
-    // phase 1 happened to have left over. 2000ms of continuous stability, not 250 - measured
-    // directly (manually re-correcting root, then just watching) that a second, smaller drift can
-    // land a further ~1.5 real seconds after cleanup already looked stable.
-    if (cleanup && myGeneration === _panAnchorGeneration) {
-      await settle(4000, 2000);
-    }
   } finally {
-    // Ref-counted, not a plain resume - two overlapping calls (the exact scenario the generation
-    // counter above exists for) both suspend blur; the older one returning early on being
-    // superseded must not re-enable blur out from under the newer one still actively correcting.
+    // Ref-counted, not a plain resume - two overlapping calls (the generation-counter scenario
+    // above) both suspend blur; the older one returning early on being superseded must not
+    // re-enable blur out from under the newer one still actively correcting.
     _panAnchorActiveCount--;
     if (_panAnchorActiveCount <= 0 && typeof resumeCardBlurAfterPanZoom === 'function') resumeCardBlurAfterPanZoom(0);
   }
   return result;
 }
 window.withRootPanAnchor = withRootPanAnchor;
-
-// Thin wrapper around withRootPanAnchor specifically for the actions that can insert or reveal a
-// large BATCH of brand-new full-size cards at once (Expand All, Build All, +1/-1 Layer, Collapse/
-// Compact All) - forcing every card to lay out for real (content-visibility: visible, via
-// #tree-container.force-real-layout) for the duration of exactly that one rebuild means the vast
-// majority of the drift withRootPanAnchor's own settle-loop would otherwise have to chase never
-// happens in the first place. Deliberately NOT applied to every withRootPanAnchor caller - forcing
-// real layout has a real cost on a huge tree, which is exactly what content-visibility:auto exists
-// to avoid (see its own comment in css/styles.css) - only the handful of actions that actually
-// reveal large batches of previously-placeholder-sized cards need it; everything else (Smart
-// Optimizers, Bulk ME/TE, per-card controls, ...) gets withRootPanAnchor's own settle-loop on its
-// own, which is what actually fixes the visible jump either way.
-//
-// Reported directly, still happening after multiple previous rounds on this exact bug: cards still
-// visibly jumping on a single ordinary Expand/Collapse/Compact All click, and the whole tool
-// noticeably lagging for a second or two while it did. Root cause, found by actually reading this
-// function next to withRootPanAnchor's own settle-loop instead of assuming it was already fine:
-// force-real-layout was being added and removed ENTIRELY INSIDE the action callback handed to
-// withRootPanAnchor - so by the time withRootPanAnchor's own settle-loop started (which exists
-// specifically to keep re-correcting for up to 1.5 real seconds while content-visibility:auto
-// settles), the class protecting against that exact drift had already been switched back off. The
-// loop was running completely unprotected against the very thing it was built to chase - so on a
-// big tree it kept detecting real drift, correcting it, watching it drift again as more cards
-// reverted to placeholder size, for its full budget - which is both the visible jump AND the 1-2
-// second lag (a settle-loop that's actually settling in 2-3 frames is instant; one fighting a moving
-// target for 90 frames is not).
-//
-// Fixing that took two more passes, each one caught by direct before/after measurement rather than
-// assumed correct:
-//
-// First pass moved the class add/remove to wrap the ENTIRE withRootPanAnchor call instead. That
-// broke something else: withRootPanAnchor captures its own "before" snapshot of root's position as
-// the very first thing it does, and forcing every card real is itself a real, synchronous layout
-// change (an off-screen placeholder-sized card can snap to full size the instant the class lands,
-// before recalculate() even runs) - so adding the class before that snapshot meant the loop was
-// faithfully anchoring root back to an ALREADY-SHIFTED position, not the true one the user was
-// looking at right before the click. A full trace showed dTop converging to exactly 0 for two solid
-// seconds, yet root still measured ~1000px from its real starting point once everything was done,
-// because "0" was relative to the wrong baseline.
-//
-// Second pass fixed that by moving the class-add back inside the action callback (so
-// withRootPanAnchor's snapshot is taken first, same as before either fix), while still not removing
-// it until the whole call was done - but removal itself turned out to be the SAME kind of problem
-// one level later: it's also a real layout change (the reverse one - cards allowed to shrink back to
-// placeholder again), and it was happening after withRootPanAnchor had already returned, with
-// nothing left watching to correct whatever it caused. Confirmed directly: root would land exactly
-// right the instant the settle-loop finished, then measurably jump again (regularly 500-1000+px on
-// this tree) by the time this function's own cleanup had run.
-//
-// Fixed by handing the removal to withRootPanAnchor itself as its `cleanup` parameter, so the same
-// loop that's already watching root also watches the removal's own aftermath, under the same
-// protection, instead of running it blind after the fact.
-let _forceRealLayoutRefCount = 0;
-async function withRealCardLayout(action) {
-  const container = document.getElementById('tree-container');
-  _forceRealLayoutRefCount++;
-  return window.withRootPanAnchor(async () => {
-    if (container) container.classList.add('force-real-layout');
-    return await action();
-  }, () => {
-    _forceRealLayoutRefCount--;
-    if (_forceRealLayoutRefCount <= 0 && container) container.classList.remove('force-real-layout');
-  });
-}
-window.withRealCardLayout = withRealCardLayout;
+// withRealCardLayout used to be a separate wrapper only a handful of callers opted into, for the
+// force-real-layout treatment withRootPanAnchor now always applies to everyone - see its own
+// comment above. Kept as a plain alias, not a re-implementation, purely because several other files
+// still call it by that name.
+window.withRealCardLayout = withRootPanAnchor;
 
 // A node can be compact for three different reasons - explicitly collapsed (Collapse All - hides
 // descendants), individually compacted (this function, on a single card - does NOT hide
@@ -4149,54 +3993,38 @@ function updateIsolateModeBanner() {
 }
 window.updateIsolateModeBanner = updateIsolateModeBanner;
 
-// force-real-layout (css/styles.css) wraps the ENTIRE isolate/un-isolate sequence below, including
-// the delayed centerOnSelectedNode pan - reported directly, twice: first that isolating a card
-// showed connecting lines visibly offset from the actual cards for a second or two, then - after an
-// earlier fix here that only wrapped the synchronous render/recalculate() with force-real-layout -
-// confirmed by live measurement (drawn line endpoint vs. actual card edge, sampled every frame) that
-// the offset still reliably appeared, just delayed: correct at first draw, then drifting to 400+px
-// off sometime around 1-1.5s in, only self-correcting again around 2.5-3s. Root cause: force-real-
-// layout was being removed right after the synchronous render/recalculate() call, i.e. BEFORE
-// centerOnSelectedNode's own 60ms-delayed pan and its own follow-up redraw had even run. Content-
-// visibility:auto's placeholder-vs-real decision for off-screen cards isn't synchronous with the
-// class change - it's re-evaluated on the browser's own rendering schedule - so cards that were
-// off-screen in the brand-new (not yet centered) isolated layout could revert to placeholder sizing
-// at any point during that gap, desyncing the lines already drawn against their real size. Keeping
-// force-real-layout on through the pan and a few settle frames after it means content-visibility
-// never gets a chance to skip real layout for any card until the view is actually centered and
-// stable, so there's nothing left to desync by the time the class comes off.
+// force-real-layout (css/styles.css) is switched on once, globally, and never removed - see
+// withRootPanAnchor's own comment for the full reasoning. That single change means neither function
+// below needs to manage its own add/remove timing at all anymore: the whole reason either one used
+// to have to (content-visibility:auto reverting a card off-screen in the freshly-built isolated view
+// before centerOnSelectedNode's pan had even settled, desyncing already-drawn lines from it) can't
+// happen when nothing ever reverts. forceCardsReal() here is just a safety net for the case isolate
+// is the very first tree action on a fresh page load, before anything else has switched it on yet.
 async function isolateComponent(e, instanceId) {
   if (e) e.stopPropagation();
+  forceCardsReal();
   const node = findNodeByInstanceId(window.recipeTreeRoot, instanceId);
   window.isolatedInstanceId = instanceId;
   window.isolatedPathKey = node ? node.pathKey : null;
   window.selectedInstanceId = instanceId;
-  const container = document.getElementById('tree-container');
-  if (container) container.classList.add('force-real-layout');
   renderIsolatedDiagram();
   // Drawn synchronously - renderIsolatedDiagram doesn't go through recalculate(), so this needs its
-  // own immediate draw the same way; scheduleConnectingLinesRedraw right after is just the
-  // placeholder-settling follow-up correction, same as everywhere else.
+  // own immediate draw the same way; scheduleConnectingLinesRedraw right after is just the ordinary
+  // follow-up correction, same as everywhere else.
   drawConnectingLines();
   window.scheduleConnectingLinesRedraw();
   await new Promise(r => setTimeout(r, 60));
   centerOnSelectedNode();
-  // A few extra frames give centerOnSelectedNode's own scheduleConnectingLinesRedraw (2 rAFs) room
-  // to land before force-real-layout comes off and a final draw locks in the settled, centered state.
-  for (let i = 0; i < 4; i++) await new Promise(r => requestAnimationFrame(r));
-  if (container) container.classList.remove('force-real-layout');
-  drawConnectingLines();
 }
 window.isolateComponent = isolateComponent;
 
 async function exitIsolation(e) {
   if (e) e.stopPropagation();
+  forceCardsReal();
   const targetId = window.isolatedInstanceId || window.selectedInstanceId;
   window.isolatedInstanceId = null;
   window.isolatedPathKey = null;
   updateIsolateModeBanner();
-  const container = document.getElementById('tree-container');
-  if (container) container.classList.add('force-real-layout');
   await recalculate();
   await new Promise(r => setTimeout(r, 60));
   window.selectedInstanceId = targetId;
@@ -4206,9 +4034,6 @@ async function exitIsolation(e) {
   drawConnectingLines();
   window.scheduleConnectingLinesRedraw();
   centerOnSelectedNode();
-  for (let i = 0; i < 4; i++) await new Promise(r => requestAnimationFrame(r));
-  if (container) container.classList.remove('force-real-layout');
-  drawConnectingLines();
 }
 window.exitIsolation = exitIsolation;
 
