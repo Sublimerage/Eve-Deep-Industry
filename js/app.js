@@ -2730,6 +2730,22 @@ window.recalculateWithPanAnchor = recalculateWithPanAnchor;
 // budget is also capped tighter (1.5s, not 5) specifically because it's visible now: a correction
 // genuinely worth waiting 5 real seconds for isn't one this loop should keep visibly nudging the
 // whole time anyway; past 1.5s it settles for whatever position currently holds.
+//
+// Reported directly, correctly, as "extreme jittering/vibrating" - confirmed by code review as a
+// real, structural gap: this function has ~20 independent call sites and had NO coordination
+// between them at all - two calls close enough together (e.g. clicking one bulk button, then a
+// different one before the first's up-to-1.5s settle-loop had finished) run fully concurrently,
+// each polling and correcting the SAME window.panX/panY every animation frame against its OWN,
+// independently-captured target. Neither loop can ever see 6 stable frames while the other is
+// actively fighting it, so both run to their full deadline visibly nudging the diagram back and
+// forth against each other - not a one-time multi-step drift (what earlier rounds found and
+// fixed), but sustained, real, ongoing interference. Fixed with a monotonic generation counter:
+// starting a new correction immediately retires any older one still running (checked once per
+// frame) - only the MOST RECENT call is ever actually allowed to touch panX/panY, so a second
+// click always wins cleanly instead of fighting the first for control of the camera. Each call's
+// own action() (the real state change/rebuild) still always runs in full, regardless of whether
+// its correction phase ends up superseded - only the camera-correction polling is coordinated.
+let _panAnchorGeneration = 0;
 async function withRootPanAnchor(action) {
   const rootBefore = window.recipeTreeRoot;
   const anchorElBefore = rootBefore ? document.getElementById(`node-card-${rootBefore.instanceId}`) : null;
@@ -2740,9 +2756,11 @@ async function withRootPanAnchor(action) {
 
   if (!rectBefore || !anchorPathKey || !window.recipeTreeRoot) return result;
 
+  const myGeneration = ++_panAnchorGeneration;
   const deadline = performance.now() + 1500;
   let stableStreak = 0;
   while (performance.now() < deadline && stableStreak < 6) {
+    if (myGeneration !== _panAnchorGeneration) return result; // a newer correction has taken over
     const anchorNodeAfter = findNodeByPathKey(window.recipeTreeRoot, anchorPathKey);
     const anchorElAfter = anchorNodeAfter ? document.getElementById(`node-card-${anchorNodeAfter.instanceId}`) : null;
     if (!anchorElAfter) break;
@@ -3956,38 +3974,68 @@ function updateIsolateModeBanner() {
 }
 window.updateIsolateModeBanner = updateIsolateModeBanner;
 
-function isolateComponent(e, instanceId) {
+// force-real-layout (css/styles.css) wraps the ENTIRE isolate/un-isolate sequence below, including
+// the delayed centerOnSelectedNode pan - reported directly, twice: first that isolating a card
+// showed connecting lines visibly offset from the actual cards for a second or two, then - after an
+// earlier fix here that only wrapped the synchronous render/recalculate() with force-real-layout -
+// confirmed by live measurement (drawn line endpoint vs. actual card edge, sampled every frame) that
+// the offset still reliably appeared, just delayed: correct at first draw, then drifting to 400+px
+// off sometime around 1-1.5s in, only self-correcting again around 2.5-3s. Root cause: force-real-
+// layout was being removed right after the synchronous render/recalculate() call, i.e. BEFORE
+// centerOnSelectedNode's own 60ms-delayed pan and its own follow-up redraw had even run. Content-
+// visibility:auto's placeholder-vs-real decision for off-screen cards isn't synchronous with the
+// class change - it's re-evaluated on the browser's own rendering schedule - so cards that were
+// off-screen in the brand-new (not yet centered) isolated layout could revert to placeholder sizing
+// at any point during that gap, desyncing the lines already drawn against their real size. Keeping
+// force-real-layout on through the pan and a few settle frames after it means content-visibility
+// never gets a chance to skip real layout for any card until the view is actually centered and
+// stable, so there's nothing left to desync by the time the class comes off.
+async function isolateComponent(e, instanceId) {
   if (e) e.stopPropagation();
   const node = findNodeByInstanceId(window.recipeTreeRoot, instanceId);
   window.isolatedInstanceId = instanceId;
   window.isolatedPathKey = node ? node.pathKey : null;
   window.selectedInstanceId = instanceId;
+  const container = document.getElementById('tree-container');
+  if (container) container.classList.add('force-real-layout');
   renderIsolatedDiagram();
   // Drawn synchronously - renderIsolatedDiagram doesn't go through recalculate(), so this needs its
   // own immediate draw the same way; scheduleConnectingLinesRedraw right after is just the
   // placeholder-settling follow-up correction, same as everywhere else.
   drawConnectingLines();
   window.scheduleConnectingLinesRedraw();
-  setTimeout(centerOnSelectedNode, 60);
+  await new Promise(r => setTimeout(r, 60));
+  centerOnSelectedNode();
+  // A few extra frames give centerOnSelectedNode's own scheduleConnectingLinesRedraw (2 rAFs) room
+  // to land before force-real-layout comes off and a final draw locks in the settled, centered state.
+  for (let i = 0; i < 4; i++) await new Promise(r => requestAnimationFrame(r));
+  if (container) container.classList.remove('force-real-layout');
+  drawConnectingLines();
 }
+window.isolateComponent = isolateComponent;
 
-function exitIsolation(e) {
+async function exitIsolation(e) {
   if (e) e.stopPropagation();
   const targetId = window.isolatedInstanceId || window.selectedInstanceId;
   window.isolatedInstanceId = null;
   window.isolatedPathKey = null;
   updateIsolateModeBanner();
-  recalculate();
-  setTimeout(() => {
-    window.selectedInstanceId = targetId;
-    applyNodeHighlightClasses();
-    // Drawn synchronously - see recalculate()'s own comment on why an immediate draw beats a
-    // deferred one.
-    drawConnectingLines();
-    window.scheduleConnectingLinesRedraw();
-    centerOnSelectedNode();
-  }, 60);
+  const container = document.getElementById('tree-container');
+  if (container) container.classList.add('force-real-layout');
+  await recalculate();
+  await new Promise(r => setTimeout(r, 60));
+  window.selectedInstanceId = targetId;
+  applyNodeHighlightClasses();
+  // Drawn synchronously - see recalculate()'s own comment on why an immediate draw beats a
+  // deferred one.
+  drawConnectingLines();
+  window.scheduleConnectingLinesRedraw();
+  centerOnSelectedNode();
+  for (let i = 0; i < 4; i++) await new Promise(r => requestAnimationFrame(r));
+  if (container) container.classList.remove('force-real-layout');
+  drawConnectingLines();
 }
+window.exitIsolation = exitIsolation;
 
 function renderIsolatedDiagram() {
   const container = document.getElementById('tree-container');
