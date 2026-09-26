@@ -371,6 +371,17 @@
               <button type="button" id="lpstore-tab-finditem" onclick="showLPItemSearchArea()" class="lp-pill" title="Search every known LP store at once for one item">All Stores</button>
             </div>
           </div>
+          <!-- How the item you receive is valued: Sell Order = list it yourself at the Jita sell price
+               (net of sales tax + broker fee, the original behavior); Instant Sell = sell straight into
+               the highest Jita buy order (no waiting, no broker fee, less ISK per item). Wired to
+               setLPSellMode() in js/lpstore.js; the choice is saved and shared with the phone layout.
+               Lives in this always-visible bar (not in the ranked list, which stays hidden until a
+               store is loaded) because it also drives Find Item's estimates. -->
+          <div class="flex items-center gap-1 p-1 rounded-full flex-shrink-0" style="background:rgba(255,255,255,0.04);" role="group" aria-label="Value the item as">
+            <span class="text-[10px] uppercase tracking-wide font-bold" style="color:var(--text-mute); padding:0 4px 0 10px;">Value item as</span>
+            <button type="button" id="btn-lpstore-sell-sell" onclick="setLPSellMode('sell')" class="lp-pill active" aria-pressed="true" title="List it yourself at the Jita sell price. Waits for a buyer; sales tax and broker fee apply.">Sell Order</button>
+            <button type="button" id="btn-lpstore-sell-instant" onclick="setLPSellMode('instant')" class="lp-pill" aria-pressed="false" title="Sell straight into the highest Jita buy order. Instant and no broker fee (sales tax still applies), but usually less ISK per item.">Instant Sell</button>
+          </div>
         </div>
         <div id="lpstore-corp-popover" class="lpstore-corp-popover glass-card hidden">
           <div class="relative mb-2">
@@ -416,15 +427,6 @@
                real-background, always-visible treatment the app already uses for its one other
                primary search field (Invention's own item search). -->
           <h2 class="text-sm font-bold uppercase tracking-wider rajdhani mb-2" style="color:var(--accent);">Ranked Offers</h2>
-          <!-- How the item you receive is valued: Sell Order = list it yourself at the Jita sell price
-               (net of sales tax + broker fee, the original behavior); Instant Sell = sell straight into
-               the highest Jita buy order (no waiting, no broker fee, less ISK per item). Wired to
-               setLPSellMode() in js/lpstore.js; the choice is saved and shared with the phone layout. -->
-          <div class="flex items-center gap-2 flex-wrap mb-3">
-            <span class="text-[10px] uppercase tracking-wide font-bold" style="color:var(--text-mute);">Value the item as</span>
-            <button type="button" id="btn-lpstore-sell-sell" onclick="setLPSellMode('sell')" class="lp-pill" aria-pressed="true" title="List it yourself at the Jita sell price. Waits for a buyer; sales tax and broker fee apply.">Sell Order</button>
-            <button type="button" id="btn-lpstore-sell-instant" onclick="setLPSellMode('instant')" class="lp-pill" aria-pressed="false" title="Sell straight into the highest Jita buy order. Instant and no broker fee (sales tax still applies), but usually less ISK per item.">Instant Sell</button>
-          </div>
           <div class="relative mb-3">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-mute);pointer-events:none;"><circle cx="10.5" cy="10.5" r="6.5"/><line x1="20" y1="20" x2="15.5" y2="15.5"/></svg>
             <input type="text" id="lpstore-search-input" placeholder="Search by item name..." autocomplete="off" oninput="setLPStoreSearch(this.value)" class="field-box w-full text-white font-bold mono text-sm" style="padding:9px 12px 9px 34px;">
@@ -692,7 +694,7 @@
   <script src="js/tree.js?v=8.0.7" defer></script>
   <script src="js/optimizers.js?v=8.0.25" defer></script>
   <script src="js/app.js?v=15.127.0" defer></script>
-  <script src="js/lpstore.js?v=7.39.0" defer></script>
+  <script src="js/lpstore.js?v=7.39.1" defer></script>
   <script src="js/custom-select.js?v=1.5.0" defer></script>
 </body>
 </html>
