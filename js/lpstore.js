@@ -331,6 +331,25 @@ window.renderLPCategoryBar = renderLPCategoryBar;
 let _lpItemCategoryCache = {}; // typeId -> category id, resolved live (see resolveLPItemCategories)
 let _lpSortKey = 'iskPerLp';
 let _lpSortDir = -1;          // -1 desc, 1 asc
+
+// How the item you get is valued (Ranked Offers, Find Item estimates, the isolated card's LP-aware
+// profit): 'sell' = list it yourself at the Jita sell price, net of sales tax AND broker fee (the
+// original behavior, and the default); 'instant' = sell straight into the highest Jita buy order -
+// usually less ISK per item, but no waiting and no broker fee (sales tax still applies). Same rule
+// the Calculator already uses for its own instant-sell figure (netBuyRevenue in js/app.js). The
+// cost side (required items, materials) is always what you'd pay to acquire them, unaffected.
+// Shared with the phone layout (js/mobile-lp.js) through the same localStorage key.
+const LP_SELL_MODE_KEY = 'eve_lp_sell_mode';
+let _lpSellMode = 'sell';
+try { if (localStorage.getItem(LP_SELL_MODE_KEY) === 'instant') _lpSellMode = 'instant'; } catch (e) { /* storage blocked - stays on 'sell' */ }
+function lpOutputUnitPrice(typeId) {
+  const p = (window.priceCache && window.priceCache[typeId]) || {};
+  return (_lpSellMode === 'instant' ? p.buy : p.sell) || 0;
+}
+function lpSellNetFactor() {
+  const { salesTax, brokerFee } = window.getActiveFeeInputs ? window.getActiveFeeInputs() : { salesTax: 0.036, brokerFee: 0.01 };
+  return _lpSellMode === 'instant' ? (1 - salesTax) : (1 - salesTax - brokerFee);
+}
 let _lpExpandedOfferIds = new Set();
 let _lpResolvedNames = {};    // typeId -> name, for anything eve_db.js's EVE_ITEMS doesn't have
 let _lpOfferByOutputTypeId = {}; // typeId -> [offers], built per corp load - also mirrored onto
@@ -551,10 +570,9 @@ async function evaluateDirectSellOffer(offer) {
   // already deducts both. Both sides assume you're buying/selling at Jita specifically (same
   // station fetchMarketPrices always uses) - not wherever you'd actually be standing in the
   // warzone.
-  const { salesTax, brokerFee } = window.getActiveFeeInputs ? window.getActiveFeeInputs() : { salesTax: 0.036, brokerFee: 0.01 };
-  const outputPrice = (window.priceCache[offer.type_id] || {}).sell || 0;
+  const outputPrice = lpOutputUnitPrice(offer.type_id); // sell price, or the highest buy order in 'instant' mode
   const grossRevenue = outputPrice * offer.quantity;
-  const revenue = grossRevenue * (1 - salesTax - brokerFee);
+  const revenue = grossRevenue * lpSellNetFactor();
 
   const requiredItemsCost = requiredItemsMarketCost(offer);
   const cost = offer.isk_cost + requiredItemsCost;
@@ -615,7 +633,7 @@ async function evaluateBpcOffer(offer) {
 
   const materialCost = typeof window.calculateTreeNodeCost === 'function' ? window.calculateTreeNodeCost(root) : 0;
 
-  const { facilityTax, sccSurcharge, salesTax, brokerFee } = window.getActiveFeeInputs ? window.getActiveFeeInputs() : { facilityTax: 0.01, sccSurcharge: 0.04, salesTax: 0.036, brokerFee: 0.01 };
+  const { facilityTax, sccSurcharge } = window.getActiveFeeInputs ? window.getActiveFeeInputs() : { facilityTax: 0.01, sccSurcharge: 0.04 };
   const structureRoleBonus = structureType.costBonus / 100;
   let jobFee = 0;
   if (typeof window.calculateNodeEIV === 'function' && typeof window.calculateNodeJobFee === 'function') {
@@ -625,9 +643,9 @@ async function evaluateBpcOffer(offer) {
 
   const requiredItemsCost = requiredItemsMarketCost(offer);
 
-  const outputPrice = (window.priceCache[productTypeId] || {}).sell || 0;
+  const outputPrice = lpOutputUnitPrice(productTypeId);
   const grossRevenue = outputPrice * root.qtyNeeded;
-  const revenue = grossRevenue * (1 - salesTax - brokerFee);
+  const revenue = grossRevenue * lpSellNetFactor();
 
   const cost = offer.isk_cost + requiredItemsCost + materialCost + jobFee;
   const profit = revenue - cost;
@@ -756,6 +774,38 @@ function selectLPStoreCorp(corpIdStr) {
   loadAndRankLPStore(corpIdStr);
 }
 window.selectLPStoreCorp = selectLPStoreCorp;
+
+// Re-values every already-ranked offer (and the Find Item estimates) for the current sell mode from
+// prices already in memory - no refetch and no tree rebuild, since only the revenue side changes.
+function lpRepriceForSellMode() {
+  const f = lpSellNetFactor();
+  _lpRankedResults.forEach(r => {
+    r.revenue = lpOutputUnitPrice(r.outputTypeId) * r.outputQty * f;
+    r.profit = r.revenue - r.cost;
+    r.iskPerLp = r.lpCost > 0 ? r.profit / r.lpCost : null;
+  });
+  if (_lpItemSearchIndex) _lpItemSearchIndex.forEach(lpApplyEstimate);
+}
+function updateLPSellModeButtons() {
+  ['sell', 'instant'].forEach(m => {
+    const btn = document.getElementById(`btn-lpstore-sell-${m}`);
+    if (btn) { btn.classList.toggle('active', m === _lpSellMode); btn.setAttribute('aria-pressed', String(m === _lpSellMode)); }
+  });
+}
+function setLPSellMode(mode) {
+  mode = mode === 'instant' ? 'instant' : 'sell';
+  if (mode === _lpSellMode) return;
+  _lpSellMode = mode;
+  try { localStorage.setItem(LP_SELL_MODE_KEY, mode); } catch (e) { /* not saved, still applies now */ }
+  updateLPSellModeButtons();
+  lpRepriceForSellMode();
+  renderLPStoreTable();
+  renderLPExtraStats();
+  if (typeof renderLPItemSearchResultsArea === 'function') renderLPItemSearchResultsArea();
+  const q = document.getElementById('lpstore-item-search-input');
+  if (q && q.value && typeof filterLPItemSearchResults === 'function') filterLPItemSearchResults(q.value);
+}
+window.setLPSellMode = setLPSellMode;
 
 function setLPStoreTypeFilter(filter) {
   _lpTypeFilter = filter;
@@ -1210,9 +1260,13 @@ function renderLPExtraStats() {
   // recalculate() already computed net sell revenue net of tax/broker (outputMarketValue is the
   // gross figure it derived that from) - profit is redone here against totalIskCost (which the
   // Calculator's own netProfitSell doesn't know about) rather than reused directly.
-  const { salesTax, brokerFee } = window.getActiveFeeInputs ? window.getActiveFeeInputs() : { salesTax: 0.036, brokerFee: 0.01 };
-  const grossRevenue = root.outputMarketValue || 0;
-  const netRevenue = grossRevenue * (1 - salesTax - brokerFee);
+  let grossRevenue = root.outputMarketValue || 0;
+  // Instant sell: the highest Jita buy order instead of the Auto sell price (a custom price set on
+  // the Calculator's own card still wins, since that's a deliberate override).
+  if (_lpSellMode === 'instant' && (window.rootSellStrategy || 'market-sell') === 'market-sell') {
+    grossRevenue = lpOutputUnitPrice(root.productTypeId || root.typeId) * (root.qtyNeeded || 0);
+  }
+  const netRevenue = grossRevenue * lpSellNetFactor();
   const profit = netRevenue - totalIskCost;
   const iskPerLp = totalLpCost > 0 ? profit / totalLpCost : null;
   const profitColor = profit > 0 ? 'var(--accent)' : 'var(--red-400, #f87171)';
@@ -1255,9 +1309,10 @@ function renderLPExtraStats() {
       ${row('Redemption Fee (ISK)', Math.round(flatIskCost).toLocaleString() + ' ISK', '#c084fc', 'The flat ISK portion of redeeming this offer - on top of the required items already counted in Total ISK Cost above')}
       ${row('Redemption Fee (LP)', flatLpCost.toLocaleString() + ' LP', '#c084fc', 'The flat LP portion of redeeming this offer')}
       ${row('Total LP Spent', totalLpCost.toLocaleString() + ' LP', '#c084fc', 'Redemption LP + any component set to "Acquire via LP" in the tree')}
+      ${row('Valued as', _lpSellMode === 'instant' ? 'Instant sell' : 'Sell order', null, _lpSellMode === 'instant' ? 'Sold straight into the highest Jita buy order: no broker fee, sales tax only. Change it in Ranked Offers.' : 'Listed by you at the Jita sell price, net of sales tax and broker fee. Change it in Ranked Offers.')}
     </div>
     <div class="border-t border-[#3a3025] mt-2.5 pt-2.5">
-      <div class="text-slate-400 text-xs uppercase tracking-wide" style="font-size:10.5px;" title="Net sell revenue minus build materials, required redemption items, job fee, and the flat redemption fee">LP-Aware Profit</div>
+      <div class="text-slate-400 text-xs uppercase tracking-wide" style="font-size:10.5px;" title="Sale value (per the Valued as setting, net of tax) minus build materials, required redemption items, job fee, and the flat redemption fee">LP-Aware Profit</div>
       <div class="hero-num ${profit >= 0 ? 'profit' : 'loss'}" style="font-size:${heroFontSize}; white-space:nowrap;">${profitText}</div>
     </div>
     <div class="border-t border-[#3a3025] mt-2.5 pt-2.5" title="Estimated ISK profit per LP spent">
@@ -1985,7 +2040,7 @@ function renderLPStoreTable() {
           <th>Item</th>
           <th class="text-right cursor-pointer" onclick="setLPStoreSort('lpCost')">LP Cost${sortIndicator('lpCost')}</th>
           <th class="text-right cursor-pointer" onclick="setLPStoreSort('cost')" title="ISK cost + required items, all priced at Jita sell/instant-buy - plus material cost and job install fee for BPC offers.">Total Cost${sortIndicator('cost')}</th>
-          <th class="text-right cursor-pointer" onclick="setLPStoreSort('revenue')" title="Output priced at Jita sell, net of your Sales Tax and Broker Fee settings (left sidebar).">Est. Value${sortIndicator('revenue')}</th>
+          <th class="text-right cursor-pointer" onclick="setLPStoreSort('revenue')" title="${_lpSellMode === 'instant' ? 'Output sold into the highest Jita buy order, net of your Sales Tax setting (no broker fee).' : 'Output priced at Jita sell, net of your Sales Tax and Broker Fee settings (left sidebar).'}">Est. Value${sortIndicator('revenue')}</th>
           <th class="text-right cursor-pointer" onclick="setLPStoreSort('profit')">Est. Profit${sortIndicator('profit')}</th>
           <th class="text-right cursor-pointer" onclick="setLPStoreSort('iskPerLp')" title="Estimated ISK profit per LP spent - the ranking metric.">ISK / LP${sortIndicator('iskPerLp')}</th>
           <th class="text-right">Build Time</th>
@@ -2323,6 +2378,14 @@ const LP_ITEM_SEARCH_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const LP_ITEM_SEARCH_CACHE_SCHEMA = 2; // bump whenever the compact tuple shape below changes, so an
 // older cached shape (missing newly-added fields) is discarded and rebuilt rather than silently
 // read back with those fields undefined.
+// Est. ISK/LP for one Find Item entry, valued per the current sell mode (see LP_SELL_MODE_KEY). For a
+// blueprint offer this stops short of building it - see buildLPItemSearchIndex's own note.
+function lpApplyEstimate(e) {
+  const requiredItemsCost = (e.requiredItems || []).reduce((sum, r) => sum + ((window.priceCache[r.type_id] || {}).sell || 0) * r.quantity, 0);
+  const revenue = lpOutputUnitPrice(e.outputTypeId) * e.outputQty * lpSellNetFactor();
+  e.profit = revenue - e.iskCost - requiredItemsCost;
+  e.iskPerLp = e.lpCost > 0 ? e.profit / e.lpCost : null;
+}
 function saveLPItemSearchIndexCache(entries) {
   try {
     const typeIds = new Set();
@@ -2362,23 +2425,21 @@ function loadLPItemSearchIndexCache() {
     Object.entries(parsed.prices || {}).forEach(([id, pair]) => { if (!window.priceCache[id]) window.priceCache[id] = { sell: pair[0], buy: pair[1] }; });
 
     const corpsById = new Map(LP_STORE_CORPS.map(c => [c.corpId, c]));
-    const { salesTax, brokerFee } = window.getActiveFeeInputs ? window.getActiveFeeInputs() : { salesTax: 0.036, brokerFee: 0.01 };
     return parsed.entries.map(([corpId, offerId, outputTypeId, outputQty, isBpcFlag, iskCost, lpCost, req, blueprintTypeId, bpcRuns]) => {
       const corp = corpsById.get(corpId);
       const outputName = getLPItemName(outputTypeId);
       const requiredItemsSummary = req.length
         ? req.map(([tId, qty]) => `${qty}x ${getLPItemName(tId)}`).join(', ')
         : (iskCost > 0 ? 'ISK + LP only' : 'LP only');
-      const outputPrice = (window.priceCache[outputTypeId] || {}).sell || 0;
-      const revenue = (outputPrice * outputQty) * (1 - salesTax - brokerFee);
-      const requiredItemsCost = req.reduce((sum, [tId, qty]) => sum + ((window.priceCache[tId] || {}).sell || 0) * qty, 0);
-      const profit = revenue - iskCost - requiredItemsCost;
-      return {
+      const entry = {
         corpId, corpName: corp ? corp.corpName : `Corporation ${corpId}`, color: corp ? corp.color : 'var(--text-mute)',
         offerId, outputTypeId, outputQty, isBpc: !!isBpcFlag, blueprintTypeId: blueprintTypeId || null, bpcRuns: bpcRuns || null,
         iskCost, lpCost, outputName, requiredItemsSummary,
-        profit, iskPerLp: lpCost > 0 ? profit / lpCost : null
+        requiredItems: req.map(([type_id, quantity]) => ({ type_id, quantity })),
+        profit: 0, iskPerLp: null
       };
+      lpApplyEstimate(entry);
+      return entry;
     });
   } catch (e) {
     return null;
@@ -2473,19 +2534,12 @@ async function buildLPItemSearchIndex() {
   // every BPC offer in the index (that's what Isolate is for - the real number, one offer at a
   // time) - labeled "Est." wherever it's shown so that trade-off is visible, not just assumed.
   await window.fetchMarketPrices(Array.from(allTypeIds));
-  const { salesTax, brokerFee } = window.getActiveFeeInputs ? window.getActiveFeeInputs() : { salesTax: 0.036, brokerFee: 0.01 };
   entries.forEach(e => {
     e.outputName = getLPItemName(e.outputTypeId);
     e.requiredItemsSummary = e.requiredItems.length
       ? e.requiredItems.map(r => `${r.quantity}x ${getLPItemName(r.type_id)}`).join(', ')
       : (e.iskCost > 0 ? 'ISK + LP only' : 'LP only');
-
-    const outputPrice = (window.priceCache[e.outputTypeId] || {}).sell || 0;
-    const grossRevenue = outputPrice * e.outputQty;
-    const revenue = grossRevenue * (1 - salesTax - brokerFee);
-    const requiredItemsCost = e.requiredItems.reduce((sum, r) => sum + ((window.priceCache[r.type_id] || {}).sell || 0) * r.quantity, 0);
-    e.profit = revenue - e.iskCost - requiredItemsCost;
-    e.iskPerLp = e.lpCost > 0 ? e.profit / e.lpCost : null;
+    lpApplyEstimate(e);
   });
 
   _lpItemSearchIndex = entries;
@@ -2792,6 +2846,7 @@ window.addEventListener('load', async () => {
   renderLPStoreActiveStationLabel();
   if (typeof window.renderProductionPresetDropdown === 'function') window.renderProductionPresetDropdown();
   renderLPCategoryBar();
+  updateLPSellModeButtons();
   renderLPStoreState();
   installLPRecalculateHook();
 

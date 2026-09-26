@@ -2,7 +2,8 @@
 
 // Phone layout: the LP Store screen. Ranking is a port of js/lpstore.js (evaluateDirectSellOffer,
 // evaluateBpcOffer, loadAndRankLPStore): an item offer is worth its Jita sell price after sales tax
-// and broker fee, minus the store's ISK and the required items at Jita sell; a blueprint offer also
+// and broker fee (or, with "Instant sell", the highest Jita buy order after sales tax only), minus the
+// store's ISK and the required items at Jita sell; a blueprint offer also
 // pays for building its copy at your station with the site's own tree builder. The last store, the
 // favorites and the "find an item in every store" index are shared with the desktop page
 // (eve_lpstore_last_corp, eve_lpstore_favorites, eve_lpstore_item_search_cache).
@@ -42,6 +43,20 @@
     }
   }
   const sellOf = id => ((window.priceCache[id] || {}).sell || 0);
+  // How the item you get is valued: 'sell' = list it yourself at the Jita sell price (sales tax and
+  // broker fee); 'instant' = sell into the highest Jita buy order (sales tax only, no waiting, less
+  // ISK per item). Same setting and key as the desktop LP Store. What you pay (required items,
+  // materials) is unaffected.
+  const SELL_KEY = 'eve_lp_sell_mode';
+  let sellMode = LS.raw(SELL_KEY) === 'instant' ? 'instant' : 'sell';
+  const outPrice = id => { const p = window.priceCache[id] || {}; return (sellMode === 'instant' ? p.buy : p.sell) || 0; };
+  const netFactor = () => { const f = MB.feeFrac(); return sellMode === 'instant' ? 1 - f.salesTax : 1 - f.salesTax - f.brokerFee; };
+  // Re-values one ranked offer for the current mode from prices already in memory.
+  function reprice(o) {
+    o.revenue = outPrice(o.pt) * o.qty * netFactor();
+    o.profit = o.revenue - o.cost;
+    o.rate = o.lp > 0 ? o.profit / o.lp : null;
+  }
   const reqCostOf = offer => (offer.required_items || []).reduce((s, r) => s + sellOf(r.type_id) * r.quantity, 0);
   const isBpcOffer = offer => { const r = window.recipeMap && window.recipeMap[offer.type_id]; return !!(r && parseInt(r.blueprintTypeID, 10) === parseInt(offer.type_id, 10)); };
   const CAT_LABELS = { 6: 'Ships', 7: 'Modules', 8: 'Ammo', 16: 'Skillbooks', 18: 'Drones', 20: 'Implants', 91: 'SKINs' };
@@ -110,12 +125,12 @@
           } catch (e) { console.warn('[Phone LP] Could not build', offer.type_id, e); }
         }));
         if (ids.size) await window.fetchMarketPrices([...ids]);
-        const net = 1 - fees.salesTax - fees.brokerFee;
+        const net = netFactor();
         return offers.map(offer => {
           const reqCost = reqCostOf(offer);
           const base = { id: offer.offer_id, offer, lp: offer.lp_cost, isk: offer.isk_cost, reqCost, req: offer.required_items || [] };
           if (!isBpcOffer(offer)) {
-            const revenue = sellOf(offer.type_id) * offer.quantity * net;
+            const revenue = outPrice(offer.type_id) * offer.quantity * net;
             const profit = revenue - (offer.isk_cost + reqCost);
             return { ...base, bpc: false, pt: offer.type_id, name: lpName(offer.type_id), qty: offer.quantity, revenue, cost: offer.isk_cost + reqCost, matCost: 0, jobFee: 0, profit, rate: offer.lp_cost > 0 ? profit / offer.lp_cost : null, secs: 0, runs: 0, est: !!(window.priceCache[offer.type_id] || {}).isEstimated };
           }
@@ -124,7 +139,7 @@
           const matCost = window.calculateTreeNodeCost(t.root);
           window.calculateNodeEIV(t.root);
           const jobFee = window.calculateNodeJobFee(t.root, fees.facilityTax, fees.sccSurcharge, (st.costBonus || 0) / 100);
-          const revenue = sellOf(t.pt) * t.root.qtyNeeded * net;
+          const revenue = outPrice(t.pt) * t.root.qtyNeeded * net;
           const cost = offer.isk_cost + reqCost + matCost + jobFee;
           const profit = revenue - cost;
           return { ...base, bpc: true, bp: offer.type_id, pt: t.pt, name: lpName(t.pt), qty: t.root.qtyNeeded, runs: offer.quantity, revenue, cost, matCost, jobFee, profit, rate: offer.lp_cost > 0 ? profit / offer.lp_cost : null, secs: window.calculateTotalBuildSeconds(t.root), est: !!(window.priceCache[t.pt] || {}).isEstimated };
@@ -142,6 +157,7 @@
     rankError = null;
     const job = { corpId, sig };
     job.promise = rankStore(corpId).then(rows => {
+      rows.forEach(reprice); // in case the sell mode changed while this was working
       ranked[corpId] = { sig, rows };
     }).catch(e => {
       console.error('[Phone LP] Could not load store', corpId, e);
@@ -176,7 +192,7 @@
       </button>
       <div class="offer-body" id="${id}"${open ? '' : ' hidden'}>
         <ul class="brk">
-          <li><span>Sells for, after tax and fees${o.est ? ' <span class="spill src">estimate</span>' : ''}</span><span class="v">${compact(o.revenue)}</span></li>
+          <li><span>${sellMode === 'instant' ? 'Sold to buy orders, after sales tax' : 'Sells for, after tax and fees'}${o.est ? ' <span class="spill src">estimate</span>' : ''}</span><span class="v">${compact(o.revenue)}</span></li>
           ${o.isk ? `<li><span>ISK paid to the store</span><span class="v">${MINUS}${compact(o.isk)}</span></li>` : ''}
           ${o.req.map(r => `<li><span>${esc(lpName(r.type_id))} ×${qty(r.quantity)}</span><span class="v">${MINUS}${compact(sellOf(r.type_id) * r.quantity)}</span></li>`).join('')}
           ${o.bpc ? `<li><span>Build materials, ${o.runs} run${o.runs === 1 ? '' : 's'}</span><span class="v">${MINUS}${compact(o.matCost)}</span></li><li><span>Job fees</span><span class="v">${MINUS}${compact(o.jobFee)}</span></li>` : ''}
@@ -225,7 +241,9 @@
       <div class="chiprow" role="group" aria-label="Offer type">${chip('lptype', 'all', LPS.type, 'All')}${chip('lptype', 'items', LPS.type, 'Items')}${chip('lptype', 'bpc', LPS.type, 'Blueprints')}</div>
       <div class="chiprow" role="group" aria-label="Category">${chip('lpcat', 'all', LPS.cat, `All ${all.length}`)}${favCount ? chip('lpcat', 'fav', LPS.cat, `${ICON.star}Favorites ${favCount}`) : ''}${catKeys.map(k => chip('lpcat', k, LPS.cat, `${catName(k)} ${cats[k]}`)).join('')}</div>
       <div id="lp-list">${listHTML()}</div>
-      <p class="note">ISK per LP counts the Jita sell price after sales tax and broker fee, minus the store's ISK and the required items at Jita sell. Blueprint offers also count building the copy at your station, with everything in it bought.</p>`;
+      <p class="note">${sellMode === 'instant'
+        ? 'ISK per LP counts selling straight into the highest Jita buy order (no broker fee, sales tax still applies; a big stack can fill below that price), minus the store\'s ISK and the required items at Jita sell.'
+        : 'ISK per LP counts the Jita sell price after sales tax and broker fee, minus the store\'s ISK and the required items at Jita sell.'} Blueprint offers also count building the copy at your station, with everything in it bought.</p>`;
   }
 
   /* =====================  Find an item in every store  ===================== */
@@ -257,8 +275,7 @@
   // Est. ISK per LP, the desktop's way: for a blueprint offer this is the finished item's value
   // without the cost of building it, so it reads high. Opening the offer gives the real number.
   function estimate(e) {
-    const f = MB.feeFrac();
-    const revenue = sellOf(e.outputTypeId) * e.outputQty * (1 - f.salesTax - f.brokerFee);
+    const revenue = outPrice(e.outputTypeId) * e.outputQty * netFactor();
     const req = e.requiredItems.reduce((s, r) => s + sellOf(r.type_id) * r.quantity, 0);
     const profit = revenue - e.iskCost - req;
     return e.lpCost > 0 ? profit / e.lpCost : null;
@@ -388,6 +405,13 @@
         <button type="button" role="tab" data-lpview="store" aria-selected="${LPS.view === 'store'}">This store</button>
         <button type="button" role="tab" data-lpview="find" aria-selected="${LPS.view === 'find'}">Find an item</button>
       </div>
+      <div class="ctlrow" style="margin-top:-2px">
+        <span class="nlabel" id="lp-sellmode-lbl" style="letter-spacing:0.06em">Value the item as</span>
+        <span class="segctl" role="group" aria-labelledby="lp-sellmode-lbl">
+          <button type="button" data-lpsell="sell" aria-pressed="${sellMode === 'sell'}">${ICON.order}Sell order</button>
+          <button type="button" data-lpsell="instant" aria-pressed="${sellMode === 'instant'}">${ICON.bolt}Instant sell</button>
+        </span>
+      </div>
       <section role="tabpanel">${LPS.view === 'store' ? storeHTML() : `<div class="searchbox">${ICON.search}<input type="text" id="lpf-q" placeholder="Find an item in every LP store" autocomplete="off" value="${esc(LPS.findQ)}" aria-label="Find an item in every LP store"></div><div id="lpf-results">${findResultsHTML()}</div>`}</section>`;
     if (LPS.view === 'find' && !IDX.entries && !IDX.building) buildIndex();
   }
@@ -402,6 +426,19 @@
     const t = e.target;
     let el;
     if ((el = t.closest('[data-lpview]'))) { LPS.view = el.dataset.lpview; render(); return; }
+    if ((el = t.closest('[data-lpsell]'))) {
+      const m = el.dataset.lpsell;
+      if (m === sellMode) return;
+      sellMode = m;
+      LS.set(SELL_KEY, m);
+      Object.values(ranked).forEach(r => r.rows.forEach(reprice));
+      MB.refillSheet('corps', 'lpowned');
+      render();
+      const again = scr.querySelector(`[data-lpsell="${m}"]`);
+      if (again) again.focus();
+      toast(m === 'instant' ? 'Valuing items as an instant sale to Jita buy orders: no broker fee, usually less ISK' : 'Valuing items as sell orders you list yourself');
+      return;
+    }
     if ((el = t.closest('[data-lpsort]'))) { LPS.sort = el.dataset.lpsort; LPS.shown = 40; render(); return; }
     if ((el = t.closest('[data-lptype]'))) { LPS.type = el.dataset.lptype; LPS.shown = 40; render(); return; }
     if ((el = t.closest('[data-lpcat]'))) { LPS.cat = el.dataset.lpcat; LPS.shown = 40; render(); return; }
