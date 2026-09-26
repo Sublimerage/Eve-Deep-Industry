@@ -1309,7 +1309,13 @@ function renderLPExtraStats() {
       ${row('Redemption Fee (ISK)', Math.round(flatIskCost).toLocaleString() + ' ISK', '#c084fc', 'The flat ISK portion of redeeming this offer - on top of the required items already counted in Total ISK Cost above')}
       ${row('Redemption Fee (LP)', flatLpCost.toLocaleString() + ' LP', '#c084fc', 'The flat LP portion of redeeming this offer')}
       ${row('Total LP Spent', totalLpCost.toLocaleString() + ' LP', '#c084fc', 'Redemption LP + any component set to "Acquire via LP" in the tree')}
-      ${row('Valued as', _lpSellMode === 'instant' ? 'Instant sell' : 'Sell order', null, _lpSellMode === 'instant' ? 'Sold straight into the highest Jita buy order: no broker fee, sales tax only. Change it in Ranked Offers.' : 'Listed by you at the Jita sell price, net of sales tax and broker fee. Change it in Ranked Offers.')}
+    </div>
+    <div class="border-t border-[#3a3025] mt-2.5 pt-2.5">
+      <div class="text-slate-400 text-xs uppercase tracking-wide" style="font-size:10.5px;">Value the item as</div>
+      <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;" role="group" aria-label="Value the item as">
+        <button type="button" onclick="event.stopPropagation(); setLPSellMode('sell')" class="lp-pill${_lpSellMode === 'sell' ? ' active' : ''}" aria-pressed="${_lpSellMode === 'sell'}" title="List it yourself at the Jita sell price. Waits for a buyer; sales tax and broker fee apply.">Sell Order</button>
+        <button type="button" onclick="event.stopPropagation(); setLPSellMode('instant')" class="lp-pill${_lpSellMode === 'instant' ? ' active' : ''}" aria-pressed="${_lpSellMode === 'instant'}" title="Sell straight into the highest Jita buy order. Instant and no broker fee (sales tax still applies), but usually less ISK per item.">Instant Sell</button>
+      </div>
     </div>
     <div class="border-t border-[#3a3025] mt-2.5 pt-2.5">
       <div class="text-slate-400 text-xs uppercase tracking-wide" style="font-size:10.5px;" title="Sale value (per the Valued as setting, net of tax) minus build materials, required redemption items, job fee, and the flat redemption fee">LP-Aware Profit</div>
