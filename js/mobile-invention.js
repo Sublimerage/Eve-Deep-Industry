@@ -432,11 +432,12 @@
         <div class="kv"><label class="k" for="i-base">Base chance<small>${I.baseChance === auto ? 'usual for this kind of item' : `usually ${auto}% for this kind of item`}</small></label><span class="suffix feein"><input type="text" inputmode="decimal" id="i-base" value="${I.baseChance}" autocomplete="off"><span>%</span></span></div>
         <div class="kv"><span class="k">Chance before decryptor<small>base × your skills</small></span><span class="v">${Math.min(100, I.baseChance * f).toFixed(1)}%</span></div>
       </div>
-      <div class="card-title">Your skills${differs ? '<button class="linkbtn" style="margin-left:auto;padding:0" type="button" data-iact="myskills">Use my skills</button>' : ''}</div>
+      <div class="card-title">Skills that set the success chance${differs ? '<button class="linkbtn" style="margin-left:auto;padding:0" type="button" data-iact="myskills">Use my skills</button>' : ''}</div>
       ${MB.isLoggedIn() ? '' : `<div class="login-card">${ICON.lock}<p>Log in to fill these in from your character. You can also set them by hand.</p><button class="btn primary" type="button" data-iact="login">Log in</button></div>`}
       <div class="card">
-        ${skills.length ? skills.map(sk => `<div class="kv"><span class="k">${esc(sk.name || `Skill ${sk.skillId}`)}<small>${isEncryption(sk) ? 'encryption skill' : 'science skill'}${sheet ? ` · you have ${trained(sk.skillId)}` : ''}</small></span>${MB.stepper('skill:' + sk.skillId, I.skills[sk.skillId] || 0, 0, 5, sk.name || 'skill')}</div>`).join('') : '<p class="note" style="padding:10px 0">No skill data for this blueprint.</p>'}
+        ${skills.length ? skills.map(sk => `<div class="kv"><span class="k">${esc(sk.name || `Skill ${sk.skillId}`)}<small>${isEncryption(sk) ? 'Encryption skill · +2.5% of base chance per level' : 'Science skill · +3.3% of base chance per level'}${sheet ? ` · you have ${trained(sk.skillId)}` : ''}</small></span>${MB.stepper('skill:' + sk.skillId, I.skills[sk.skillId] || 0, 0, 5, sk.name || 'skill')}</div>`).join('') : '<p class="note" style="padding:10px 0">No skill data for this blueprint.</p>'}
       </div>
+      <p class="note">These levels are what-ifs for the success chance. The skill check below uses what you really have trained.</p>
       ${skillCheckHTML()}
       <div class="card-title">Datacores per attempt</div>
       <div class="card">

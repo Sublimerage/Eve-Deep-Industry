@@ -273,6 +273,15 @@ async function selectInventionItem(typeId, name, skipSave) {
 }
 window.selectInventionItem = selectInventionItem;
 
+// --- Skill Levels panel: success-chance skills + skill check ---
+// The three skills on a T1 blueprint's invention activity (two sciences + an encryption skill) set the
+// success chance: chance = base x (1 + (science1 + science2)/30 + encryption/40) x decryptor - so each
+// science level adds 1/30 of the base chance (3.3%) and each encryption level 1/40 (2.5%). They're
+// shown as editable what-if levels (auto-filled from your trained skills) in equal-width rows, each
+// also showing what invention needs and what you have. The skill check below them (renderInventionSkillCheck)
+// then covers the rest - what building the result needs - and how long the gaps take to train.
+const INVENTION_SKILL_ROMAN = ['0', 'I', 'II', 'III', 'IV', 'V'];
+
 function renderInventionSkillInputs(skills) {
   const container = document.getElementById('invention-skill-inputs');
   if (!container) return;
@@ -287,25 +296,25 @@ function renderInventionSkillInputs(skills) {
     const isEncryption = (sk.name || '').toLowerCase().includes('encryption');
     const trainedLevel = (charSkills.allSkills && charSkills.allSkills[sk.skillId] !== undefined) ? charSkills.allSkills[sk.skillId] : 0;
     return `
-      <div class="flex items-center gap-1.5 px-2 py-1 rounded-md" style="background:rgba(255,255,255,0.035);">
-        <span class="text-xs ${isEncryption ? 'text-amber-300' : 'text-cyan-300'} font-semibold" title="${isEncryption ? 'Encryption skill (affects chance /40)' : 'Science skill (affects chance /30, combined with the other science skill)'}">${window.esc(sk.name || `Skill ${sk.skillId}`)}</span>
+      <div class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md" style="background:rgba(255,255,255,0.035);">
+        <div class="min-w-0 flex-1">
+          <div class="text-xs font-semibold" style="color:var(--text);">${window.esc(sk.name || `Skill ${sk.skillId}`)}</div>
+          <div class="text-[10px]" style="color:var(--text-mute);" title="${isEncryption ? 'Encryption skill: success chance = base x (1 + (science + science)/30 + encryption/40). Each level adds 1/40 of the base chance.' : 'Science skill: success chance = base x (1 + (science + science)/30 + encryption/40), the two science skills add together. Each level adds 1/30 of the base chance.'}">${isEncryption ? 'Encryption skill &middot; +2.5% of base chance per level' : 'Science skill &middot; +3.3% of base chance per level'}</div>
+          <div class="text-[11px] mono font-semibold" data-skill-status="${sk.skillId}"></div>
+        </div>
         <input type="number" min="0" max="5" value="${trainedLevel}" data-skill-id="${sk.skillId}" data-is-encryption="${isEncryption}"
-          oninput="recalculateInvention()" class="invention-skill-input field-line field-editable num-no-spin mono w-14 text-center font-bold text-xs" style="color:var(--text);">
+          oninput="recalculateInvention()" aria-label="${window.esc(sk.name || `Skill ${sk.skillId}`)} level" class="invention-skill-input field-line field-editable num-no-spin mono text-center font-bold text-xs" style="color:var(--text); width:3.5rem; flex:none;">
       </div>
     `;
   }).join('');
 }
 
-// --- Skill check ---
-// Same idea as the Calculator's Skills panel (js/app.js computeMissingSkills/updateMissingSkillsUI):
-// what this needs versus your REAL trained levels (eve_char_skills' full sheet), plus how long the
-// missing ones take to train. Two groups, because invention is two jobs: running the invention itself
-// (the T1 blueprint's own invention skills - the two sciences + the encryption skill) and then
-// manufacturing the T2 item it makes (that blueprint's requiredSkills). Deliberately checks your
-// actual trained levels, never the "Skill Levels" boxes above - those are editable what-ifs for the
-// success-chance math, not what your character can really do.
-const INVENTION_SKILL_ROMAN = ['0', 'I', 'II', 'III', 'IV', 'V'];
-
+// Skill check - same idea as the Calculator's Skills panel (js/app.js computeMissingSkills /
+// updateMissingSkillsUI): what this needs versus your REAL trained levels (eve_char_skills' full sheet),
+// plus how long the missing ones take to train. Invention is two jobs, so two sets of requirements:
+// running the invention itself (the T1 blueprint's invention skills, shown on the rows above) and then
+// manufacturing the T2 item it makes (that blueprint's requiredSkills, listed in the panel body).
+// Deliberately never reads the editable level boxes - those are what-ifs, not what your character can do.
 function getInventionSkillGroups() {
   if (!_inventionCurrentBlueprint || !_inventionCurrentProduct) return [];
   const t2Recipe = window.recipeMap && window.recipeMap[_inventionCurrentProduct.typeId];
@@ -322,6 +331,18 @@ function getInventionTrainedSkills() {
   return sheet && sheet.allSkills && Object.keys(sheet.allSkills).length > 0 ? sheet.allSkills : null;
 }
 
+// "Need I . have V" for one requirement, colored: red = missing, muted = covered, plain = not logged in.
+function inventionSkillStatus(sk, trained) {
+  const RED = '#e85555';
+  const need = INVENTION_SKILL_ROMAN[sk.required] || sk.required;
+  if (!trained) return { missing: false, have: null, color: 'var(--text-soft)', html: `Need ${need}` };
+  const have = trained[sk.skillId] || 0;
+  const haveText = INVENTION_SKILL_ROMAN[have] || have;
+  if (have < sk.required) return { missing: true, have, color: RED, html: `Need ${need} &middot; have ${haveText}` };
+  const tick = window.svgIcon ? window.svgIcon('check', { style: 'width:11px;height:11px;display:inline-block;vertical-align:-1px;margin-right:3px;color:var(--accent);' }) : '';
+  return { missing: false, have, color: 'var(--text-mute)', html: `${tick}Need ${need} &middot; have ${haveText}` };
+}
+
 let _inventionSkillCheckToken = 0;
 async function renderInventionSkillCheck() {
   const body = document.getElementById('invention-skill-check-body');
@@ -329,44 +350,51 @@ async function renderInventionSkillCheck() {
   if (!body) return;
   const token = ++_inventionSkillCheckToken;
   const groups = getInventionSkillGroups();
-  if (!groups.length) { body.innerHTML = ''; if (badge) badge.style.display = 'none'; return; }
   const trained = getInventionTrainedSkills();
-  const RED = '#e85555';
 
-  const rows = [];
+  document.querySelectorAll('[data-skill-status]').forEach(el => { el.innerHTML = ''; });
+  if (!groups.length) { body.innerHTML = ''; if (badge) badge.style.display = 'none'; return; }
+
   const missingBySkill = new Map(); // skillId -> highest level still needed, across both groups
-  const groupsHTML = groups.map(g => `
+  const note = sk => {
+    const st = inventionSkillStatus(sk, trained);
+    if (st.missing) {
+      const prev = missingBySkill.get(sk.skillId);
+      if (!prev || sk.required > prev.required) missingBySkill.set(sk.skillId, { skillId: sk.skillId, skillName: sk.skillName, required: sk.required, trained: st.have });
+    }
+    return st;
+  };
+
+  // Invention's own requirements go on the level rows above.
+  const invent = groups.find(g => g.key === 'invent');
+  (invent ? invent.skills : []).forEach(sk => {
+    const st = note(sk);
+    const el = document.querySelector(`[data-skill-status="${sk.skillId}"]`);
+    if (el) { el.style.color = st.color; el.innerHTML = st.html; }
+  });
+
+  // What building the result needs goes in the panel body.
+  const build = groups.find(g => g.key === 'build');
+  const buildHTML = build ? `
     <div style="margin-top:8px;">
-      <div class="text-[10px] uppercase tracking-wide font-bold" style="color:var(--text-mute);">${g.title}</div>
-      ${g.skills.map(sk => {
-        const have = trained ? (trained[sk.skillId] || 0) : null;
-        const missing = have !== null && have < sk.required;
-        if (missing) {
-          rows.push(sk);
-          const prev = missingBySkill.get(sk.skillId);
-          if (!prev || sk.required > prev.required) missingBySkill.set(sk.skillId, { skillId: sk.skillId, skillName: sk.skillName, required: sk.required, trained: have });
-        }
-        const color = missing ? RED : (have === null ? 'var(--text-soft)' : 'var(--text-mute)');
-        const status = have === null
-          ? `Need ${INVENTION_SKILL_ROMAN[sk.required] || sk.required}`
-          : (missing
-            ? `Need ${INVENTION_SKILL_ROMAN[sk.required] || sk.required} &middot; have ${INVENTION_SKILL_ROMAN[have] || have}`
-            : `${window.svgIcon ? window.svgIcon('check', { style: 'width:11px;height:11px;display:inline-block;vertical-align:-1px;margin-right:3px;color:var(--accent);' }) : ''}Need ${INVENTION_SKILL_ROMAN[sk.required] || sk.required} &middot; have ${INVENTION_SKILL_ROMAN[have] || have}`);
+      <div class="text-[10px] uppercase tracking-wide font-bold" style="color:var(--text-mute);">${build.title}</div>
+      ${build.skills.map(sk => {
+        const st = note(sk);
         return `
         <div class="fo-row" style="padding:3px 0;">
-          <span class="fo-row-label" style="color:${color};" title="Skill ID ${sk.skillId}">${window.esc(sk.skillName)}</span>
-          <span class="text-[11px] mono font-semibold" style="color:${color}; white-space:nowrap;">${status}</span>
+          <span class="fo-row-label" style="color:${st.color};" title="Skill ID ${sk.skillId}">${window.esc(sk.skillName)}</span>
+          <span class="text-[11px] mono font-semibold" style="color:${st.color}; white-space:nowrap;">${st.html}</span>
         </div>`;
       }).join('')}
-    </div>`).join('');
+    </div>` : '';
 
   if (badge) {
     const n = missingBySkill.size;
-    badge.style.display = trained && n > 0 ? '' : 'none'; // (.lp-badge sets its own display, which beats .hidden)
-    if (trained && n > 0) {
-      badge.textContent = `${n} missing`;
-      badge.style.background = 'rgba(221,107,100,0.18)';
-      badge.style.color = 'var(--red-300, #f0918b)';
+    badge.style.display = trained ? '' : 'none'; // (.lp-badge sets its own display, which beats .hidden)
+    if (trained) {
+      badge.textContent = n > 0 ? `${n} missing` : 'All trained';
+      badge.style.background = n > 0 ? 'rgba(221,107,100,0.18)' : 'rgba(76,196,145,0.18)';
+      badge.style.color = n > 0 ? 'var(--red-300, #f0918b)' : 'var(--green, #4cc491)';
     }
   }
 
@@ -375,7 +403,12 @@ async function renderInventionSkillCheck() {
     : (missingBySkill.size === 0
       ? `<div class="fo-card-note" style="color:var(--accent);">You have every skill needed to invent this and build the result.</div>`
       : '');
-  body.innerHTML = groupsHTML + status + (missingBySkill.size ? '<div id="invention-skill-training-body"></div>' : '');
+  body.innerHTML = `
+    <div style="margin-top:10px; padding-top:8px; border-top:1px solid #3a3025;">
+      <div class="fo-card-title">Skill Check</div>
+      <div class="fo-card-note">Your real trained levels against what this needs. Invention's own requirements are on the skills above.</div>
+      ${buildHTML}${status}${missingBySkill.size ? '<div id="invention-skill-training-body"></div>' : ''}
+    </div>`;
   if (!missingBySkill.size) return;
 
   // Training time for what's missing, the same way the Calculator does it: your real attributes when
