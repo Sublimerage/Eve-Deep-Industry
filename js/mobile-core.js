@@ -114,12 +114,19 @@ window.MB = (() => {
   function iconUrl(typeId, variant, size) {
     return `https://images.evetech.net/types/${typeId}/${variant || 'icon'}?size=${size || 64}`;
   }
-  function iconHTML(typeId, cls, variant) {
-    if (!typeId) return `<span class="ic ic-none ${cls || ''}" aria-hidden="true">${ICON.none}</span>`;
-    return `<span class="ic ${cls || ''}" aria-hidden="true"><img src="${iconUrl(typeId, variant)}" alt="" loading="lazy" decoding="async" onerror="this.remove()"></span>`;
+  // Some blueprints' products have no image on EVE's image server (or no known product) though the
+  // blueprint itself always does. bpId adds that as a second try: the blueprint's own /bp image when
+  // the product's fails or is unknown. If nothing loads the <img> removes itself (neutral outline).
+  const ICON_ERR = "var f=this.dataset.fb;if(f){this.removeAttribute('data-fb');this.src=f}else{this.remove()}";
+  function iconHTML(typeId, cls, variant, bpId) {
+    if (!typeId && !bpId) return `<span class="ic ic-none ${cls || ''}" aria-hidden="true">${ICON.none}</span>`;
+    const src = typeId ? iconUrl(typeId, variant) : iconUrl(bpId, 'bp');
+    const fb = typeId && bpId ? ` data-fb="${iconUrl(bpId, 'bp')}"` : '';
+    return `<span class="ic ${cls || ''}" aria-hidden="true"><img src="${src}"${fb} alt="" loading="lazy" decoding="async" onerror="${ICON_ERR}"></span>`;
   }
   MB.iconUrl = iconUrl;
   MB.iconHTML = iconHTML;
+  MB.iconOnError = ICON_ERR;
 
   /* =====================  Toast  ===================== */
   let toastTimer = null;

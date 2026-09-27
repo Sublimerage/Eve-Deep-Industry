@@ -206,7 +206,8 @@
   function renderProduct() {
     const it = cur();
     const pt = it ? it.pt : productOfBp(C.product.id);
-    $('#p-icon').innerHTML = pt ? `<img src="${MB.iconUrl(pt)}" alt="" onerror="this.remove()">` : '';
+    const bpId = C.product && C.product.id;
+    $('#p-icon').innerHTML = pt || bpId ? `<img src="${pt ? MB.iconUrl(pt) : MB.iconUrl(bpId, 'bp')}"${pt && bpId ? ` data-fb="${MB.iconUrl(bpId, 'bp')}"` : ''} alt="" onerror="${MB.iconOnError}">` : '';
     $('#p-name').textContent = it ? it.name : productName(C.product.name);
     $('#p-sub').textContent = `${(it && it.group) || 'Item'} · tap to change item`;
     $('#item-open').setAttribute('aria-label', `${$('#p-name').textContent}. Change item`);
@@ -564,7 +565,7 @@
     const group = (pt && window.EVE_GROUP_NAMES && window.EVE_GROUP_NAMES[pt]) || '';
     const kind = /reaction formula$|formula$/i.test(bpName) ? 'Reaction' : 'Blueprint';
     const p = pt && window.priceCache[pt];
-    return `<li><button type="button" data-item="${bpId}" aria-current="${!!cur() && cur().bp === bpId}">${MB.iconHTML(pt)}<span><b>${esc(productName(bpName))}</b><small>${esc(group || kind)}</small></span><span class="r">${p && p.sell ? `${compact(p.sell)}<br><small>Jita sell</small>` : ''}</span></button></li>`;
+    return `<li><button type="button" data-item="${bpId}" aria-current="${!!cur() && cur().bp === bpId}">${MB.iconHTML(pt, '', undefined, bpId)}<span><b>${esc(productName(bpName))}</b><small>${esc(group || kind)}</small></span><span class="r">${p && p.sell ? `${compact(p.sell)}<br><small>Jita sell</small>` : ''}</span></button></li>`;
   }
 
   /* =====================  Add to Ledger (js/app.js addCurrentJobToLedger)  ===================== */

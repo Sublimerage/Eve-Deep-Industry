@@ -1779,17 +1779,29 @@ if (searchInput) {
       searchResults.innerHTML = hits.map(item => {
         const isBp = window.isBlueprintName(item.name);
         // Blueprints aren't valid /icon items - show the manufactured product's icon instead.
+        // A few blueprints are named differently from what they make (e.g. "Peripheral Weapon Navigation
+        // Diameter Blueprint" makes a Target Painter), so the name lookup finds nothing - the recipe's
+        // own product id catches those before falling back to the blueprint's id.
+        const recipeProduct = isBp && window.recipeMap && window.recipeMap[item.id] ? parseInt(window.recipeMap[item.id].productTypeID, 10) : 0;
         const displayIconId = isBp
-          ? (window.resolveProductIdFromBlueprintName(item.name) || window.BLUEPRINT_TO_PRODUCT_MAP[item.id] || item.id)
+          ? (window.resolveProductIdFromBlueprintName(item.name) || window.BLUEPRINT_TO_PRODUCT_MAP[item.id] || (recipeProduct && recipeProduct !== item.id ? recipeProduct : 0) || item.id)
           : item.id;
         // The name goes into the inline handler as a JS string: JSON.stringify makes it a valid literal
         // (esc() alone leaves ' alone, so "'Peace' Large Remote Armor Repairer Blueprint" ended the string
         // early and the click threw a syntax error and did nothing), esc() then keeps its quotes from
         // ending the attribute.
+        // Icon fallback chain: the product's /icon, then its /render, then (blueprints only) the
+        // blueprint's OWN /bp image - some blueprints' products have no image at all on EVE's image
+        // server (or no known product), but the blueprint itself always does - then the shared
+        // "no image" placeholder rather than a broken-image glyph.
+        const showPlaceholder = `window.handleItemIconLoadError(this);`;
+        const iconOnError = isBp
+          ? `this.onerror=function(){this.onerror=function(){${showPlaceholder}}; this.src='https://images.evetech.net/types/${item.id}/bp?size=32';}; this.src='https://images.evetech.net/types/${displayIconId}/render?size=32';`
+          : `this.onerror=function(){${showPlaceholder}}; this.src='https://images.evetech.net/types/${displayIconId}/render?size=32';`;
         return `
         <div class="px-3 py-2 hover:bg-orange-500/15 cursor-pointer flex items-center space-x-3 text-xs border-b border-orange-500/15"
              onclick="selectItem(${item.id}, ${window.esc(JSON.stringify(item.name))})">
-          <img src="https://images.evetech.net/types/${displayIconId}/icon?size=32" alt="${window.esc(item.name)}" class="w-6 h-6 " loading="lazy" onerror="this.onerror=null; this.src='https://images.evetech.net/types/${displayIconId}/render?size=32';">
+          <img src="https://images.evetech.net/types/${displayIconId}/icon?size=32" alt="${window.esc(item.name)}" class="w-6 h-6 " loading="lazy" onerror="${iconOnError}">
           <span class="font-semibold text-slate-200">${window.esc(item.name)}</span>
         </div>
       `;
