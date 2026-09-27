@@ -335,7 +335,7 @@ function searchRigSlot(slotNum, query) {
   const matches = (q ? catalog.filter(r => r.name.toLowerCase().includes(q)) : catalog).slice(0, 25);
   const noneRow = `<div class="px-1.5 py-1 hover:bg-orange-500/15 cursor-pointer text-slate-400 border-b border-orange-500/15" onmousedown="selectRigForSlot(${slotNum}, 0, '')">— None —</div>`;
   const matchRows = matches.length > 0
-    ? matches.map(r => `<div class="px-1.5 py-1 hover:bg-orange-500/15 cursor-pointer border-b border-orange-500/15" onmousedown="selectRigForSlot(${slotNum}, ${r.typeId}, '${window.esc(r.name)}')" title="${window.esc((typeof window.describeRigBonus === 'function' ? window.describeRigBonus(r.typeId) : r.name))}">${window.esc(r.name)}</div>`).join('')
+    ? matches.map(r => `<div class="px-1.5 py-1 hover:bg-orange-500/15 cursor-pointer border-b border-orange-500/15" onmousedown="selectRigForSlot(${slotNum}, ${r.typeId}, ${window.esc(JSON.stringify(r.name))})" title="${window.esc((typeof window.describeRigBonus === 'function' ? window.describeRigBonus(r.typeId) : r.name))}">${window.esc(r.name)}</div>`).join('')
     : `<div class="p-1.5 text-slate-500">No matching ${activeStructure.rigSize}-sized rigs found.</div>`;
   resultsEl.innerHTML = noneRow + matchRows;
   resultsEl.classList.remove('hidden');
@@ -1454,7 +1454,7 @@ async function searchHomeMarket(query) {
     return;
   }
   resultsEl.innerHTML = matches.map(m => `
-    <div class="px-2 py-1.5 hover:bg-orange-500/15 cursor-pointer border-b border-orange-500/15" onmousedown="selectHomeMarket(${m.stationId}, '${window.esc(m.stationName)}')">
+    <div class="px-2 py-1.5 hover:bg-orange-500/15 cursor-pointer border-b border-orange-500/15" onmousedown="selectHomeMarket(${m.stationId}, ${window.esc(JSON.stringify(m.stationName))})">
       ${window.esc(m.stationName)}
     </div>
   `).join('');
@@ -1533,7 +1533,7 @@ async function searchAddMarket(query) {
     return;
   }
   resultsEl.innerHTML = matches.map(m => `
-    <div class="px-2 py-1.5 hover:bg-orange-500/15 cursor-pointer border-b border-orange-500/15" onmousedown="confirmAddMarket(${m.stationId}, '${window.esc(m.stationName)}')">
+    <div class="px-2 py-1.5 hover:bg-orange-500/15 cursor-pointer border-b border-orange-500/15" onmousedown="confirmAddMarket(${m.stationId}, ${window.esc(JSON.stringify(m.stationName))})">
       ${window.esc(m.stationName)}
     </div>
   `).join('');
@@ -1782,9 +1782,13 @@ if (searchInput) {
         const displayIconId = isBp
           ? (window.resolveProductIdFromBlueprintName(item.name) || window.BLUEPRINT_TO_PRODUCT_MAP[item.id] || item.id)
           : item.id;
+        // The name goes into the inline handler as a JS string: JSON.stringify makes it a valid literal
+        // (esc() alone leaves ' alone, so "'Peace' Large Remote Armor Repairer Blueprint" ended the string
+        // early and the click threw a syntax error and did nothing), esc() then keeps its quotes from
+        // ending the attribute.
         return `
         <div class="px-3 py-2 hover:bg-orange-500/15 cursor-pointer flex items-center space-x-3 text-xs border-b border-orange-500/15"
-             onclick="selectItem(${item.id}, '${window.esc(item.name)}')">
+             onclick="selectItem(${item.id}, ${window.esc(JSON.stringify(item.name))})">
           <img src="https://images.evetech.net/types/${displayIconId}/icon?size=32" alt="${window.esc(item.name)}" class="w-6 h-6 " loading="lazy" onerror="this.onerror=null; this.src='https://images.evetech.net/types/${displayIconId}/render?size=32';">
           <span class="font-semibold text-slate-200">${window.esc(item.name)}</span>
         </div>
@@ -1831,7 +1835,7 @@ if (systemSearchInput) {
     if (systemSearchResults) {
       systemSearchResults.innerHTML = hits.map(sys => `
         <div class="px-3 py-1.5 hover:bg-orange-500/15 cursor-pointer text-xs font-bold text-orange-300 border-b border-orange-500/15 mono"
-             onclick="window.selectSolarSystem(${sys.id}, '${window.esc(sys.name)}')">
+             onclick="window.selectSolarSystem(${sys.id}, ${window.esc(JSON.stringify(sys.name))})">
           ${window.esc(sys.name)}
         </div>
       `).join('');
@@ -3482,7 +3486,7 @@ function createNodeCard(node, autoCompact) {
         </div>
         <div class="flex items-center justify-between text-xs">
           <span>${!isRoot && savingsPct !== null ? `<span class="text-slate-400 uppercase tracking-wide" style="font-size:9.5px;">Order Savings</span> <span class="text-green-400 font-bold">${savingsPct}%</span>` : ''}</span>
-          <button onclick="openMarketComparison(event, ${productTypeId}, '${window.esc(node.productName || node.name)}')" class="icon-btn flex-shrink-0" style="width:22px;height:22px;" title="Compare price and trade volume across your tracked markets">
+          <button onclick="openMarketComparison(event, ${productTypeId}, ${window.esc(JSON.stringify(node.productName || node.name))})" class="icon-btn flex-shrink-0" style="width:22px;height:22px;" title="Compare price and trade volume across your tracked markets">
             <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;"><polyline points="17,1 21,5 17,9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7,23 3,19 7,15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
           </button>
         </div>

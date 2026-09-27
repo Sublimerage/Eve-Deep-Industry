@@ -90,7 +90,7 @@ function renderInventionSearchResults(hits, profitById) {
       ? `<span class="ml-auto text-xs font-bold flex-shrink-0" style="color:${profit >= 0 ? 'var(--green)' : 'var(--red)'};">${Math.round(profit).toLocaleString()} ISK</span>`
       : '';
     return `
-    <div class="lp-list-item" onmousedown="selectInventionItem(${h.id}, '${window.esc(h.name)}')">
+    <div class="lp-list-item" onmousedown="selectInventionItem(${h.id}, ${window.esc(JSON.stringify(h.name))})">
       <img src="https://images.evetech.net/types/${h.id}/icon?size=32" alt="${window.esc(h.name)}" class="w-6 h-6 rounded flex-shrink-0" loading="lazy" onerror="this.onerror=null; this.src='https://images.evetech.net/types/${h.id}/render?size=32';">
       <span class="font-semibold truncate" style="color:var(--text);">${window.esc(h.name)}</span>
       ${profitBadge}
