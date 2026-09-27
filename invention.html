@@ -142,14 +142,6 @@
           </div>
         </div>
 
-        <div class="fo-card" id="invention-skill-check-card" title="The skills you need trained to run this invention, and to manufacture what it makes, checked against your ESI skill sheet.">
-          <div class="flex items-center justify-between">
-            <span class="fo-card-title">Skill Check</span>
-            <span id="invention-skill-check-badge" class="lp-badge" style="display:none;"></span>
-          </div>
-          <div id="invention-skill-check-body"></div>
-        </div>
-
         <!-- This page has no system/structure/rig controls of its own (see js/invention.js's own
              comment on the functions below) - it silently used whatever the Calculator last set, with
              no way to see or change that here. This picker reuses the same saved presets the
@@ -272,16 +264,23 @@
           </select>
         </div>
 
-        <!-- Collapsed by default and deliberately compact (a wrapping chip row, not one full-width
-             row per skill) - these rarely need touching once auto-filled from ESI, so they no longer
-             claim permanent vertical space above settings you actually adjust often. -->
+        <!-- Collapsed by default so it doesn't claim vertical space above settings you adjust often; the
+             badge on its header still says at a glance whether you're missing a skill (see
+             js/invention.js renderInventionSkillCheck). It holds the three skills that set the invention
+             success chance as editable what-if levels, then the skill check against what your
+             character actually has trained. -->
         <details class="fo-card group">
           <summary class="cursor-pointer flex items-center justify-between list-none">
             <span class="fo-card-title">Skill Levels</span>
-            <span class="group-open:rotate-90 transition-transform" style="color:var(--text-mute);"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"/></svg></span>
+            <span class="flex items-center gap-2">
+              <span id="invention-skill-check-badge" class="lp-badge" style="display:none;"></span>
+              <span class="group-open:rotate-90 transition-transform" style="color:var(--text-mute);"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"/></svg></span>
+            </span>
           </summary>
-          <div id="invention-skill-inputs" class="flex flex-wrap gap-2 pt-2"></div>
-          <p class="fo-card-note mt-2">Auto-filled from your ESI skill sheet if logged in. Edit manually otherwise.</p>
+          <div class="text-[10px] uppercase tracking-wide font-bold pt-2" style="color:var(--text-mute);">These skills set your invention success chance</div>
+          <div id="invention-skill-inputs" class="flex flex-col gap-1.5 pt-2"></div>
+          <p class="fo-card-note mt-2">The levels above are what-ifs for the success chance: auto-filled from your ESI skills if logged in, and you can change them. The skill check below always uses what your character really has trained.</p>
+          <div id="invention-skill-check-body"></div>
         </details>
 
       </div>
@@ -375,7 +374,7 @@
   <script src="js/esi.js?v=8.0.43" defer></script>
   <script src="js/tree.js?v=8.0.7" defer></script>
   <script src="js/optimizers.js?v=8.0.25" defer></script>
-  <script src="js/invention.js?v=9.20.0" defer></script>
+  <script src="js/invention.js?v=9.20.1" defer></script>
   <script src="js/invention-queue.js?v=1.4.4" defer></script>
   <script src="js/custom-select.js?v=1.5.0" defer></script>
 </body>
