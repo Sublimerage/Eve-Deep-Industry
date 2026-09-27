@@ -260,6 +260,7 @@ async function selectInventionItem(typeId, name, skipSave) {
   document.getElementById('invention-base-chance').value = baseChance;
 
   renderInventionSkillInputs(t1Recipe.inventionSkills || []);
+  renderInventionSkillCheck();
   await renderInventionDatacoreList(t1Recipe.inventionMaterials || []);
 
   if (!skipSave) saveInventionState();
@@ -294,6 +295,122 @@ function renderInventionSkillInputs(skills) {
     `;
   }).join('');
 }
+
+// --- Skill check ---
+// Same idea as the Calculator's Skills panel (js/app.js computeMissingSkills/updateMissingSkillsUI):
+// what this needs versus your REAL trained levels (eve_char_skills' full sheet), plus how long the
+// missing ones take to train. Two groups, because invention is two jobs: running the invention itself
+// (the T1 blueprint's own invention skills - the two sciences + the encryption skill) and then
+// manufacturing the T2 item it makes (that blueprint's requiredSkills). Deliberately checks your
+// actual trained levels, never the "Skill Levels" boxes above - those are editable what-ifs for the
+// success-chance math, not what your character can really do.
+const INVENTION_SKILL_ROMAN = ['0', 'I', 'II', 'III', 'IV', 'V'];
+
+function getInventionSkillGroups() {
+  if (!_inventionCurrentBlueprint || !_inventionCurrentProduct) return [];
+  const t2Recipe = window.recipeMap && window.recipeMap[_inventionCurrentProduct.typeId];
+  const nameOf = (id, fallback) => (window.TYPE_ID_TO_NAME && window.TYPE_ID_TO_NAME[id]) || (window.EVE_ITEMS && window.EVE_ITEMS[id]) || fallback || `Skill #${id}`;
+  const toReqs = (list, useOwnName) => (list || []).map(sk => ({ skillId: sk.skillId, skillName: nameOf(sk.skillId, useOwnName ? sk.name : null), required: sk.level || 1 }));
+  return [
+    { key: 'invent', title: 'To invent', skills: toReqs(_inventionCurrentBlueprint.inventionSkills, true) },
+    { key: 'build', title: 'To build the result', skills: toReqs(t2Recipe && t2Recipe.requiredSkills, false) }
+  ].filter(g => g.skills.length > 0);
+}
+
+function getInventionTrainedSkills() {
+  const sheet = window.safeParseJSON(localStorage.getItem('eve_char_skills'), null);
+  return sheet && sheet.allSkills && Object.keys(sheet.allSkills).length > 0 ? sheet.allSkills : null;
+}
+
+let _inventionSkillCheckToken = 0;
+async function renderInventionSkillCheck() {
+  const body = document.getElementById('invention-skill-check-body');
+  const badge = document.getElementById('invention-skill-check-badge');
+  if (!body) return;
+  const token = ++_inventionSkillCheckToken;
+  const groups = getInventionSkillGroups();
+  if (!groups.length) { body.innerHTML = ''; if (badge) badge.style.display = 'none'; return; }
+  const trained = getInventionTrainedSkills();
+  const RED = '#e85555';
+
+  const rows = [];
+  const missingBySkill = new Map(); // skillId -> highest level still needed, across both groups
+  const groupsHTML = groups.map(g => `
+    <div style="margin-top:8px;">
+      <div class="text-[10px] uppercase tracking-wide font-bold" style="color:var(--text-mute);">${g.title}</div>
+      ${g.skills.map(sk => {
+        const have = trained ? (trained[sk.skillId] || 0) : null;
+        const missing = have !== null && have < sk.required;
+        if (missing) {
+          rows.push(sk);
+          const prev = missingBySkill.get(sk.skillId);
+          if (!prev || sk.required > prev.required) missingBySkill.set(sk.skillId, { skillId: sk.skillId, skillName: sk.skillName, required: sk.required, trained: have });
+        }
+        const color = missing ? RED : (have === null ? 'var(--text-soft)' : 'var(--text-mute)');
+        const status = have === null
+          ? `Need ${INVENTION_SKILL_ROMAN[sk.required] || sk.required}`
+          : (missing
+            ? `Need ${INVENTION_SKILL_ROMAN[sk.required] || sk.required} &middot; have ${INVENTION_SKILL_ROMAN[have] || have}`
+            : `${window.svgIcon ? window.svgIcon('check', { style: 'width:11px;height:11px;display:inline-block;vertical-align:-1px;margin-right:3px;color:var(--accent);' }) : ''}Need ${INVENTION_SKILL_ROMAN[sk.required] || sk.required} &middot; have ${INVENTION_SKILL_ROMAN[have] || have}`);
+        return `
+        <div class="fo-row" style="padding:3px 0;">
+          <span class="fo-row-label" style="color:${color};" title="Skill ID ${sk.skillId}">${window.esc(sk.skillName)}</span>
+          <span class="text-[11px] mono font-semibold" style="color:${color}; white-space:nowrap;">${status}</span>
+        </div>`;
+      }).join('')}
+    </div>`).join('');
+
+  if (badge) {
+    const n = missingBySkill.size;
+    badge.style.display = trained && n > 0 ? '' : 'none'; // (.lp-badge sets its own display, which beats .hidden)
+    if (trained && n > 0) {
+      badge.textContent = `${n} missing`;
+      badge.style.background = 'rgba(221,107,100,0.18)';
+      badge.style.color = 'var(--red-300, #f0918b)';
+    }
+  }
+
+  const status = !trained
+    ? `<div class="fo-card-note">Log in via ESI SSO (top right) to check these against your trained skills.</div>`
+    : (missingBySkill.size === 0
+      ? `<div class="fo-card-note" style="color:var(--accent);">You have every skill needed to invent this and build the result.</div>`
+      : '');
+  body.innerHTML = groupsHTML + status + (missingBySkill.size ? '<div id="invention-skill-training-body"></div>' : '');
+  if (!missingBySkill.size) return;
+
+  // Training time for what's missing, the same way the Calculator does it: your real attributes when
+  // you're logged in (an unskilled 17-all estimate otherwise), the highest level any row needs.
+  const charAttributes = window.safeParseJSON(localStorage.getItem('eve_char_attributes'), null);
+  const results = await Promise.all([...missingBySkill.values()].map(async skill => {
+    const info = await window.fetchSkillTrainingInfo(skill.skillId);
+    if (!info) return { ...skill, minutes: null };
+    return { ...skill, minutes: window.estimateSkillTrainingMinutes(info.rank, skill.trained, skill.required, charAttributes, info.primaryAttr, info.secondaryAttr) };
+  }));
+  if (token !== _inventionSkillCheckToken) return; // another item or a newer refresh has taken over
+  const container = document.getElementById('invention-skill-training-body');
+  if (!container) return;
+  const known = results.filter(r => r.minutes != null);
+  const totalMinutes = known.reduce((sum, r) => sum + r.minutes, 0);
+  container.innerHTML = `
+    <div style="margin-top:10px; padding-top:8px; border-top:1px solid #3a3025;">
+      <div class="fo-card-title">${window.svgIcon ? window.svgIcon('hourglass', { style: 'width:13px;height:13px;display:inline-block;vertical-align:-2px;margin-right:4px;' }) : ''}Estimated Training Time</div>
+      ${!charAttributes ? `<div class="fo-card-note">Log in via ESI SSO to use your real attributes (remap + implants already included) - showing an unskilled 17/17/17/17/17 estimate until then.</div>` : ''}
+      ${results.map(r => `
+        <div class="fo-row" style="padding:3px 0;">
+          <span class="fo-row-label" title="Skill ID ${r.skillId}">${window.esc(r.skillName)} <span class="mono" style="opacity:0.7;">${INVENTION_SKILL_ROMAN[r.trained] || r.trained}&rarr;${INVENTION_SKILL_ROMAN[r.required] || r.required}</span></span>
+          <span class="text-[11px] mono font-semibold" style="color:var(--accent);">${r.minutes != null ? window.formatDurationCompact(r.minutes * 60) : 'unknown'}</span>
+        </div>`).join('')}
+      <div class="fo-row" style="padding:5px 0 0; margin-top:4px; border-top:1px solid #3a3025;">
+        <span class="fo-row-label font-semibold">Total${known.length === results.length ? '' : ' (partial)'}</span>
+        <span class="text-[11px] mono font-bold" style="color:var(--accent);">${window.formatDurationCompact(totalMinutes * 60)}</span>
+      </div>
+      <div class="fo-card-note" style="margin-top:6px;">Assumes Omega training speed and full SP already banked at your current trained level - doesn't account for partial progress on a skill mid-training.</div>
+    </div>`;
+}
+window.renderInventionSkillCheck = renderInventionSkillCheck;
+// The skill sheet can arrive (or change with the active character) after the item was picked.
+window.addEventListener('eve:assets-refreshed', () => renderInventionSkillCheck());
+window.addEventListener('eve:active-character-changed', () => renderInventionSkillCheck());
 
 // Prices something you need to ACQUIRE (datacores, decryptor) using the same buy/sell strategy
 // toggle the manufacturing cost engine reads - "sell" means buying instantly off sell orders, "buy"

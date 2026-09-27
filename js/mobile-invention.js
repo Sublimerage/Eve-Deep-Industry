@@ -270,6 +270,77 @@
     return `<span class="stepper sm"><button type="button" data-step="${key}" data-d="-1" aria-label="Lower ${esc(label)}"${v <= min ? ' disabled' : ''}>−</button><input type="text" inputmode="numeric" data-inum="${key}" value="${v}" style="width:${w}px" aria-label="${esc(label)}"><button type="button" data-step="${key}" data-d="1" aria-label="Raise ${esc(label)}">+</button></span>`;
   }
 
+  /* =====================  Skill check  ===================== */
+  // Like the Calculator's Skills panel (and the desktop Invention page's Skill Check): what this needs
+  // versus your REAL trained levels, in two groups because invention is two jobs. "To invent" is the
+  // Tech I blueprint's invention skills (the two sciences and the encryption skill); "To build the
+  // result" is what the Tech II item's own blueprint needs. The Skills boxes in Setup are what-ifs
+  // for the success chance, so they're not used here.
+  const ROMAN = ['0', 'I', 'II', 'III', 'IV', 'V'];
+  function skillCheck() {
+    if (!I.typeId) return null;
+    const t1 = t2ToT1()[I.typeId];
+    const t2r = window.recipeMap && window.recipeMap[I.typeId];
+    const raw = MB.hasSkillSheet() ? (MB.rawSkills().allSkills || {}) : null;
+    const rows = (list, useOwnName) => (list || []).map(sk => {
+      const need = sk.level || 1;
+      const have = raw ? raw[sk.skillId] || 0 : null;
+      const name = (window.TYPE_ID_TO_NAME && window.TYPE_ID_TO_NAME[sk.skillId]) || (window.EVE_ITEMS && window.EVE_ITEMS[sk.skillId]) || (useOwnName && sk.name) || `Skill #${sk.skillId}`;
+      return { id: sk.skillId, name, need, have, missing: raw ? have < need : false };
+    });
+    const groups = [
+      { title: 'To invent', rows: rows(t1 && t1.inventionSkills, true) },
+      { title: 'To build the result', rows: rows(t2r && t2r.requiredSkills, false) }
+    ].filter(g => g.rows.length);
+    // Each missing skill once, at the highest level any row needs.
+    const missing = new Map();
+    groups.forEach(g => g.rows.forEach(r => { if (r.missing) { const m = missing.get(r.id); if (!m || r.need > m.need) missing.set(r.id, { id: r.id, name: r.name, need: r.need, have: r.have, key: `${r.id}:${r.have}:${r.need}` }); } }));
+    return { raw, groups, missing: [...missing.values()] };
+  }
+  // Minutes to train each missing skill (js/esi.js, with your real attributes when you're logged in).
+  // undefined = not asked yet, null = on its way, -1 = EVE didn't say.
+  const TRAIN = {};
+  function ensureTraining(missing) {
+    const todo = missing.filter(m => TRAIN[m.key] === undefined);
+    if (!todo.length) return;
+    todo.forEach(m => { TRAIN[m.key] = null; });
+    const attrs = LS.get('eve_char_attributes', null);
+    Promise.all(todo.map(async m => {
+      try {
+        const info = await window.fetchSkillTrainingInfo(m.id);
+        const mins = info ? window.estimateSkillTrainingMinutes(info.rank, m.have, m.need, attrs, info.primaryAttr, info.secondaryAttr) : null;
+        TRAIN[m.key] = mins == null ? -1 : mins;
+      } catch (e) { TRAIN[m.key] = -1; }
+    })).then(() => { if (MB.screen() === 'inv' && I.tab === 'setup') render(); });
+  }
+  function skillCheckHTML() {
+    const c = skillCheck();
+    if (!c || !c.groups.length) return '';
+    const intro = !MB.isLoggedIn()
+      ? `<div class="login-card">${ICON.lock}<p>Log in to check these against your trained skills.</p><button class="btn primary" type="button" data-iact="login">Log in</button></div>`
+      : !c.raw ? '<div class="loading-row"><span class="spin" aria-hidden="true"></span>Loading your skills from EVE…</div>' : '';
+    const groups = c.groups.map(g => `<div class="card-title">${esc(g.title)}</div><div class="card">${g.rows.map(r => `<div class="kv"><span class="k">${esc(r.name)}</span>${r.have === null ? `<span class="v mutev">need ${ROMAN[r.need] || r.need}</span>` : r.missing ? `<span class="v neg">need ${ROMAN[r.need] || r.need} · have ${ROMAN[r.have] || r.have}</span>` : `<span class="v pos">${ICON.check} need ${ROMAN[r.need] || r.need} · have ${ROMAN[r.have] || r.have}</span>`}</div>`).join('')}</div>`).join('');
+    let tail = '';
+    if (c.raw && !c.missing.length) tail = `<p class="okline">${ICON.check}You have every skill needed to invent this and build the result.</p>`;
+    if (c.raw && c.missing.length) {
+      ensureTraining(c.missing);
+      const known = c.missing.filter(m => TRAIN[m.key] > 0 || TRAIN[m.key] === 0);
+      const total = known.reduce((sum, m) => sum + TRAIN[m.key], 0);
+      const pending = c.missing.some(m => TRAIN[m.key] === null);
+      tail = `<div class="card-title">Time to train</div><div class="card">
+        ${c.missing.map(m => `<div class="kv"><span class="k">${esc(m.name)}<small>${ROMAN[m.have] || m.have} → ${ROMAN[m.need] || m.need}</small></span><span class="v">${TRAIN[m.key] === null ? '<span class="spin" aria-hidden="true"></span>' : TRAIN[m.key] < 0 ? '—' : dur(TRAIN[m.key] * 60)}</span></div>`).join('')}
+        <div class="kv total"><span class="k">Total${!pending && known.length < c.missing.length ? ' (partial)' : ''}</span><span class="v">${pending ? '…' : dur(total * 60)}</span></div>
+      </div><p class="note">Assumes Omega training speed and full skill points already banked at your current level.</p>`;
+    }
+    return `<div class="card-title">Skill check${c.missing.length ? ` <span class="spill warnp">${c.missing.length} missing</span>` : ''}</div>${intro}${groups}${tail}`;
+  }
+  // A heads-up on Compare so a missing skill isn't only found by opening Setup.
+  function skillNoticeHTML() {
+    const c = skillCheck();
+    if (!c || !c.raw || !c.missing.length) return '';
+    return `<div class="errbox">${ICON.warn}<p>${c.missing.length} skill${c.missing.length === 1 ? '' : 's'} missing to invent this or build the result.</p><button class="linkbtn" type="button" data-itab="setup">See which</button></div>`;
+  }
+
   function headerHTML() {
     if (!I.typeId) {
       return `<button class="product product-btn" type="button" data-iact="pick" aria-haspopup="dialog"><span class="ic ic-none" aria-hidden="true">${ICON.bp}</span><span class="p-text"><span class="p-name">Choose a Tech II item</span><span class="p-sub">What you want to invent, like Hobgoblin II or Wolf</span></span>${ICON.down}</button>`;
@@ -293,7 +364,7 @@
     const rows = sorted();
     const b = rows[0];
     const pos = fin(b.profitPerRun) && b.profitPerRun >= 0;
-    return `${I.computing ? '<p class="note" style="margin:0 2px 10px"><span class="spin" aria-hidden="true"></span> Updating…</p>' : ''}
+    return `${skillNoticeHTML()}${I.computing ? '<p class="note" style="margin:0 2px 10px"><span class="spin" aria-hidden="true"></span> Updating…</p>' : ''}
       <div class="best${pos ? '' : ' is-neg'}">
         <div class="best-top">${decIcon(b)}<div><div class="best-label">Best by ${SORT_LABEL[I.sort]}</div><div class="best-name">${esc(b.dec.name)}</div></div></div>
         <div class="best-profit ${pos ? 'pos' : 'neg'}">${money(b.profitPerRun, true)}</div>
@@ -366,6 +437,7 @@
       <div class="card">
         ${skills.length ? skills.map(sk => `<div class="kv"><span class="k">${esc(sk.name || `Skill ${sk.skillId}`)}<small>${isEncryption(sk) ? 'encryption skill' : 'science skill'}${sheet ? ` · you have ${trained(sk.skillId)}` : ''}</small></span>${MB.stepper('skill:' + sk.skillId, I.skills[sk.skillId] || 0, 0, 5, sk.name || 'skill')}</div>`).join('') : '<p class="note" style="padding:10px 0">No skill data for this blueprint.</p>'}
       </div>
+      ${skillCheckHTML()}
       <div class="card-title">Datacores per attempt</div>
       <div class="card">
         ${datacores.map(d => `<div class="kv">${iconHTML(d.typeId)}<span class="k">${esc(String(d.name || MB.nameOf(d.typeId)).replace('Datacore - ', ''))}<small>${d.qty} × ${compact(inputPrice(d.typeId))} · ${prefs.priceMode === 'buy' ? 'buy order' : 'Jita sell'}</small></span><span class="v">${compact(d.qty * inputPrice(d.typeId))}</span></div>`).join('')}
