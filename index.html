@@ -792,12 +792,22 @@
           </div>
 
           <div class="fo-group">
+            <label class="lp-label fo-group-label">Skills</label>
+            <div class="flex items-center gap-2">
+              <label class="pill-check" id="blueprint-hide-missing-skills-wrap" title="Log in via EVE SSO (top right) to check your skills against your blueprints.">
+                <input type="checkbox" id="blueprint-hide-missing-skills" onchange="filterBlueprintBrowser()" disabled>
+                <span class="pill-check-face"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>Hide missing skills</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="fo-group">
             <label class="lp-label fo-group-label">Actions</label>
             <div class="grid grid-cols-2 gap-1.5">
               <button onclick="loadBlueprintBrowserData(true)" class="btn-glass btn-glass-muted px-2.5 py-1.5 text-[10px]">Refresh</button>
               <button id="blueprint-scan-btn" onclick="scanBlueprintProfits()" class="btn-glass px-2.5 py-1.5 text-[10px]" title="Computes manufacturing profit for every visible blueprint using its real owned ME/TE/runs - can take a while for large collections"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="20" x2="4" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="20" y1="20" x2="20" y2="14"/></svg> Scan Profit</button>
             </div>
-            <button id="blueprint-readiness-btn" onclick="scanBlueprintReadiness()" class="btn-glass w-full px-2.5 py-1.5 text-[10px] flex items-center justify-center gap-1.5 mt-1.5" title="Checks each visible blueprint's direct materials against your current stock - shows which ones you could build right now with zero shopping">
+            <button id="blueprint-readiness-btn" onclick="scanBlueprintReadiness()" class="btn-glass w-full px-2.5 py-1.5 text-[10px] flex items-center justify-center gap-1.5 mt-1.5" title="Checks each visible blueprint's direct materials against your current stock, and its required skills against your active character - shows which ones you could build right now with zero shopping or training">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;flex-shrink:0;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
               What Can I Build Right Now?
             </button>
@@ -883,7 +893,7 @@
   <script src="js/esi.js?v=15.8.35" defer></script>
   <script src="js/tree.js?v=15.1.6" defer></script>
   <script src="js/optimizers.js?v=15.4.21" defer></script>
-  <script src="js/app.js?v=15.127.2" defer></script>
+  <script src="js/app.js?v=15.128.0" defer></script>
   <script src="js/custom-select.js?v=1.5.0" defer></script>
 </body>
 </html>

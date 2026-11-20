@@ -911,7 +911,11 @@
       if ((el = hit('#bp-scan'))) { if (!el.disabled) scanAllBps(); return; }
       if ((el = hit('#bp-ready'))) {
         const rows = bpStack(bpFiltered());
-        if (!BPB.ready && !rows.some(b => { const r = bpReady(b); return r && r.buildableRuns > 0; })) { toast('Nothing here can be built with your current stock'); return; }
+        if (!BPB.ready && !rows.some(bpReadyNow)) {
+          const needSkills = rows.filter(b => { const r = bpReady(b); return r && r.buildableRuns > 0; }).length;
+          toast(needSkills ? `Nothing here can be built right now. ${needSkills} ha${needSkills === 1 ? 's' : 've'} the stock but need${needSkills === 1 ? 's' : ''} skills.` : 'Nothing here can be built with your current stock');
+          return;
+        }
         BPB.ready = !BPB.ready;
         MB.fillSheet();
         $('#bp-ready').focus();
@@ -923,7 +927,7 @@
   };
 
   /* ---------- My blueprints (js/app.js blueprint browser) ---------- */
-  const BPB = { data: null, loading: false, error: null, q: '', type: 'all', cat: 'all', loc: 'all', personal: true, corp: true, stack: true, byProfit: false, ready: false, scanning: null };
+  const BPB = { data: null, loading: false, error: null, q: '', type: 'all', cat: 'all', loc: 'all', personal: true, corp: true, stack: true, byProfit: false, skills: false, ready: false, scanning: null };
   const BP_CATS = [[6, 'Ships'], [7, 'Modules'], [18, 'Drones'], [8, 'Ammo & charges'], [65, 'Structures'], [32, 'Subsystems'], ['other', 'Other']];
   const BP_KNOWN = new Set([6, 7, 18, 8, 65, 32]);
   const PROFIT_KEY = 'eve_blueprint_profit_cache_v2';   // shared with the desktop
@@ -970,13 +974,27 @@
     if (f.startsWith('container_')) return b.containerId === parseInt(f.slice(10));
     return true;
   }
+  // js/app.js computeBlueprintMissingSkills: the blueprint's own required skills (not the whole
+  // build) against your REAL trained levels - never Simulate V, which would make everything look
+  // buildable. null = can't tell (no skill sheet or no recipe data), so it's never flagged or hidden.
+  function bpMissing(b) {
+    if (!MB.hasSkillSheet()) return null;
+    const recipe = window.recipeMap[b.type_id];
+    if (!recipe || !Array.isArray(recipe.requiredSkills)) return null;
+    const raw = MB.rawSkills().allSkills || {};
+    return recipe.requiredSkills.filter(r => (raw[r.skillId] || 0) < r.level)
+      .map(r => ({ id: r.skillId, name: skillName(r.skillId), need: r.level, have: raw[r.skillId] || 0 }));
+  }
+  const bpLacksSkills = b => { const m = bpMissing(b); return !!(m && m.length); };
   function bpFiltered() {
     const q = BPB.q.trim().toLowerCase();
+    const hideUnskilled = BPB.skills && MB.hasSkillSheet();
     return (BPB.data || []).filter(b => (b.source === 'Personal' ? BPB.personal : BPB.corp)
       && (!q || b.name.toLowerCase().includes(q))
       && bpMatchesLoc(b)
       && (BPB.type === 'all' || (BPB.type === 'bpo') === (b.quantity === -1))
-      && (BPB.cat === 'all' || (BPB.cat === 'other' ? !BP_KNOWN.has(b.categoryId) : b.categoryId === Number(BPB.cat))));
+      && (BPB.cat === 'all' || (BPB.cat === 'other' ? !BP_KNOWN.has(b.categoryId) : b.categoryId === Number(BPB.cat)))
+      && !(hideUnskilled && bpLacksSkills(b)));
   }
   // js/app.js stackBlueprints: identical copies in the same place show as one row with a count.
   function bpStack(list) {
@@ -1020,6 +1038,8 @@
     if (!isFinite(max)) max = 0;
     return { buildableRuns: b.quantity === -1 ? max : Math.min(max, Math.max(1, b.runs)), isReaction };
   }
+  // "What can I build?" means the stock covers a run AND you have the skills to start the job.
+  const bpReadyNow = b => { const r = bpReady(b); return !!(r && r.buildableRuns > 0 && !bpLacksSkills(b)); };
   // js/app.js computeBlueprintManufacturingProfit: 1 run for an original, every run left on a copy,
   // at your current build choices, station and fees. Jita sell after tax and broker, minus materials
   // and job fees (no leftover credit). Saved in the desktop's own cache.
@@ -1085,10 +1105,12 @@
     const queued = bpQueued(b);
     const scan = cache[bpKey(b)];
     const ready = BPB.ready ? bpReady(b) : undefined;
+    const missing = bpMissing(b) || [];
     const isReaction = window.recipeMap[b.type_id] && window.recipeMap[b.type_id].reactionMaterials && window.recipeMap[b.type_id].reactionMaterials.length && !(window.recipeMap[b.type_id].mfgMaterials || []).length;
     const tags = [
       loaded ? `<span class="spill ok">${ICON.check}Loaded</span>` : '',
       queued ? `<span class="spill warnp">${ICON.lock}${queued.used}/${queued.total} runs queued</span>` : '',
+      missing.length ? `<span class="spill warnp">${ICON.warn}${missing.length} skill${missing.length === 1 ? '' : 's'} missing</span>` : '',
       ready === undefined ? '' : ready === null ? '<span class="spill planned">No material data</span>' : ready.buildableRuns > 0 ? `<span class="spill ok">${ICON.check}Stock covers ${qty(ready.buildableRuns)} run${ready.buildableRuns === 1 ? '' : 's'}</span>` : '<span class="spill warnp">Not enough for 1 run</span>',
       b.containerName ? `<span class="spill planned">${ICON.box}${esc(b.containerName)}</span>` : '',
       showStation ? `<span class="spill planned">${ICON.pin}${esc(String(b.stationName).split(' - ')[0])}</span>` : ''
@@ -1100,7 +1122,7 @@
     return `<li class="bpcard${loaded ? ' is-loaded' : ''}">
         <div class="bp-top">
           <span class="bpic">${MB.iconHTML(b.type_id, '', isBPO ? 'bp' : 'bpc')}<span class="bpo-tag ${isBPO ? 'o' : 'c'}">${isBPO ? 'BPO' : 'BPC'}</span></span>
-          <div class="bp-main"><b>${esc(b.name)}</b><span class="bp-meta">${isBPO ? 'Original · unlimited runs' : `Copy · ${b.runs} run${b.runs === 1 ? '' : 's'}`}${b.count > 1 ? ` · ×${b.count}` : ''} · ${b.source}</span>${tags ? `<span class="tags">${tags}</span>` : ''}</div>
+          <div class="bp-main"><b>${esc(b.name)}</b><span class="bp-meta">${isBPO ? 'Original · unlimited runs' : `Copy · ${b.runs} run${b.runs === 1 ? '' : 's'}`}${b.count > 1 ? ` · ×${b.count}` : ''} · ${b.source}</span>${missing.length ? `<span class="bp-meta bp-need">Needs ${missing.map(s => `${esc(s.name)} ${ROMAN[s.need] || s.need} (have ${ROMAN[s.have] || s.have})`).join(' · ')}</span>` : ''}${tags ? `<span class="tags">${tags}</span>` : ''}</div>
           <div class="bp-right">${right}</div>
         </div>
         <div class="bp-foot">${research}<button class="minibtn" type="button" data-bpscan="${b.item_id}" aria-label="Scan profit for ${esc(b.name)}"${pt ? '' : ' disabled'}>${ICON.chart}</button><button class="btn bp-load" type="button" data-bpload="${b.item_id}">Load</button></div>
@@ -1108,8 +1130,8 @@
   }
   function bpListHTML() {
     let rows = bpStack(bpFiltered());
-    if (BPB.ready) rows = rows.filter(b => { const r = bpReady(b); return r && r.buildableRuns > 0; });
-    if (!rows.length) return `<p class="empty"><b>No blueprints here</b>${BPB.ready ? 'Nothing you can build with your current stock under these filters.' : 'None match your search and filters.'}</p>`;
+    if (BPB.ready) rows = rows.filter(bpReadyNow);
+    if (!rows.length) return `<p class="empty"><b>No blueprints here</b>${BPB.ready ? 'Nothing you can build with your current stock and skills under these filters.' : 'None match your search and filters.'}</p>`;
     const cache = profitCache();
     if (BPB.byProfit) {
       const val = b => { const s = cache[bpKey(b)]; return s ? s.profit : -Infinity; };
@@ -1140,6 +1162,7 @@
         <button class="chip" type="button" data-bpflag="corp" aria-pressed="${BPB.corp}">Corp</button>
         <button class="chip" type="button" data-bpflag="stack" aria-pressed="${BPB.stack}">Stack copies</button>
         <button class="chip" type="button" data-bpflag="byProfit" aria-pressed="${BPB.byProfit}">Sort by profit</button>
+        ${MB.hasSkillSheet() ? `<button class="chip" type="button" data-bpflag="skills" aria-pressed="${BPB.skills}">Hide missing skills</button>` : ''}
       </div>
       <div class="twosel">
         <select id="bp-cat" aria-label="Category"><option value="all">All categories</option>${cats.map(([c, l]) => `<option value="${c}"${String(c) === String(BPB.cat) ? ' selected' : ''}>${l}</option>`).join('')}</select>

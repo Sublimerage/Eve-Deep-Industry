@@ -605,6 +605,51 @@ function blueprintMatchesLocationFilter(bp, filterVal, activeSystemName) {
 
 const BLUEPRINT_BROWSER_KNOWN_CATEGORIES = [6, 7, 18, 8, 65, 32]; // Ships, Modules, Drones, Ammo/Charges, Structures, Subsystems
 
+// Missing Required Skills check for My Blueprints - the same check the main page runs on a loaded
+// build (computeMissingSkills, above), but only against each blueprint's OWN job, not its whole build
+// tree: the parts it needs can just as well be bought, and the main page already checks the full tree
+// once the blueprint is loaded. Always reads the REAL trained sheet (the active character's - it's
+// re-fetched on character switch), never Simulate All to V: that toggle is a what-if for build times,
+// and letting it make blueprints look buildable here would defeat the point of the filter.
+function getRealTrainedSkills() {
+  const rawSheet = window.safeParseJSON(localStorage.getItem('eve_char_skills'), null);
+  return (rawSheet && rawSheet.allSkills && Object.keys(rawSheet.allSkills).length > 0) ? rawSheet.allSkills : null;
+}
+window.getRealTrainedSkills = getRealTrainedSkills;
+
+// null = can't tell (not logged in, or no recipe data for this blueprint) - never hidden or flagged;
+// [] = every required skill is trained; otherwise the list of skills still short of what's needed.
+function computeBlueprintMissingSkills(bp, trained) {
+  if (trained === undefined) trained = getRealTrainedSkills();
+  if (!trained) return null;
+  const recipe = window.recipeMap && window.recipeMap[bp.type_id];
+  if (!recipe || !Array.isArray(recipe.requiredSkills)) return null;
+  return recipe.requiredSkills
+    .filter(req => (trained[req.skillId] || 0) < req.level)
+    .map(req => ({
+      skillId: req.skillId,
+      skillName: (window.TYPE_ID_TO_NAME && window.TYPE_ID_TO_NAME[req.skillId]) || `Skill #${req.skillId}`,
+      required: req.level,
+      trained: trained[req.skillId] || 0
+    }));
+}
+window.computeBlueprintMissingSkills = computeBlueprintMissingSkills;
+
+// The "Hide missing skills" filter only means something with a real skill sheet to check against -
+// logged out, it's shown disabled (not hidden) so it's discoverable, with a hint on how to enable it.
+function syncBlueprintSkillFilterState(trained) {
+  const cb = document.getElementById('blueprint-hide-missing-skills');
+  const wrap = document.getElementById('blueprint-hide-missing-skills-wrap');
+  if (!cb || !wrap) return;
+  cb.disabled = !trained;
+  if (!trained) cb.checked = false;
+  wrap.style.opacity = trained ? '' : '0.5';
+  wrap.style.cursor = trained ? '' : 'not-allowed';
+  wrap.title = trained
+    ? "Hides blueprints your active character doesn't have the skills to build. Only checks the blueprint itself, not the parts it uses."
+    : 'Log in via EVE SSO (top right) to check your skills against your blueprints.';
+}
+
 function getCurrentlyFilteredBlueprints() {
   const q = (document.getElementById('blueprint-browser-search')?.value || '').toLowerCase().trim();
   const loc = document.getElementById('blueprint-location-filter')?.value || 'all';
@@ -613,6 +658,9 @@ function getCurrentlyFilteredBlueprints() {
   const useCorp = document.getElementById('blueprint-use-corp')?.checked ?? true;
   const typeFilter = document.getElementById('blueprint-type-filter')?.value || 'all';
   const categoryFilter = document.getElementById('blueprint-category-filter')?.value || 'all';
+  const trained = getRealTrainedSkills();
+  syncBlueprintSkillFilterState(trained);
+  const hideMissingSkills = !!trained && (document.getElementById('blueprint-hide-missing-skills')?.checked ?? false);
 
   return _blueprintBrowserData.filter(b => {
     if (b.source === 'Personal' && !useChar) return false;
@@ -628,6 +676,10 @@ function getCurrentlyFilteredBlueprints() {
       } else if (b.categoryId !== parseInt(categoryFilter)) {
         return false;
       }
+    }
+    if (hideMissingSkills) {
+      const missing = computeBlueprintMissingSkills(b, trained);
+      if (missing && missing.length > 0) return false;
     }
     return true;
   });
@@ -836,8 +888,16 @@ function computeBlueprintReadiness(bp) {
 
   const isBPO = bp.quantity === -1;
   const buildableRuns = isBPO ? maxRunsFromStock : Math.min(maxRunsFromStock, Math.max(1, bp.runs));
+  // "Right now" also means "this character can start the job" - stock alone isn't enough if a
+  // required skill is untrained. Unknown (null: logged out/no data) never blocks, same as the filter.
+  const missingSkills = computeBlueprintMissingSkills(bp);
+  const lacksSkills = !!(missingSkills && missingSkills.length > 0);
 
-  return { buildableRuns, isReaction };
+  return { buildableRuns, isReaction, lacksSkills };
+}
+
+function isBlueprintReadyNow(r) {
+  return !!(r && r.buildableRuns > 0 && !r.lacksSkills);
 }
 
 let _blueprintReadinessCache = {}; // same cache-key scheme as the profit scanner
@@ -878,14 +938,18 @@ async function scanBlueprintReadiness() {
   });
 
   btn.disabled = false;
-  const buildableCount = Object.values(_blueprintReadinessCache).filter(r => r && r.buildableRuns > 0).length;
-  const checkedCount = Object.values(_blueprintReadinessCache).filter(r => r !== null).length;
+  const results = Object.values(_blueprintReadinessCache);
+  const buildableCount = results.filter(isBlueprintReadyNow).length;
+  const checkedCount = results.filter(r => r !== null).length;
+  const stockedButUnskilledCount = results.filter(r => r && r.buildableRuns > 0 && r.lacksSkills).length;
 
   if (buildableCount === 0) {
     const originalHTML = btn.innerHTML;
-    btn.innerHTML = checkedCount > 0
-      ? window.svgIcon('warning') + ' Nothing buildable with current stock'
-      : window.svgIcon('warning') + ' No material data found';
+    btn.innerHTML = checkedCount === 0
+      ? window.svgIcon('warning') + ' No material data found'
+      : stockedButUnskilledCount > 0
+        ? window.svgIcon('warning') + ` Nothing buildable (${stockedButUnskilledCount} need skills)`
+        : window.svgIcon('warning') + ' Nothing buildable with current stock';
     setTimeout(() => { if (btn) btn.innerHTML = originalHTML; }, 4000);
     return;
   }
@@ -893,7 +957,7 @@ async function scanBlueprintReadiness() {
   _readinessFilterActive = true;
   btn.innerHTML = window.svgIcon('eye') + ` Show All (${buildableCount} Buildable)`;
   btn.className = 'btn-glass btn-glass-muted w-full px-2.5 py-1.5 text-[10px]';
-  btn.title = `Showing only the ${buildableCount} of ${checkedCount} checked blueprints you can build right now with current stock - click to show everything again`;
+  btn.title = `Showing only the ${buildableCount} of ${checkedCount} checked blueprints you can build right now with current stock and skills${stockedButUnskilledCount > 0 ? ` (${stockedButUnskilledCount} more have the stock but need skills)` : ''} - click to show everything again`;
   filterBlueprintBrowser();
 }
 window.scanBlueprintReadiness = scanBlueprintReadiness;
@@ -943,14 +1007,15 @@ function renderBlueprintBrowserList(list, stackEnabled, sortByProfit) {
   // missing components entirely - the point of this mode is "show me what's actually buildable",
   // not a full inventory audit.
   if (_readinessFilterActive) {
-    processedList = processedList.filter(bp => bp._readinessResult && bp._readinessResult.buildableRuns > 0);
+    processedList = processedList.filter(bp => isBlueprintReadyNow(bp._readinessResult));
     if (processedList.length === 0) {
-      listEl.innerHTML = `<div class="text-slate-500 italic p-4 text-center">Nothing buildable with current stock under your active filters. Click "Show All" to see everything again.</div>`;
+      listEl.innerHTML = `<div class="text-slate-500 italic p-4 text-center">Nothing buildable with current stock and skills under your active filters. Click "Show All" to see everything again.</div>`;
       return;
     }
   }
 
   const lastLoadedItemId = getLastLoadedBlueprintItemId();
+  const trainedSkills = getRealTrainedSkills(); // read once per render, not once per row
   // Read fresh from the queue itself every render, rather than maintaining a separate tracked set -
   // that way the tag always matches reality with zero extra bookkeeping: deleting, collecting, or
   // undoing a queued job automatically clears its tag here too, since it's just gone from the source
@@ -1027,6 +1092,15 @@ function renderBlueprintBrowserList(list, stackEnabled, sortByProfit) {
         ? `<span class="lp-badge lp-badge-accent flex-shrink-0" title="Current stock covers ${r.buildableRuns.toLocaleString()} full run${r.buildableRuns > 1 ? 's' : ''}">${window.svgIcon('check')} ${r.buildableRuns.toLocaleString()} run${r.buildableRuns > 1 ? 's' : ''}</span>`
         : `<span class="lp-badge lp-badge-danger flex-shrink-0" title="Not enough stock for even 1 run right now">${window.svgIcon('warning')} 0 runs</span>`;
     }
+    // Only ever flags a real gap - nothing shows when skills are covered or can't be checked (logged
+    // out), so a fully-trained character's list looks exactly as it did before this existed.
+    const missingSkills = computeBlueprintMissingSkills(bp, trainedSkills);
+    let skillsBadge = '';
+    if (missingSkills && missingSkills.length > 0) {
+      const n = missingSkills.length;
+      const detail = missingSkills.map(m => `${m.skillName}: need ${SKILL_LEVEL_ROMAN[m.required] || m.required}, have ${SKILL_LEVEL_ROMAN[m.trained] || m.trained}`).join('\n');
+      skillsBadge = `<span class="lp-badge lp-badge-danger flex-shrink-0" title="${window.esc(`Missing required skills to build this:\n${detail}`)}">${window.svgIcon('warning')} ${n} skill${n > 1 ? 's' : ''} missing</span>`;
+    }
     // Source ("Personal"/"Corp") and run count sit inline with the name now, not on their own
     // text row below - keeps each card to a slimmer two-line footprint instead of three.
     const sourceBadge = `<span class="text-[10px] font-semibold text-slate-500 flex-shrink-0">${window.esc(bp.source)}</span>`;
@@ -1044,7 +1118,7 @@ function renderBlueprintBrowserList(list, stackEnabled, sortByProfit) {
         <div class="flex items-center gap-1.5 min-w-0">
           <img src="https://images.evetech.net/types/${bp.type_id}/${bpImageVariant}?size=32" alt="${window.esc(name)}" class="w-8 h-8 rounded-md border border-white/10 bg-black/40 flex-shrink-0" loading="lazy" title="${isOriginal ? 'Blueprint Original (BPO)' : 'Blueprint Copy (BPC)'}">
           <span class="font-bold text-slate-200 truncate">${window.esc(name)}</span>
-          ${originalBadge}${loadedBadge}${queuedBadge}${sourceBadge}${runsBadge}${stackBadge}${readinessBadge}
+          ${originalBadge}${loadedBadge}${queuedBadge}${sourceBadge}${runsBadge}${stackBadge}${skillsBadge}${readinessBadge}
         </div>
         <div class="flex items-center justify-between gap-3">
           <div class="text-[10px] text-slate-500 truncate flex items-center gap-1.5 min-w-0">
