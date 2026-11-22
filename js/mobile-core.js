@@ -120,6 +120,8 @@ window.MB = (() => {
   const ICON_ERR = "var f=this.dataset.fb;if(f){this.removeAttribute('data-fb');this.src=f}else{this.remove()}";
   function iconHTML(typeId, cls, variant, bpId) {
     if (!typeId && !bpId) return `<span class="ic ic-none ${cls || ''}" aria-hidden="true">${ICON.none}</span>`;
+    // Tech III relics only have a "relic" image on EVE's image server, no /icon.
+    if (typeId && !variant && window.EVE_REVERSE_ENGINEERING && window.EVE_REVERSE_ENGINEERING[typeId]) variant = 'relic';
     const src = typeId ? iconUrl(typeId, variant) : iconUrl(bpId, 'bp');
     const fb = typeId && bpId ? ` data-fb="${iconUrl(bpId, 'bp')}"` : '';
     return `<span class="ic ${cls || ''}" aria-hidden="true"><img src="${src}"${fb} alt="" loading="lazy" decoding="async" onerror="${ICON_ERR}"></span>`;

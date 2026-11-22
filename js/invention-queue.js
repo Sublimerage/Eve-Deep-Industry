@@ -604,7 +604,7 @@ async function renderInventionQueueBom() {
     return `
       <div class="lp-card p-2.5">
         <div class="flex items-start gap-2.5">
-          <img src="https://images.evetech.net/types/${r.typeId}/icon?size=32" alt="" class="w-8 h-8 rounded-md flex-shrink-0" loading="lazy" onerror="this.style.visibility='hidden'">
+          <img src="https://images.evetech.net/types/${r.typeId}/icon?size=32" alt="" class="w-8 h-8 rounded-md flex-shrink-0" loading="lazy" onerror="if(!this.dataset.relic){this.dataset.relic='1';this.src=this.src.replace('/icon?','/relic?');}else{this.style.visibility='hidden';}">
           <div class="min-w-0 flex-1">
             <div class="flex items-center justify-between gap-2">
               <span class="font-semibold truncate" style="color:var(--text-soft);">${window.esc(r.name)}</span>

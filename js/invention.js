@@ -41,6 +41,121 @@ function getInventionT2ToT1Map() {
   return map;
 }
 
+// --- Tech III reverse engineering ---
+// Reverse engineering is invention (activity 8) with a relic in place of the T1 BPC: same success
+// formula, same decryptors, same ME 2 / TE 4 starting point. What differs is all per-relic data from
+// the SDE (eve_re_db.js, built by scripts/generate_reverse_engineering_db.py): base chance and
+// runs by relic quality (Intact 26%/20 runs, Malfunctioning 21%/10, Wrecked 14%/3), and the relic
+// itself is used up on every attempt, so its price is part of each attempt's cost (a T1 BPC only
+// loses a run, which is why the T2 path leaves it out).
+// T3 product -> [{ relicId, relic, route }], best base chance first (Intact, Malfunctioning, Wrecked).
+let _inventionT3ToRelicsMap = null;
+function getInventionT3ToRelicsMap() {
+  if (_inventionT3ToRelicsMap) return _inventionT3ToRelicsMap;
+  const map = {};
+  for (const [relicIdStr, relic] of Object.entries(window.EVE_REVERSE_ENGINEERING || {})) {
+    (relic.products || []).forEach(route => {
+      if (!route || !route.productTypeId) return;
+      (map[route.productTypeId] = map[route.productTypeId] || []).push({ relicId: parseInt(relicIdStr), relic, route });
+    });
+  }
+  Object.values(map).forEach(list => list.sort((a, b) => (b.route.probability || 0) - (a.route.probability || 0)));
+  _inventionT3ToRelicsMap = map;
+  console.info(`[Invention] Built T3->relic index: ${Object.keys(map).length} reverse-engineerable T3 products found.`);
+  return map;
+}
+window.getInventionT3ToRelicsMap = getInventionT3ToRelicsMap;
+
+// "Intact" / "Malfunctioning" / "Wrecked", read off the relic's own name.
+function getRelicQualityLabel(relicName) {
+  const m = /(Intact|Malfunctioning|Wrecked)/i.exec(relicName || '');
+  return m ? m[1].charAt(0).toUpperCase() + m[1].slice(1).toLowerCase() : (relicName || 'Relic');
+}
+window.getRelicQualityLabel = getRelicQualityLabel;
+
+// Which quality to start a fresh T3 pick on, by rank in the best-chance-first list (0 = Intact).
+// Remembered across picks so someone who only ever runs Wrecked doesn't re-pick it every time.
+const INVENTION_RELIC_RANK_KEY = 'eve_invention_relic_rank';
+function getPreferredRelicRank() {
+  const n = parseInt(localStorage.getItem(INVENTION_RELIC_RANK_KEY));
+  return isFinite(n) && n >= 0 ? n : 0;
+}
+
+// A relic dressed up as the same recipe shape the T2 path reads (inventionMaterials/Skills/Time,
+// blueprintTypeID = the thing the job consumes), so the comparison, skill check and queue code all
+// run unchanged. productTypeID is the T3 item, which is what the invention-rig lookup keys off.
+function buildRelicSourceRecipe(option) {
+  return {
+    isRelic: true,
+    blueprintTypeID: option.relicId,
+    productTypeID: option.route.productTypeId,
+    productName: option.relic.name,
+    inventionMaterials: option.relic.materials || [],
+    inventionSkills: option.relic.skills || [],
+    inventionTime: option.relic.time || null
+  };
+}
+
+// Everything that depends on WHERE an invention attempt starts from, for one product: the source
+// recipe, the default base chance and runs, and anything consumed per attempt on top of the
+// datacores (the relic). One place for it so the full comparison and the quick search-ranking pass
+// can't drift apart. relicId picks a specific relic; otherwise the remembered quality is used.
+function resolveInventionSource(productTypeId, relicId) {
+  const relicOptions = getInventionT3ToRelicsMap()[productTypeId];
+  if (relicOptions && relicOptions.length) {
+    const option = relicOptions.find(o => o.relicId === relicId) || relicOptions[Math.min(getPreferredRelicRank(), relicOptions.length - 1)];
+    return {
+      kind: 't3',
+      recipe: buildRelicSourceRecipe(option),
+      relicOptions,
+      relicId: option.relicId,
+      baseChance: Math.round((option.route.probability || 0) * 1000) / 10,
+      baseRuns: option.route.runs || 1,
+      perAttemptExtras: [{ typeId: option.relicId, name: option.relic.name, qty: 1 }]
+    };
+  }
+  const recipe = getInventionT2ToT1Map()[productTypeId];
+  if (!recipe) return null;
+  return { kind: 't2', recipe, relicOptions: null, relicId: null, baseChance: getInventionBaseChance(productTypeId), baseRuns: getInventionT2BaseRuns(productTypeId), perAttemptExtras: [] };
+}
+
+// T2 BPCs come out at 10 runs, or 1 for ships and rigs.
+function getInventionT2BaseRuns(productTypeId) {
+  const productGroupName = ((window.EVE_GROUP_NAMES && window.EVE_GROUP_NAMES[productTypeId]) || '').toLowerCase();
+  const categoryId = window.EVE_CATEGORIES && window.EVE_CATEGORIES[productTypeId];
+  return (categoryId === 6 || productGroupName.includes('rig')) ? 1 : 10;
+}
+
+// Search scope: Tech II invention or Tech III reverse engineering. Only decides what the search box
+// finds - a picked item always carries its own kind, so a restored T3 item works whatever this says.
+const INVENTION_SOURCE_MODE_KEY = 'eve_invention_source_mode';
+let _inventionSourceMode = 't2';
+const INVENTION_SOURCE_MODE_TEXT = {
+  t2: { label: 'Search T2 Item to Produce', placeholder: 'Search item name (e.g. Wolf)...', note: 'Search for the <b>Tech 2</b> item you want to produce (e.g. "Wolf"), not the T1 item it\'s invented from — the T1 source and its ME/TE requirements are resolved automatically.' },
+  t3: { label: 'Search T3 Item to Produce', placeholder: 'Search hull or subsystem (e.g. Tengu)...', note: 'Search for the <b>Tech 3</b> hull or subsystem you want (e.g. "Tengu" or "Loki Offensive") — the relic it\'s reverse engineered from is found automatically, and you pick its quality below.' }
+};
+function setInventionSourceMode(mode, skipSave) {
+  _inventionSourceMode = mode === 't3' ? 't3' : 't2';
+  if (!skipSave) { try { localStorage.setItem(INVENTION_SOURCE_MODE_KEY, _inventionSourceMode); } catch (e) { /* private mode - just not remembered */ } }
+  document.querySelectorAll('[data-invention-source-mode]').forEach(btn => {
+    const on = btn.dataset.inventionSourceMode === _inventionSourceMode;
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+  const text = INVENTION_SOURCE_MODE_TEXT[_inventionSourceMode];
+  const labelEl = document.getElementById('invention-search-label');
+  if (labelEl) labelEl.textContent = text.label;
+  const noteEl = document.getElementById('invention-search-note');
+  if (noteEl) noteEl.innerHTML = text.note;
+  const input = document.getElementById('invention-item-search');
+  if (input) {
+    input.placeholder = text.placeholder;
+    // Re-run the search for whatever's typed, only if the user is in the box - not on page load.
+    if (!skipSave && document.activeElement === input) searchInventionItem(input.value);
+  }
+}
+window.setInventionSourceMode = setInventionSourceMode;
+
 // --- Search (searches the T2 product you want, not the T1 BPC you'd use) ---
 let _inventionSearchToken = 0;
 let _inventionLastSearchHits = [];
@@ -54,20 +169,25 @@ function searchInventionItem(query) {
     resultsEl.classList.add('hidden');
     return;
   }
-  const t2Map = getInventionT2ToT1Map();
+  const isT3 = _inventionSourceMode === 't3';
+  const productMap = isT3 ? getInventionT3ToRelicsMap() : getInventionT2ToT1Map();
   const hits = [];
-  for (const t2IdStr of Object.keys(t2Map)) {
-    const t2Id = parseInt(t2IdStr);
-    const name = (window.TYPE_ID_TO_NAME && window.TYPE_ID_TO_NAME[t2Id]) || (window.EVE_ITEMS && window.EVE_ITEMS[t2Id]);
+  for (const idStr of Object.keys(productMap)) {
+    const productId = parseInt(idStr);
+    const name = (window.TYPE_ID_TO_NAME && window.TYPE_ID_TO_NAME[productId]) || (window.EVE_ITEMS && window.EVE_ITEMS[productId]);
     if (name && name.toLowerCase().includes(q)) {
-      hits.push({ id: t2Id, name: name });
+      hits.push({ id: productId, name: name });
     }
     if (hits.length >= 15) break;
   }
   if (token !== _inventionSearchToken) return;
   _inventionLastSearchHits = hits;
   if (hits.length === 0) {
-    resultsEl.innerHTML = `<div class="p-3 text-slate-400 text-xs italic">No inventable Tech II items found matching "${window.esc(q)}". Search the T2 item you want to produce (e.g. "Wolf"), not the T1 item it's invented from.</div>`;
+    resultsEl.innerHTML = isT3
+      ? (Object.keys(productMap).length === 0
+        ? `<div class="p-3 text-slate-400 text-xs italic">The Tech III relic data (eve_re_db.js) didn't load - reload the page.</div>`
+        : `<div class="p-3 text-slate-400 text-xs italic">No Tech III hulls or subsystems found matching "${window.esc(q)}". Search the T3 item you want to produce (e.g. "Tengu"), not the relic.</div>`)
+      : `<div class="p-3 text-slate-400 text-xs italic">No inventable Tech II items found matching "${window.esc(q)}". Search the T2 item you want to produce (e.g. "Wolf"), not the T1 item it's invented from.</div>`;
     resultsEl.classList.remove('hidden');
     return;
   }
@@ -131,15 +251,16 @@ window.sortInventionSearchResultsByProfit = sortInventionSearchResultsByProfit;
 // Profit for one item, using default skill levels (0, or your real ones if logged in via ESI) and 1
 // BPC run, for ranking search results. Does NOT touch the currently-selected item's own state.
 async function computeQuickBestInventionProfit(t2ProductTypeId) {
-  const t2Map = getInventionT2ToT1Map();
-  const recipe = t2Map[t2ProductTypeId]; // the T1 source recipe for this T2 product
-  if (!recipe) return null;
+  // T2: the T1 source recipe. T3: the relic at your remembered quality (its price counts per attempt).
+  const source = resolveInventionSource(t2ProductTypeId);
+  if (!source) return null;
+  const recipe = source.recipe;
 
   const t2Recipe = window.recipeMap && window.recipeMap[t2ProductTypeId];
   const t2BlueprintTypeId = t2Recipe ? t2Recipe.blueprintTypeID : null;
   if (!t2BlueprintTypeId) return null;
 
-  const baseChance = getInventionBaseChance(t2ProductTypeId);
+  const baseChance = source.baseChance;
   const charSkills = window.safeParseJSON(localStorage.getItem('eve_char_skills'), { allSkills: {} });
   let encryptionLevel = 0;
   let scienceLevelSum = 0;
@@ -149,16 +270,13 @@ async function computeQuickBestInventionProfit(t2ProductTypeId) {
     else scienceLevelSum += level;
   });
 
-  const datacores = recipe.inventionMaterials || [];
+  const datacores = [...(recipe.inventionMaterials || []), ...source.perAttemptExtras];
   if (typeof window.fetchMarketPrices === 'function') {
     await window.fetchMarketPrices(datacores.map(m => m.typeId));
   }
   const datacoreCost = datacores.reduce((sum, m) => sum + (getInventionInputPrice(m.typeId) * m.qty), 0);
 
-  const productGroupName = ((window.EVE_GROUP_NAMES && window.EVE_GROUP_NAMES[t2ProductTypeId]) || '').toLowerCase();
-  const categoryId = window.EVE_CATEGORIES && window.EVE_CATEGORIES[t2ProductTypeId];
-  const isShipOrRig = categoryId === 6 || productGroupName.includes('rig');
-  const baseRuns = isShipOrRig ? 1 : 10;
+  const baseRuns = source.baseRuns;
 
   const decryptorTypeIds = DECRYPTORS.map(d => window.IDX && window.IDX[d.name.toLowerCase()] && window.IDX[d.name.toLowerCase()].id).filter(id => id);
   if (typeof window.fetchMarketPrices === 'function') await window.fetchMarketPrices(decryptorTypeIds);
@@ -222,24 +340,30 @@ function getInventionBaseChance(productTypeId) {
 let _inventionSelectedTypeId = null;
 let _inventionSelectedName = null;
 
-async function selectInventionItem(typeId, name, skipSave) {
+let _inventionCurrentSource = null; // resolveInventionSource() result for the selected item
+
+// relicId (T3 only) picks a specific relic quality, e.g. when restoring a saved state.
+async function selectInventionItem(typeId, name, skipSave, relicId) {
   document.getElementById('invention-item-search').value = name;
   document.getElementById('invention-search-results').classList.add('hidden');
 
-  const t2Map = getInventionT2ToT1Map();
-  const t1Recipe = t2Map[typeId];
-  if (!t1Recipe) {
+  const source = resolveInventionSource(typeId, relicId);
+  if (!source) {
     if (typeof window.showToast === 'function') window.showToast('No invention data found for this item.', 'info');
     return;
   }
+  const t1Recipe = source.recipe;
+  _inventionCurrentSource = source;
   _inventionCurrentBlueprint = t1Recipe;
   _inventionSelectedTypeId = typeId;
   _inventionSelectedName = name;
-  // typeId/name here are exactly what was searched (the T2 product) - no guessing or override needed,
+  // typeId/name here are exactly what was searched (the T2/T3 product) - no guessing or override needed,
   // since anything found via the reverse index is guaranteed to have this relationship confirmed.
   _inventionCurrentProduct = { typeId: typeId, name: name, probability: 1 };
+  // The page follows the item: a T3 pick (or restore) puts the search in T3 mode and vice versa.
+  if (source.kind !== _inventionSourceMode) setInventionSourceMode(source.kind, !!skipSave);
 
-  console.info(`[Invention] Selected T2 product "${name}" (typeId=${typeId}), invented from T1 "${t1Recipe.productName}" (blueprint typeId=${t1Recipe.blueprintTypeID}).`);
+  console.info(`[Invention] Selected ${source.kind.toUpperCase()} product "${name}" (typeId=${typeId}), from "${t1Recipe.productName}" (consumed typeId=${t1Recipe.blueprintTypeID}).`);
 
   document.getElementById('invention-config-panel').classList.remove('hidden');
   const itemIconEl = document.getElementById('invention-item-icon');
@@ -247,21 +371,13 @@ async function selectInventionItem(typeId, name, skipSave) {
   itemIconEl.alt = name;
   document.getElementById('invention-item-name').textContent = name;
 
-  // The T1 BLUEPRINT is what invention actually consumes - always a copy (a BPO never gets used up
-  // for invention, so /bpc is the correct icon variant here regardless of what you actually own),
-  // shown by its own name so it reads as "go get this item," not just "made from this ship."
-  const t1BlueprintName = window.EVE_ITEMS[t1Recipe.blueprintTypeID] || `${t1Recipe.productName || 'T1 item'} Blueprint`;
-  const t1IconEl = document.getElementById('invention-t1-icon');
-  t1IconEl.src = `https://images.evetech.net/types/${t1Recipe.blueprintTypeID}/bpc?size=64`;
-  t1IconEl.alt = t1BlueprintName;
-  document.getElementById('invention-t1-name').textContent = t1BlueprintName;
-
-  const baseChance = getInventionBaseChance(typeId);
-  document.getElementById('invention-base-chance').value = baseChance;
+  renderInventionSourceCard();
+  document.getElementById('invention-base-chance').value = source.baseChance;
+  renderInventionTargetLabels();
 
   renderInventionSkillInputs(t1Recipe.inventionSkills || []);
   renderInventionSkillCheck();
-  await renderInventionDatacoreList(t1Recipe.inventionMaterials || []);
+  await renderInventionDatacoreList([...(t1Recipe.inventionMaterials || []), ...source.perAttemptExtras]);
 
   if (!skipSave) saveInventionState();
   recalculateInventionImpl();
@@ -272,6 +388,89 @@ async function selectInventionItem(typeId, name, skipSave) {
   if (!skipSave && typeof window.setInventionViewMode === 'function') window.setInventionViewMode('compare');
 }
 window.selectInventionItem = selectInventionItem;
+
+// The "what this uses up" card: the T1 BPC for T2, or the relic plus its quality picker for T3.
+function renderInventionSourceCard() {
+  const source = _inventionCurrentSource;
+  if (!source) return;
+  const recipe = source.recipe;
+  const card = document.getElementById('invention-source-card');
+  const titleEl = document.getElementById('invention-source-title');
+  const iconEl = document.getElementById('invention-t1-icon');
+  const nameEl = document.getElementById('invention-t1-name');
+  const subEl = document.getElementById('invention-source-sub');
+  const pickerEl = document.getElementById('invention-relic-picker');
+  const sourceName = window.EVE_ITEMS[recipe.blueprintTypeID] || `${recipe.productName || 'T1 item'} Blueprint`;
+
+  if (source.kind === 't3') {
+    if (titleEl) titleEl.textContent = 'Relic Used Up Per Attempt';
+    if (card) card.title = 'Reverse engineering uses up one whole relic per attempt, win or lose - its price is counted in every attempt\'s cost, along with the datacores. Better relics cost more but succeed more often and give more runs.';
+    // Relics only have a "relic" image variant on the image server (no /icon).
+    iconEl.src = `https://images.evetech.net/types/${recipe.blueprintTypeID}/relic?size=64`;
+    iconEl.alt = sourceName;
+    nameEl.textContent = sourceName;
+    if (subEl) {
+      const price = getInventionInputPrice(recipe.blueprintTypeID);
+      subEl.textContent = price > 0 ? `${Math.round(price).toLocaleString()} ISK each at your Material Pricing` : 'No Jita price found for this relic';
+      subEl.classList.remove('hidden');
+    }
+    if (pickerEl) {
+      pickerEl.innerHTML = source.relicOptions.map(o => {
+        const on = o.relicId === source.relicId;
+        const pct = Math.round((o.route.probability || 0) * 1000) / 10;
+        return `<button type="button" class="relic-quality-btn${on ? ' active' : ''}" aria-pressed="${on}" onclick="selectInventionRelic(${o.relicId})" title="${window.esc(o.relic.name)}: ${pct}% base chance, ${o.route.runs} run${o.route.runs > 1 ? 's' : ''} per successful BPC">
+          <span class="relic-quality-name">${window.esc(getRelicQualityLabel(o.relic.name))}</span>
+          <span class="relic-quality-stats mono">${pct}% &middot; ${o.route.runs} run${o.route.runs > 1 ? 's' : ''}</span>
+        </button>`;
+      }).join('');
+      pickerEl.classList.remove('hidden');
+    }
+  } else {
+    // The T1 BLUEPRINT is what invention actually consumes - always a copy (a BPO never gets used up
+    // for invention, so /bpc is the correct icon variant here regardless of what you actually own),
+    // shown by its own name so it reads as "go get this item," not just "made from this ship."
+    if (titleEl) titleEl.textContent = 'T1 Blueprint Copy Needed';
+    if (card) card.title = 'Invention uses up one run of this blueprint copy per invention attempt (win or lose).';
+    iconEl.src = `https://images.evetech.net/types/${recipe.blueprintTypeID}/bpc?size=64`;
+    iconEl.alt = sourceName;
+    nameEl.textContent = sourceName;
+    if (subEl) subEl.classList.add('hidden');
+    if (pickerEl) { pickerEl.innerHTML = ''; pickerEl.classList.add('hidden'); }
+  }
+}
+
+// Switching relic quality changes the base chance, the runs per BPC and the per-attempt cost, so it
+// re-resolves the whole source (and resets the base chance box to that relic's real value).
+async function selectInventionRelic(relicId) {
+  if (!_inventionCurrentSource || _inventionCurrentSource.kind !== 't3') return;
+  const rank = _inventionCurrentSource.relicOptions.findIndex(o => o.relicId === relicId);
+  if (rank < 0) return;
+  try { localStorage.setItem(INVENTION_RELIC_RANK_KEY, String(rank)); } catch (e) { /* not remembered */ }
+  const source = resolveInventionSource(_inventionSelectedTypeId, relicId);
+  if (!source) return;
+  _inventionCurrentSource = source;
+  _inventionCurrentBlueprint = source.recipe;
+  document.getElementById('invention-base-chance').value = source.baseChance;
+  await renderInventionDatacoreList([...(source.recipe.inventionMaterials || []), ...source.perAttemptExtras]);
+  renderInventionSourceCard();
+  recalculateInventionImpl();
+}
+window.selectInventionRelic = selectInventionRelic;
+
+// "T2" vs "T3" in the target box and the comparison blurb.
+function renderInventionTargetLabels() {
+  const tier = _inventionCurrentSource && _inventionCurrentSource.kind === 't3' ? 'T3' : 'T2';
+  const targetTitle = document.getElementById('invention-target-title');
+  if (targetTitle) targetTitle.textContent = `Target: ${tier} BPCs Wanted`;
+  const blurbTier = document.getElementById('invention-compare-tier');
+  if (blurbTier) blurbTier.textContent = tier;
+  const baseNote = document.getElementById('invention-base-chance-note');
+  if (baseNote) {
+    const isT3 = tier === 'T3';
+    baseNote.textContent = isT3 ? 'from the relic' : 'auto-detected';
+    baseNote.title = isT3 ? 'Set by the relic quality (game data): Intact 26%, Malfunctioning 21%, Wrecked 14%. Override if the in-game window shows something else.' : 'Auto-classified from item type. Override if you know the exact value from the in-game invention window.';
+  }
+}
 
 // --- Skill Levels panel: success-chance skills + skill check ---
 // The three skills on a T1 blueprint's invention activity (two sciences + an encryption skill) set the
@@ -511,6 +710,10 @@ async function recalculateInventionImpl() {
   });
 
   const datacores = _inventionCurrentBlueprint.inventionMaterials || [];
+  // Everything bought per attempt: the datacores, plus the relic itself for T3 (used up every attempt).
+  // The job fee's EIV below stays on the datacores alone, same as the T2 path.
+  const perAttemptExtras = (_inventionCurrentSource && _inventionCurrentSource.perAttemptExtras) || [];
+  const attemptMaterials = [...datacores, ...perAttemptExtras];
   // #invention-deduct-stock is now the same big value="true"/"false" toggle button the other two
   // pages use (toggleDeductStockButton in config.js), not a checkbox.
   const deductStock = (document.getElementById('invention-deduct-stock')?.value ?? 'true') === 'true';
@@ -529,10 +732,12 @@ async function recalculateInventionImpl() {
     console.warn(`[Invention] recipeMap has no entry for product ${t2ProductTypeId}, or it's missing blueprintTypeID - manufacturing profit cannot be calculated.`);
   }
 
-  const productGroupName = ((window.EVE_GROUP_NAMES && window.EVE_GROUP_NAMES[t2ProductTypeId]) || '').toLowerCase();
-  const categoryId = window.EVE_CATEGORIES && window.EVE_CATEGORIES[t2ProductTypeId];
-  const isShipOrRig = categoryId === 6 || productGroupName.includes('rig');
-  const baseRuns = isShipOrRig ? 1 : 10;
+  // T2: 10 runs (1 for ships/rigs). T3: the relic's own run count (Intact 20, Malfunctioning 10, Wrecked 3).
+  const baseRuns = _inventionCurrentSource ? _inventionCurrentSource.baseRuns : getInventionT2BaseRuns(t2ProductTypeId);
+  if (perAttemptExtras.length && typeof window.fetchMarketPrices === 'function') {
+    await window.fetchMarketPrices(perAttemptExtras.map(m => m.typeId));
+  }
+  renderInventionSourceCard(); // its relic price line follows the Material Pricing toggle
 
   const decryptorNames = DECRYPTORS.map(d => d.name);
   if (typeof window.fetchMarketPrices === 'function') {
@@ -590,7 +795,7 @@ async function recalculateInventionImpl() {
       // applies to this page's own manufacturing-side cost (see that function's own comment).
       // "Deduct Stock" only ever changes multibuyItems (the shopping list / Copy Multibuy below) -
       // what you still need to go acquire - never the profit math itself.
-      datacores.forEach(m => {
+      attemptMaterials.forEach(m => {
         const totalNeeded = m.qty * requiredRuns;
         const unitPrice = getInventionInputPrice(m.typeId);
         totalInventionCost += totalNeeded * unitPrice;
@@ -847,7 +1052,10 @@ function queueInventionRow(rowIndex) {
   // (decryptors change success chance/output ME-TE-runs, never which materials are consumed) - safe
   // to snapshot once here regardless of which decryptor this particular row is for, and reused by
   // js/invention-queue.js's aggregate shopping list for however many attempts are still needed.
-  const invMaterials = (t1Recipe.inventionMaterials || []).map(m => ({ typeId: m.typeId, name: m.name, qty: m.qty }));
+  // For T3 the relic rides along as one more per-attempt material, so the queue's shopping list
+  // buys a relic for every remaining attempt too.
+  const perAttemptExtras = (_inventionCurrentSource && _inventionCurrentSource.perAttemptExtras) || [];
+  const invMaterials = [...(t1Recipe.inventionMaterials || []), ...perAttemptExtras].map(m => ({ typeId: m.typeId, name: m.name, qty: m.qty }));
   const decEntry = window.IDX && window.IDX[row.dec.name.toLowerCase()];
   window.addInventionQueueBatch({
     t2BlueprintTypeId: row.t2BlueprintTypeId,
@@ -883,9 +1091,19 @@ function getInventionMaterialsForT1Blueprint(t1BlueprintTypeId) {
     });
   }
   const recipe = _inventionT1BlueprintIdToRecipe[t1BlueprintTypeId];
-  return recipe ? (recipe.inventionMaterials || []).map(m => ({ typeId: m.typeId, name: m.name, qty: m.qty })) : [];
+  if (recipe) return (recipe.inventionMaterials || []).map(m => ({ typeId: m.typeId, name: m.name, qty: m.qty }));
+  // A reverse engineering job: ESI's blueprint_type_id is the relic itself.
+  return getRelicAttemptMaterials(t1BlueprintTypeId);
 }
 window.getInventionMaterialsForT1Blueprint = getInventionMaterialsForT1Blueprint;
+
+// A relic's per-attempt shopping list: its datacores plus one of the relic. [] if it isn't a relic.
+function getRelicAttemptMaterials(relicTypeId) {
+  const relic = window.EVE_REVERSE_ENGINEERING && window.EVE_REVERSE_ENGINEERING[relicTypeId];
+  if (!relic) return [];
+  return [...(relic.materials || []).map(m => ({ typeId: m.typeId, name: m.name, qty: m.qty })), { typeId: parseInt(relicTypeId), name: relic.name, qty: 1 }];
+}
+window.getRelicAttemptMaterials = getRelicAttemptMaterials;
 
 function renderInventionComparisonTable(rows) {
   const container = document.getElementById('invention-comparison-table');
@@ -896,6 +1114,11 @@ function renderInventionComparisonTable(rows) {
   // not a different one picked by total profit.
   const bestProfit = rows.length > 0 ? Math.max(...rows.map(r => r.profitPerRun)) : 0;
   const targetBPCs = Math.max(1, parseInt(document.getElementById('invention-target-bpcs').value) || 1);
+  const isT3 = !!(_inventionCurrentSource && _inventionCurrentSource.kind === 't3');
+  const consumables = isT3 ? 'datacores + relics + decryptors' : 'datacores + decryptors';
+  const sourceNote = isT3
+    ? 'The relic is counted in every run (it\'s used up win or lose), at your Material Pricing. The resulting T3 BPC is assumed to start at ME 2 / TE 4 plus the decryptor, the same as any invented BPC - check the in-game window if it shows otherwise.'
+    : 'Not included: the T1 BPC\'s own acquisition cost (its price if bought fresh, or nothing if you already own the BPO and use it repeatedly).';
 
   const sortedRows = [...rows].sort((a, b) => {
     const av = a[_inventionSortColumn] === null || !isFinite(a[_inventionSortColumn]) ? -Infinity : a[_inventionSortColumn];
@@ -949,7 +1172,7 @@ function renderInventionComparisonTable(rows) {
             <td class="text-right font-bold" style="color:${r.iskPerHour !== null ? (r.iskPerHour >= 0 ? 'var(--green)' : 'var(--red)') : 'var(--text-mute)'};">${r.iskPerHour !== null ? Math.round(r.iskPerHour).toLocaleString() + ' ISK' : '—'}</td>
             <td class="text-right font-bold" style="color:${isFinite(r.profitPerRun) && r.profitPerRun >= 0 ? 'var(--green)' : 'var(--red)'};">${isFinite(r.profitPerRun) ? Math.round(r.profitPerRun).toLocaleString() + ' ISK' : '—'}</td>
             <td class="text-right">
-              <button id="invention-multibuy-btn-${rowIndex}" onclick="copyInventionMultibuy(${rowIndex})" class="lp-chip-btn" title="Copy datacores + decryptor needed for this decryptor's Runs Needed, minus whatever stock you already own"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>Copy</button>
+              <button id="invention-multibuy-btn-${rowIndex}" onclick="copyInventionMultibuy(${rowIndex})" class="lp-chip-btn" title="Copy the ${consumables} needed for this decryptor's Runs Needed, minus whatever stock you already own"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>Copy</button>
             </td>
             <td class="text-right">
               <button onclick="sendInventionRowToCalculator(${rowIndex})" class="lp-chip-btn" style="padding:5px 7px;" ${r.t2BlueprintTypeId ? '' : 'disabled'} title="Open this decryptor's resulting BPC in the Calculator, already set to its ${r.resultRuns} max run${r.resultRuns > 1 ? 's' : ''} and ME${r.resultME >= 0 ? '+' : ''}${r.resultME}/TE${r.resultTE >= 0 ? '+' : ''}${r.resultTE}"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12,5 19,12 12,19"/></svg></button>
@@ -964,11 +1187,11 @@ function renderInventionComparisonTable(rows) {
     <p class="text-xs mt-2 leading-relaxed" style="color:var(--text-mute);">
       Click any column header to sort by it (click again to reverse).
       <b>Runs Needed</b> = the average number of invention runs (successes AND failures) to reach your target of ${targetBPCs} successful BPC${targetBPCs > 1 ? 's' : ''}, given this decryptor's success chance - this is where the success rate actually shows up: a worse chance means more runs, more failed datacores/decryptors spent, and a higher Total Invention Cost for the same goal.
-      <b>Buy List</b> copies the datacores + decryptors needed for that many runs in EVE multibuy format, with your owned stock (from the location filter on the left) already deducted.
-      <b>Total Invention Cost</b> = Runs Needed × (datacores + decryptor cost per run), the FULL amount regardless of stock on hand - you pay this on every run, win or lose. Deduct Stock (left) only affects the Buy List above, never this figure.
+      <b>Buy List</b> copies the ${consumables} needed for that many runs in EVE multibuy format, with your owned stock (from the location filter on the left) already deducted.
+      <b>Total Invention Cost</b> = Runs Needed × (${consumables.replace(/s\b/g, '')} cost per run), the FULL amount regardless of stock on hand - you pay this on every run, win or lose. Deduct Stock (left) only affects the Buy List above, never this figure.
       <b>Total Mfg Cost / Total Profit</b> = manufacturing your ${targetBPCs} target BPC${targetBPCs > 1 ? 's' : ''} worth of production, at your chosen Jita buy/sell pricing, minus Total Invention Cost.
       <b>Profit / 1 Run</b> normalizes Total Profit to a single manufacturing run, so decryptors with different run counts per BPC compare fairly.
-      Total Invention Cost already includes the invention job's own installation fee, and Total Mfg Cost already includes the manufacturing job's installation fee (facility tax + SCC + system cost index) - not just raw material cost. Materials/decryptors/datacores are priced by the Material Pricing setting on the left (Jita Sell = instant buy price, Jita Buy Order = cheaper but not guaranteed to fill); the resulting BPC's output is always valued at Jita Sell, as if you list it yourself (net of sales tax + broker fee) - real fills can be lower if you have to undercut competition. Not included: the T1 BPC's own acquisition cost (its price if bought fresh, or nothing if you already own the BPO and use it repeatedly).
+      Total Invention Cost already includes the invention job's own installation fee, and Total Mfg Cost already includes the manufacturing job's installation fee (facility tax + SCC + system cost index) - not just raw material cost. Materials/decryptors/datacores are priced by the Material Pricing setting on the left (Jita Sell = instant buy price, Jita Buy Order = cheaper but not guaranteed to fill); the resulting BPC's output is always valued at Jita Sell, as if you list it yourself (net of sales tax + broker fee) - real fills can be lower if you have to undercut competition. ${sourceNote}
     </p>
   `;
 }
@@ -1063,6 +1286,8 @@ function saveInventionState() {
   const state = {
     typeId: _inventionSelectedTypeId,
     name: _inventionSelectedName,
+    // T3 only: which relic quality was picked (the phone layout reads this too).
+    relicId: _inventionCurrentSource && _inventionCurrentSource.kind === 't3' ? _inventionCurrentSource.relicId : undefined,
     baseChance: document.getElementById('invention-base-chance')?.value,
     targetBPCs: document.getElementById('invention-target-bpcs')?.value,
     priceMode: document.getElementById('input-price-mode')?.value,
@@ -1076,7 +1301,7 @@ async function restoreInventionState() {
   const state = window.safeParseJSON(localStorage.getItem('eve_invention_state'), null);
   if (!state || !state.typeId) return;
 
-  await selectInventionItem(state.typeId, state.name, true); // skipSave - don't overwrite what we're restoring
+  await selectInventionItem(state.typeId, state.name, true, state.relicId); // skipSave - don't overwrite what we're restoring
 
   if (state.baseChance !== undefined) document.getElementById('invention-base-chance').value = state.baseChance;
   const targetBPCsToRestore = state.targetBPCs !== undefined ? state.targetBPCs : state.bpcRuns; // bpcRuns: back-compat with state saved before this rename
@@ -1137,6 +1362,10 @@ window.onload = async () => {
     window.buildPrepackedIndexes();
   }
   loadSharedTaxSettings();
+  // The search mode you last used (a restored item below switches it to match itself anyway).
+  let savedSourceMode = 't2';
+  try { savedSourceMode = localStorage.getItem(INVENTION_SOURCE_MODE_KEY) || 't2'; } catch (e) { /* default */ }
+  setInventionSourceMode(savedSourceMode, true);
   if (typeof window.restoreManufacturingImplantSetting === 'function') window.restoreManufacturingImplantSetting('mfg-implant-select');
   renderInventionPresetDropdown();
   renderInventionActiveStationLabel();

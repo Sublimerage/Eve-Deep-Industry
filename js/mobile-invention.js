@@ -44,13 +44,67 @@
     }
     return t2Map;
   }
-  // For EVE jobs the queue finds that weren't planned here (js/invention-queue.js calls this).
+  // Tech III item -> the relics it's reverse engineered from, best base chance first (Intact,
+  // Malfunctioning, Wrecked) - js/invention.js getInventionT3ToRelicsMap, from eve_re_db.js.
+  let t3Map = null;
+  function t3ToRelics() {
+    if (t3Map) return t3Map;
+    t3Map = {};
+    for (const [rid, relic] of Object.entries(window.EVE_REVERSE_ENGINEERING || {})) {
+      (relic.products || []).forEach(route => {
+        if (route && route.productTypeId) (t3Map[route.productTypeId] = t3Map[route.productTypeId] || []).push({ relicId: Number(rid), relic, route });
+      });
+    }
+    Object.values(t3Map).forEach(l => l.sort((a, b) => (b.route.probability || 0) - (a.route.probability || 0)));
+    return t3Map;
+  }
+  // A relic's per-attempt materials: its datacores plus the relic itself (used up win or lose).
+  const relicAttemptMats = relicId => {
+    const relic = window.EVE_REVERSE_ENGINEERING && window.EVE_REVERSE_ENGINEERING[relicId];
+    return relic ? [...(relic.materials || []).map(m => ({ typeId: m.typeId, name: m.name, qty: m.qty })), { typeId: Number(relicId), name: relic.name, qty: 1 }] : [];
+  };
+  // For EVE jobs the queue finds that weren't planned here (js/invention-queue.js calls this). For a
+  // reverse engineering job, EVE's blueprint_type_id is the relic.
   if (typeof window.getInventionMaterialsForT1Blueprint !== 'function') {
     window.getInventionMaterialsForT1Blueprint = bpId => {
       const r = Object.values(t2ToT1()).find(x => x && x.blueprintTypeID === bpId);
-      return r ? (r.inventionMaterials || []).map(m => ({ typeId: m.typeId, name: m.name, qty: m.qty })) : [];
+      return r ? (r.inventionMaterials || []).map(m => ({ typeId: m.typeId, name: m.name, qty: m.qty })) : relicAttemptMats(bpId);
     };
   }
+  // T2 copies come out at 10 runs, or 1 for ships and rigs.
+  function t2BaseRuns(t2) {
+    const group = ((window.EVE_GROUP_NAMES && window.EVE_GROUP_NAMES[t2]) || '').toLowerCase();
+    return (window.EVE_CATEGORIES && window.EVE_CATEGORIES[t2] === 6) || group.includes('rig') ? 1 : 10;
+  }
+  // Which relic quality a fresh Tech III pick starts on (0 = Intact), shared with the desktop page.
+  const RELIC_RANK_KEY = 'eve_invention_relic_rank';
+  const relicRank = () => { const n = parseInt(LS.raw(RELIC_RANK_KEY), 10); return n >= 0 ? n : 0; };
+  const relicQuality = name => { const m = /(Intact|Malfunctioning|Wrecked)/i.exec(name || ''); return m ? m[1][0].toUpperCase() + m[1].slice(1).toLowerCase() : 'Relic'; };
+  const relicFamily = name => String(name || '').replace(/\s*\b(Intact|Malfunctioning|Wrecked)\b\s*/i, ' ').trim();
+  // Where an attempt starts from (js/invention.js resolveInventionSource): a Tech I copy for Tech II,
+  // a relic for Tech III. recipe has the same shape either way (inventionMaterials/Skills/Time);
+  // extras are what's bought per attempt on top of the datacores (the relic).
+  function source(id, relicId) {
+    const opts = t3ToRelics()[id];
+    if (opts && opts.length) {
+      const o = opts.find(x => x.relicId === relicId) || opts[Math.min(relicRank(), opts.length - 1)];
+      return {
+        kind: 't3', relicOptions: opts, relicId: o.relicId,
+        baseChance: Math.round((o.route.probability || 0) * 1000) / 10, baseRuns: o.route.runs || 1,
+        recipe: { isRelic: true, blueprintTypeID: o.relicId, productTypeID: id, productName: o.relic.name, inventionMaterials: o.relic.materials || [], inventionSkills: o.relic.skills || [], inventionTime: o.relic.time || null },
+        extras: [{ typeId: o.relicId, name: o.relic.name, qty: 1 }]
+      };
+    }
+    const r = t2ToT1()[id];
+    if (!r) return null;
+    return { kind: 't2', relicOptions: null, relicId: null, baseChance: autoBaseChance(id), baseRuns: t2BaseRuns(id), recipe: r, extras: [] };
+  }
+  const hasSource = id => !!(t2ToT1()[id] || t3ToRelics()[id]);
+  const sourceName = s => (s.kind === 't3' ? s.recipe.productName : t1BpName(s.recipe));
+  // Search scope in the item picker, shared with the desktop page's mode switch.
+  const MODE_KEY = 'eve_invention_source_mode';
+  let pickMode = LS.raw(MODE_KEY) === 't3' ? 't3' : 't2';
+  const setPickMode = m => { pickMode = m === 't3' ? 't3' : 't2'; try { localStorage.setItem(MODE_KEY, pickMode); } catch (e) { /* not remembered */ } };
   // js/invention.js getInventionBaseChance: from the item's group, editable because group names
   // can't cover every case.
   function autoBaseChance(t2) {
@@ -69,7 +123,7 @@
 
   /* =====================  State  ===================== */
   const I = {
-    typeId: null, target: 1, baseChance: 34, skills: {},
+    typeId: null, relicId: null, target: 1, baseChance: 34, skills: {},
     tab: 'compare', sort: 'profitPerRun', open: null, matDec: null,
     rows: null, computing: false, error: null, token: 0, sig: '', timer: null, lastSync: 0, syncing: false
   };
@@ -80,11 +134,14 @@
     if (stateLoaded || !Object.keys(t2ToT1()).length) return;
     stateLoaded = true;
     const s = LS.get(STATE_KEY, null);
-    if (!s || !s.typeId || !t2ToT1()[s.typeId]) return;
+    if (!s || !s.typeId || !hasSource(Number(s.typeId))) return;
     I.typeId = Number(s.typeId);
-    const t1 = t2ToT1()[I.typeId];
+    const sr = source(I.typeId, Number(s.relicId) || null);
+    I.relicId = sr.relicId;
+    setPickMode(sr.kind); // the picker opens on the same kind as the restored item, like the desktop page
+    const t1 = sr.recipe;
     const bc = parseFloat(s.baseChance);
-    I.baseChance = Number.isFinite(bc) && bc >= 0 ? bc : autoBaseChance(I.typeId);
+    I.baseChance = Number.isFinite(bc) && bc >= 0 ? bc : sr.baseChance;
     const tg = parseInt(s.targetBPCs !== undefined ? s.targetBPCs : s.bpcRuns, 10);
     I.target = tg >= 1 ? tg : 1;
     I.skills = {};
@@ -94,16 +151,19 @@
   function saveState() {
     if (!I.typeId) return;
     LS.set(STATE_KEY, {
-      typeId: I.typeId, name: t2Name(I.typeId), baseChance: String(I.baseChance), targetBPCs: String(I.target), priceMode: prefs.priceMode,
+      typeId: I.typeId, name: t2Name(I.typeId), relicId: I.relicId || undefined, baseChance: String(I.baseChance), targetBPCs: String(I.target), priceMode: prefs.priceMode,
       skillLevels: Object.entries(I.skills).map(([skillId, value]) => ({ skillId: String(skillId), value: String(value) }))
     });
   }
   function selectItem(t2) {
     loadState(); // keeps the saved copies wanted, even if this screen hasn't been opened yet
-    const t1 = t2ToT1()[t2];
-    if (!t1) { toast('No invention data for that item'); return; }
+    const sr = source(t2);
+    if (!sr) { toast('No invention data for that item'); return; }
+    const t1 = sr.recipe;
     I.typeId = t2;
-    I.baseChance = autoBaseChance(t2);
+    I.relicId = sr.relicId;
+    I.baseChance = sr.baseChance;
+    setPickMode(sr.kind);
     I.skills = {};
     (t1.inventionSkills || []).forEach(sk => { I.skills[sk.skillId] = trained(sk.skillId); });
     I.rows = null; I.open = null; I.matDec = null; I.error = null;
@@ -116,10 +176,25 @@
     render();
     schedule(0);
   }
+  // Tech III: switch relic quality. Changes the base chance, runs per copy and per-attempt cost; the
+  // skills stay (every quality of a relic family uses the same three).
+  function selectRelic(relicId) {
+    const sr = source(I.typeId, relicId);
+    if (!sr || sr.kind !== 't3' || sr.relicId !== relicId) return;
+    const rank = sr.relicOptions.findIndex(o => o.relicId === relicId);
+    try { localStorage.setItem(RELIC_RANK_KEY, String(rank)); } catch (e) { /* not remembered */ }
+    I.relicId = relicId;
+    I.baseChance = sr.baseChance;
+    I.rows = null; I.open = null; I.matDec = null; I.error = null;
+    saveState();
+    render();
+    schedule(0);
+  }
+  const src = () => (I.typeId ? source(I.typeId, I.relicId) : null);
 
   /* =====================  The maths (js/invention.js)  ===================== */
   function skillSums() {
-    const t1 = t2ToT1()[I.typeId];
+    const t1 = src().recipe;
     let sci = 0, enc = 0;
     (t1.inventionSkills || []).forEach(sk => { const lv = I.skills[sk.skillId] || 0; if (isEncryption(sk)) enc = lv; else sci += lv; });
     return { sci, enc };
@@ -135,7 +210,7 @@
   // Everything that changes the answer; a change reruns the maths.
   function signature() {
     if (!I.typeId) return '';
-    return JSON.stringify([I.typeId, I.target, I.baseChance, I.skills, prefs.priceMode, prefs.simV, MB.readFees(), MB.liveStation(), LS.raw('eve_char_skills'), MB.implantPct(), !!MB.eivLoaded, LS.raw('eve_owned_bpo_index_v1') ? 1 : 0]);
+    return JSON.stringify([I.typeId, I.relicId, I.target, I.baseChance, I.skills, prefs.priceMode, prefs.simV, MB.readFees(), MB.liveStation(), LS.raw('eve_char_skills'), MB.implantPct(), !!MB.eivLoaded, LS.raw('eve_owned_bpo_index_v1') ? 1 : 0]);
   }
   function schedule(delay = 350) {
     clearTimeout(I.timer);
@@ -162,15 +237,17 @@
   }
   async function computeRows() {
     const t2 = I.typeId;
-    const t1 = t2ToT1()[t2];
+    const sr = src();
+    const t1 = sr.recipe;
     const t2Recipe = window.recipeMap && window.recipeMap[t2];
     const t2Bp = t2Recipe ? t2Recipe.blueprintTypeID : null;
     const target = I.target;
     const { sci, enc } = skillSums();
     const datacores = t1.inventionMaterials || [];
-    const group = ((window.EVE_GROUP_NAMES && window.EVE_GROUP_NAMES[t2]) || '').toLowerCase();
-    const baseRuns = (window.EVE_CATEGORIES && window.EVE_CATEGORIES[t2] === 6) || group.includes('rig') ? 1 : 10;
-    await window.fetchMarketPrices([...datacores.map(m => m.typeId), ...DECRYPTORS.map(d => decId(d.name)).filter(Boolean), t2]);
+    // Bought per attempt: the datacores, plus the relic for Tech III. The job fee stays on datacores.
+    const attemptMats = [...datacores, ...sr.extras];
+    const baseRuns = sr.baseRuns;
+    await window.fetchMarketPrices([...attemptMats.map(m => m.typeId), ...DECRYPTORS.map(d => decId(d.name)).filter(Boolean), t2]);
 
     MB.syncShim();
     MB.setStationGlobals();
@@ -233,7 +310,7 @@
       const did = dec.name !== 'No Decryptor' ? decId(dec.name) : null;
       const requiredRuns = successChance > 0 ? Math.ceil(target / (successChance / 100)) : Infinity;
       // Materials at full value, win or lose, stock or not (what an attempt really costs).
-      const mats = datacores.map(m => ({ typeId: m.typeId, name: m.name, need: m.qty * requiredRuns, unit: inputPrice(m.typeId) }));
+      const mats = attemptMats.map(m => ({ typeId: m.typeId, name: m.name, need: m.qty * requiredRuns, unit: inputPrice(m.typeId) }));
       if (did) mats.push({ typeId: did, name: dec.name, need: requiredRuns, unit: inputPrice(did) });
       let totalInventionCost = Infinity, matsTotal = 0, feesTotal = 0;
       if (Number.isFinite(requiredRuns)) {
@@ -279,7 +356,7 @@
   const ROMAN = ['0', 'I', 'II', 'III', 'IV', 'V'];
   function skillCheck() {
     if (!I.typeId) return null;
-    const t1 = t2ToT1()[I.typeId];
+    const t1 = src().recipe;
     const t2r = window.recipeMap && window.recipeMap[I.typeId];
     const raw = MB.hasSkillSheet() ? (MB.rawSkills().allSkills || {}) : null;
     const rows = (list, useOwnName) => (list || []).map(sk => {
@@ -343,14 +420,15 @@
 
   function headerHTML() {
     if (!I.typeId) {
-      return `<button class="product product-btn" type="button" data-iact="pick" aria-haspopup="dialog"><span class="ic ic-none" aria-hidden="true">${ICON.bp}</span><span class="p-text"><span class="p-name">Choose a Tech II item</span><span class="p-sub">What you want to invent, like Hobgoblin II or Wolf</span></span>${ICON.down}</button>`;
+      return `<button class="product product-btn" type="button" data-iact="pick" aria-haspopup="dialog"><span class="ic ic-none" aria-hidden="true">${ICON.bp}</span><span class="p-text"><span class="p-name">Choose a Tech II or III item</span><span class="p-sub">What you want to invent, like Wolf, or reverse engineer, like Tengu</span></span>${ICON.down}</button>`;
     }
-    const t1 = t2ToT1()[I.typeId];
-    return `<button class="product product-btn" type="button" data-iact="pick" aria-haspopup="dialog" aria-label="${esc(t2Name(I.typeId))}. Change item">${iconHTML(I.typeId)}<span class="p-text"><span class="p-name">${esc(t2Name(I.typeId))}</span><span class="p-sub">Invented from ${esc(t1BpName(t1))} (copy) · base ${I.baseChance}%</span></span>${ICON.down}</button>`;
+    const sr = src();
+    const from = sr.kind === 't3' ? `Reverse engineered from ${esc(sourceName(sr))}` : `Invented from ${esc(sourceName(sr))} (copy)`;
+    return `<button class="product product-btn" type="button" data-iact="pick" aria-haspopup="dialog" aria-label="${esc(t2Name(I.typeId))}. Change item">${iconHTML(I.typeId)}<span class="p-text"><span class="p-name">${esc(t2Name(I.typeId))}</span><span class="p-sub">${from} · base ${I.baseChance}%</span></span>${ICON.down}</button>`;
   }
   function emptyHTML() {
-    const recent = (prefs.invRecent || []).filter(id => t2ToT1()[id]);
-    return `<div class="empty"><b>Pick what to invent</b>Search the Tech II item you want to make. Its Tech I blueprint copy, datacores and every decryptor are worked out for you.</div>
+    const recent = (prefs.invRecent || []).filter(hasSource);
+    return `<div class="empty"><b>Pick what to invent</b>Search the Tech II item you want to make, or a Tech III hull or subsystem. Its Tech I copy or relic, datacores and every decryptor are worked out for you.</div>
       <button class="btn primary" type="button" data-iact="pick">${ICON.search}Choose an item</button>
       ${recent.length ? `<div class="card-title">Recent</div><ul class="itemlist">${recent.map(invItemRow).join('')}</ul>` : ''}`;
   }
@@ -406,7 +484,9 @@
           </div>
         </li>`;
       }).join('')}</ol>
-      <p class="note">Invention cost covers every attempt, successful or not: datacores, the decryptor and the job fee. Build cost is making ${copiesText()} into items, with the job fee. The items are valued at Jita sell after sales tax and broker fee. The Tech I copy itself isn't counted.</p>`;
+      ${src().kind === 't3'
+        ? `<p class="note">Invention cost covers every attempt, successful or not: the relic, datacores, the decryptor and the job fee. Build cost is making ${copiesText()} into items, with the job fee. The items are valued at Jita sell after sales tax and broker fee. Each copy is taken to start at ME 2 / TE 4 plus the decryptor, like any invented copy.</p>`
+        : `<p class="note">Invention cost covers every attempt, successful or not: datacores, the decryptor and the job fee. Build cost is making ${copiesText()} into items, with the job fee. The items are valued at Jita sell after sales tax and broker fee. The Tech I copy itself isn't counted.</p>`}`;
   }
 
   function stationCardHTML() {
@@ -418,18 +498,35 @@
         <div class="kv"><span class="k">Time per attempt<small>your skills, the structure and any invention rig</small></span><span class="v">${r && r.perAttemptSec ? dur(r.perAttemptSec) : '—'}</span></div>
       </div>`;
   }
+  // Tech III only: which relic quality to use up. Better relics cost more but succeed more often and
+  // give more runs per copy.
+  function relicCardHTML(sr) {
+    const price = inputPrice(sr.relicId);
+    return `<div class="card-title">Relic used up per attempt</div>
+      <div class="segtabs relicq" role="group" aria-label="Relic quality">${sr.relicOptions.map(o => {
+        const pct = Math.round((o.route.probability || 0) * 1000) / 10;
+        return `<button type="button" data-irelic="${o.relicId}" aria-pressed="${o.relicId === sr.relicId}">${esc(relicQuality(o.relic.name))}<small>${pct}% · ${o.route.runs} run${o.route.runs === 1 ? '' : 's'}</small></button>`;
+      }).join('')}</div>
+      <div class="card">
+        <div class="kv">${iconHTML(sr.relicId)}<span class="k">${esc(sr.recipe.productName)}<small>${prefs.priceMode === 'buy' ? 'buy order' : 'Jita sell'} · one per attempt, win or lose</small></span><span class="v">${price > 0 ? compact(price) : '—'}</span></div>
+      </div>`;
+  }
   function renderSetup() {
-    const t1 = t2ToT1()[I.typeId];
+    const sr = src();
+    const t1 = sr.recipe;
     const skills = t1.inventionSkills || [];
     const f = chanceFactor();
     const sheet = MB.hasSkillSheet();
     const differs = sheet && skills.some(sk => (I.skills[sk.skillId] || 0) !== trained(sk.skillId));
-    const auto = autoBaseChance(I.typeId);
+    const auto = sr.baseChance;
+    const autoWhat = sr.kind === 't3' ? `for ${relicQuality(sr.recipe.productName).toLowerCase()} relics` : 'for this kind of item';
     const datacores = t1.inventionMaterials || [];
-    return `<div class="card-title">Goal</div>
+    // Make sure the relic has a price to show (the Compare maths fetches it too, this is just sooner).
+    if (sr.kind === 't3' && !(window.priceCache && window.priceCache[sr.relicId])) window.fetchMarketPrices([sr.relicId]).then(() => { if (MB.screen() === 'inv' && I.tab === 'setup') render(); });
+    return `${sr.kind === 't3' ? relicCardHTML(sr) : ''}<div class="card-title">Goal</div>
       <div class="card">
         <div class="kv"><span class="k">Successful copies wanted</span>${numField('target', I.target, 1, 'copies wanted')}</div>
-        <div class="kv"><label class="k" for="i-base">Base chance<small>${I.baseChance === auto ? 'usual for this kind of item' : `usually ${auto}% for this kind of item`}</small></label><span class="suffix feein"><input type="text" inputmode="decimal" id="i-base" value="${I.baseChance}" autocomplete="off"><span>%</span></span></div>
+        <div class="kv"><label class="k" for="i-base">Base chance<small>${I.baseChance === auto ? `usual ${autoWhat}` : `usually ${auto}% ${autoWhat}`}</small></label><span class="suffix feein"><input type="text" inputmode="decimal" id="i-base" value="${I.baseChance}" autocomplete="off"><span>%</span></span></div>
         <div class="kv"><span class="k">Chance before decryptor<small>base × your skills</small></span><span class="v">${Math.min(100, I.baseChance * f).toFixed(1)}%</span></div>
       </div>
       <div class="card-title">Skills that set the success chance${differs ? '<button class="linkbtn" style="margin-left:auto;padding:0" type="button" data-iact="myskills">Use my skills</button>' : ''}</div>
@@ -442,7 +539,7 @@
       <div class="card-title">Datacores per attempt</div>
       <div class="card">
         ${datacores.map(d => `<div class="kv">${iconHTML(d.typeId)}<span class="k">${esc(String(d.name || MB.nameOf(d.typeId)).replace('Datacore - ', ''))}<small>${d.qty} × ${compact(inputPrice(d.typeId))} · ${prefs.priceMode === 'buy' ? 'buy order' : 'Jita sell'}</small></span><span class="v">${compact(d.qty * inputPrice(d.typeId))}</span></div>`).join('')}
-        <div class="kv"><span class="k">Buy datacores and decryptors at<small>same setting as the Calculator</small></span><span class="segctl" role="group" aria-label="Buy at"><button type="button" data-iprice="sell" data-mode="sell" aria-pressed="${prefs.priceMode !== 'buy'}">${ICON.bolt}Sell</button><button type="button" data-iprice="buy" data-mode="buy" aria-pressed="${prefs.priceMode === 'buy'}">${ICON.order}Buy order</button></span></div>
+        <div class="kv"><span class="k">Buy ${sr.kind === 't3' ? 'relics, datacores' : 'datacores'} and decryptors at<small>same setting as the Calculator</small></span><span class="segctl" role="group" aria-label="Buy at"><button type="button" data-iprice="sell" data-mode="sell" aria-pressed="${prefs.priceMode !== 'buy'}">${ICON.bolt}Sell</button><button type="button" data-iprice="buy" data-mode="buy" aria-pressed="${prefs.priceMode === 'buy'}">${ICON.order}Buy order</button></span></div>
       </div>
       ${stationCardHTML()}`;
   }
@@ -573,17 +670,19 @@
   /* =====================  Actions  ===================== */
   const rowNamed = name => (I.rows || []).find(r => r.dec.name === name);
   function queueRow(r) {
-    const t1 = t2ToT1()[I.typeId];
+    const sr = src();
+    const t1 = sr.recipe;
     if (typeof Q.addInventionQueueBatch !== 'function') { toast('The invention queue didn’t load. Reload the page'); return; }
     Q.addInventionQueueBatch({
       t2BlueprintTypeId: r.t2Bp, t2ProductTypeId: I.typeId, t2ProductName: t2Name(I.typeId),
-      t1BlueprintTypeId: t1.blueprintTypeID, t1BlueprintName: t1BpName(t1),
+      t1BlueprintTypeId: t1.blueprintTypeID, t1BlueprintName: sourceName(sr),
       decryptorName: r.dec.name, decryptorTypeId: r.did,
       resultME: r.resultME, resultTE: r.resultTE, resultRuns: r.resultRuns,
       targetBPCs: I.target, successChance: r.successChance,
       plannedRuns: fin(r.requiredRuns) ? r.requiredRuns : null,
       estimatedCost: fin(r.totalInventionCost) ? r.totalInventionCost : null,
-      invMaterials: (t1.inventionMaterials || []).map(m => ({ typeId: m.typeId, name: m.name, qty: m.qty }))
+      // The relic rides along for Tech III, so the queue's shopping list buys one per attempt too.
+      invMaterials: [...(t1.inventionMaterials || []), ...sr.extras].map(m => ({ typeId: m.typeId, name: m.name, qty: m.qty }))
     });
     toast(`${t2Name(I.typeId)} (${r.dec.name}) added to the invention queue`, { label: 'View', run: () => { I.tab = 'queue'; render(); } });
     render();
@@ -649,6 +748,7 @@
     }
     if ((el = t.closest('[data-iprice]'))) { prefs.priceMode = el.dataset.iprice; MB.savePrefs(); MB.syncShim(); saveState(); render(); schedule(0); return; }
     if ((el = t.closest('[data-item-inv]'))) { selectItem(Number(el.dataset.itemInv)); return; }
+    if ((el = t.closest('[data-irelic]'))) { const id = Number(el.dataset.irelic); selectRelic(id); const again = scr.querySelector(`[data-irelic="${id}"]`); if (again) again.focus(); return; }
     if (!(el = t.closest('[data-iact]'))) return;
     if (el.disabled) return;
     const act = el.dataset.iact;
@@ -658,7 +758,7 @@
     if (act === 'stations') { MB.openSheet('stations', el); return; }
     if (act === 'sync') { syncEve(false); return; }
     if (act === 'myskills') {
-      const t1 = t2ToT1()[I.typeId];
+      const t1 = src().recipe;
       (t1.inventionSkills || []).forEach(sk => { I.skills[sk.skillId] = trained(sk.skillId); });
       saveState();
       render();
@@ -704,32 +804,53 @@
   /* =====================  Item picker  ===================== */
   let invQuery = '';
   function invItemRow(t2) {
-    const t1 = t2ToT1()[t2];
-    return `<li><button type="button" data-item-inv="${t2}" aria-current="${I.typeId === t2}">${iconHTML(t2)}<span><b>${esc(t2Name(t2))}</b><small>from ${esc(t1BpName(t1).replace(/ Blueprint$/i, ''))}</small></span><span class="r">${autoBaseChance(t2)}%</span></button></li>`;
+    const sr = source(t2);
+    if (!sr) return '';
+    const from = sr.kind === 't3' ? relicFamily(sr.recipe.productName) + ' relics' : t1BpName(sr.recipe).replace(/ Blueprint$/i, '');
+    const chance = sr.kind === 't3' ? sr.relicOptions.map(o => Math.round((o.route.probability || 0) * 100)).join('/') : sr.baseChance;
+    return `<li><button type="button" data-item-inv="${t2}" aria-current="${I.typeId === t2}">${iconHTML(t2)}<span><b>${esc(t2Name(t2))}</b><small>from ${esc(from)}</small></span><span class="r">${chance}%</span></button></li>`;
   }
+  const PICK_TEXT = {
+    t2: { placeholder: 'Search Tech II items', hint: 'Type at least two letters of the Tech II item you want, like “hobgoblin” or “wolf”.', none: q => `No Tech II item you can invent matches “${esc(q)}”. Search what you want to make (Wolf), not what it's invented from (Rifter).` },
+    t3: { placeholder: 'Search Tech III hulls and subsystems', hint: 'Type at least two letters of the Tech III hull or subsystem you want, like “tengu” or “loki offensive”.', none: q => `No Tech III hull or subsystem matches “${esc(q)}”. Search what you want to make (Tengu), not the relic.` }
+  };
   function invResultsHTML(q) {
     const ql = String(q || '').toLowerCase().trim();
+    const pool = pickMode === 't3' ? t3ToRelics() : t2ToT1();
     if (ql.length < 2) {
-      const recent = (prefs.invRecent || []).filter(id => t2ToT1()[id]);
-      return recent.length ? `<li class="listhead">Recent</li>${recent.map(invItemRow).join('')}` : '<li class="note" style="padding:10px">Type at least two letters of the Tech II item you want, like “hobgoblin” or “wolf”.</li>';
+      const recent = (prefs.invRecent || []).filter(id => pool[id]);
+      return recent.length ? `<li class="listhead">Recent</li>${recent.map(invItemRow).join('')}` : `<li class="note" style="padding:10px">${PICK_TEXT[pickMode].hint}</li>`;
     }
     const exact = [], starts = [], contains = [];
-    for (const id of Object.keys(t2ToT1())) {
+    for (const id of Object.keys(pool)) {
       const t2 = Number(id);
       const n = String(t2Name(t2)).toLowerCase();
       if (n === ql) exact.push(t2); else if (n.startsWith(ql)) starts.push(t2); else if (n.includes(ql)) contains.push(t2);
     }
     const byName = (a, b) => String(t2Name(a)).localeCompare(String(t2Name(b)));
     const hits = [...exact, ...starts.sort(byName), ...contains.sort(byName)].slice(0, 30);
-    if (!hits.length) return `<li class="note" style="padding:10px">No Tech II item you can invent matches “${esc(ql)}”. Search what you want to make (Wolf), not what it's invented from (Rifter).</li>`;
+    if (!hits.length) return `<li class="note" style="padding:10px">${PICK_TEXT[pickMode].none(ql)}</li>`;
     return hits.map(invItemRow).join('');
   }
+  const pickTabsHTML = () => `<div class="segtabs two" role="tablist" aria-label="Invention type">${[['t2', 'Tech II invention'], ['t3', 'Tech III reverse eng.']].map(([k, l]) => `<button type="button" role="tab" data-pickmode="${k}" aria-selected="${pickMode === k}">${l}</button>`).join('')}</div>`;
   MB.SHEETS.invitems = {
     title: () => 'What do you want to invent?',
-    html: () => `<div class="searchbox">${ICON.search}<input type="text" id="f-invq" placeholder="Search Tech II items" autocomplete="off" value="${esc(invQuery)}" aria-label="Search Tech II items"></div>
+    html: () => `${pickTabsHTML()}<div class="searchbox">${ICON.search}<input type="text" id="f-invq" placeholder="${PICK_TEXT[pickMode].placeholder}" autocomplete="off" value="${esc(invQuery)}" aria-label="${PICK_TEXT[pickMode].placeholder}"></div>
       <ul class="itemlist" id="inv-results">${invResultsHTML(invQuery)}</ul>`,
     input(e) { if (e.target.id === 'f-invq') { invQuery = e.target.value; $('#inv-results').innerHTML = invResultsHTML(invQuery); } },
-    click(e) { const el = e.target.closest('[data-item-inv]'); if (el) { MB.closeSheet(); selectItem(Number(el.dataset.itemInv)); } }
+    click(e) {
+      const tab = e.target.closest('[data-pickmode]');
+      if (tab) {
+        setPickMode(tab.dataset.pickmode);
+        tab.parentNode.querySelectorAll('[data-pickmode]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.pickmode === pickMode)));
+        const box = $('#f-invq');
+        if (box) { box.placeholder = PICK_TEXT[pickMode].placeholder; box.setAttribute('aria-label', PICK_TEXT[pickMode].placeholder); }
+        $('#inv-results').innerHTML = invResultsHTML(invQuery);
+        return;
+      }
+      const el = e.target.closest('[data-item-inv]');
+      if (el) { MB.closeSheet(); selectItem(Number(el.dataset.itemInv)); }
+    }
   };
 
   /* =====================  Screen  ===================== */

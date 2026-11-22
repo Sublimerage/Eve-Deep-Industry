@@ -1757,6 +1757,46 @@ body.page-calc .lp-pill.active {
 body.page-calc .lp-pill.active .lp-badge-accent {
   background: rgba(10,16,2,0.3);
 }
+/* Invention page: Tech II / Tech III mode switch above the search box - two pills splitting the row. */
+body.page-calc .invention-source-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+body.page-calc .invention-source-switch .lp-pill { justify-content: center; padding: 7px 8px; white-space: nowrap; }
+/* Relic quality picker (Intact / Malfunctioning / Wrecked) inside the source card, Tech III only. */
+body.page-calc .relic-quality-picker {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+  margin-top: 10px;
+}
+body.page-calc .relic-quality-picker.hidden { display: none; }
+body.page-calc .relic-quality-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 6px 4px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.04);
+  color: var(--text-soft);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+body.page-calc .relic-quality-btn:hover { background: rgba(255,255,255,0.08); color: var(--text); }
+body.page-calc .relic-quality-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+body.page-calc .relic-quality-btn.active {
+  border-color: var(--accent);
+  background: rgba(var(--accent-rgb),0.12);
+  color: var(--text);
+}
+body.page-calc .relic-quality-name { font-size: 11px; font-weight: 700; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.page-calc .relic-quality-stats { font-size: 10px; color: var(--text-mute); }
+body.page-calc .relic-quality-btn.active .relic-quality-stats { color: var(--accent); }
 body.page-calc .lp-row {
   padding-top: 14px;
   margin-top: 14px;

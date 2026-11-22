@@ -12,7 +12,7 @@
 <title>Eve Deep Industry — Invention</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c8ff4d' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 3h4'/%3E%3Cpath d='M10.5 3v5.3L5.9 16.8A2 2 0 007.6 20h8.8a2 2 0 001.7-3.2L13.5 8.3V3'/%3E%3Cpath d='M8.2 14.5h7.6'/%3E%3C/svg%3E">
 <link class="cache-bust" rel="stylesheet" href="css/tailwind-build.css?v=1.0.17">
-<link class="cache-bust" rel="stylesheet" href="css/styles.css?v=27.96.0">
+<link class="cache-bust" rel="stylesheet" href="css/styles.css?v=27.97.0">
 <script>(function(){try{var t=localStorage.getItem('eve_color_theme');if(t&&t!=='lime')document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
 <!-- GoatCounter - privacy-friendly page-view analytics, no cookies/consent banner needed -->
 <script data-goatcounter="https://sublimerage.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
@@ -111,8 +111,15 @@
          box for Stock & Pricing that no other page had a twin for). -->
     <aside id="invention-sidebar" class="lp-card w-full md:w-[380px] flex flex-col overflow-y-auto flex-shrink-0 p-4">
 
+      <!-- Tech II invention vs Tech III reverse engineering (js/invention.js setInventionSourceMode).
+           Only changes what the search finds - the rest of the page adapts to whichever item is picked. -->
+      <div class="invention-source-switch" role="group" aria-label="Invention type">
+        <button type="button" data-invention-source-mode="t2" onclick="setInventionSourceMode('t2')" class="lp-pill active" aria-pressed="true" title="Invent Tech II blueprints from Tech I blueprint copies">Tech II Invention</button>
+        <button type="button" data-invention-source-mode="t3" onclick="setInventionSourceMode('t3')" class="lp-pill" aria-pressed="false" title="Reverse engineer Tech III hulls and subsystems from Sleeper relics">Tech III Reverse Eng.</button>
+      </div>
+
       <div class="fo-group">
-        <label class="lp-label fo-group-label" for="invention-item-search">Search T2 Item to Produce</label>
+        <label id="invention-search-label" class="lp-label fo-group-label" for="invention-item-search">Search T2 Item to Produce</label>
         <div class="relative">
           <input type="text" id="invention-item-search" placeholder="Search item name (e.g. Wolf)..." autocomplete="off"
             oninput="searchInventionItem(this.value)" onfocus="searchInventionItem(this.value)"
@@ -120,7 +127,7 @@
             class="field-box w-full px-3 py-2.5 text-white font-bold mono text-sm">
           <div id="invention-search-results" class="fixed bg-[#0d1922] rounded-lg max-h-60 overflow-y-auto hidden z-50 shadow-2xl"></div>
         </div>
-        <p class="fo-card-note mt-2">Search for the <b>Tech 2</b> item you want to produce (e.g. "Wolf"), not the T1 item it's invented from — the T1 source and its ME/TE requirements are resolved automatically.</p>
+        <p id="invention-search-note" class="fo-card-note mt-2">Search for the <b>Tech 2</b> item you want to produce (e.g. "Wolf"), not the T1 item it's invented from — the T1 source and its ME/TE requirements are resolved automatically.</p>
       </div>
 
       <div id="invention-config-panel" class="hidden mt-3">
@@ -134,12 +141,18 @@
           </div>
         </div>
 
-        <div class="fo-card" title="Invention consumes one whole copy of this blueprint per invention run (win or lose) - the copy's own manufacturing run count doesn't matter, it's used up either way.">
-          <div class="fo-card-title">T1 Blueprint Copy Needed</div>
+        <!-- T1 BPC for Tech II, or the relic + its quality picker for Tech III (js/invention.js
+             renderInventionSourceCard fills this in). -->
+        <div id="invention-source-card" class="fo-card" title="Invention uses up one run of this blueprint copy per invention attempt (win or lose).">
+          <div id="invention-source-title" class="fo-card-title">T1 Blueprint Copy Needed</div>
           <div class="flex items-center gap-2.5">
             <img id="invention-t1-icon" src="" alt="" class="w-9 h-9 rounded-md border border-white/10 bg-[#070b0f] flex-shrink-0">
-            <div id="invention-t1-name" class="font-bold text-sm truncate" style="color:var(--text);"></div>
+            <div class="min-w-0">
+              <div id="invention-t1-name" class="font-bold text-sm truncate" style="color:var(--text);"></div>
+              <div id="invention-source-sub" class="text-[11px] mono hidden" style="color:var(--cost);"></div>
+            </div>
           </div>
+          <div id="invention-relic-picker" class="relic-quality-picker hidden" role="group" aria-label="Relic quality"></div>
         </div>
 
         <!-- This page has no system/structure/rig controls of its own (see js/invention.js's own
@@ -199,7 +212,7 @@
              sidebar (accent border + a genuinely large number), same "impossible to miss" idea
              Stock & Pricing above already uses, not just another .fo-row like every other setting. -->
         <div class="fo-card" style="border-left:2px solid var(--accent);" title="How many successful T2 BPCs you want to end up with. For each decryptor, the tool works out how many invention runs that requires on average given its success chance, then totals the cost of all those runs (successes AND failures) plus the manufacturing cost for your target BPCs.">
-          <div class="fo-card-title" style="color:var(--accent);">Target: T2 BPCs Wanted</div>
+          <div id="invention-target-title" class="fo-card-title" style="color:var(--accent);">Target: T2 BPCs Wanted</div>
           <div class="flex items-end gap-2 mt-1">
             <input type="number" id="invention-target-bpcs" min="1" value="1" class="fo-num" style="width:4.2em; font-size:26px; font-weight:800; padding:5px 8px; text-align:center; color:var(--accent) !important;" oninput="recalculateInvention()">
             <span class="fo-num-suffix pb-1">successful BPC(s)</span>
@@ -209,7 +222,7 @@
         <div class="fo-card">
           <div class="flex items-center justify-between">
             <span class="fo-card-title">Base Success Chance</span>
-            <span class="fo-card-note" style="margin-top:0;" title="Auto-classified from item type. Override if you know the exact value from the in-game invention window.">auto-detected</span>
+            <span id="invention-base-chance-note" class="fo-card-note" style="margin-top:0;" title="Auto-classified from item type. Override if you know the exact value from the in-game invention window.">auto-detected</span>
           </div>
           <div class="flex items-end gap-2">
             <input type="text" inputmode="decimal" id="invention-base-chance" class="fo-num" style="width:4.4em; font-size:16px; color:var(--accent) !important;" oninput="sanitizeDecimalInput(event); recalculateInvention()">
@@ -297,7 +310,7 @@
       </div>
 
       <div id="invention-empty-state" class="flex items-center justify-center h-full text-slate-500 italic">
-        Search for a Tech 1 item on the left to begin.
+        Search for a Tech II or Tech III item on the left to begin.
       </div>
 
       <div id="invention-compare-view" class="hidden space-y-4">
@@ -305,7 +318,7 @@
         <div class="lp-card p-4">
           <h2 class="text-sm font-bold uppercase tracking-wider text-purple-300 rajdhani mb-2">Decryptor Profit Comparison</h2>
           <p class="text-[11px] text-slate-400 mb-3 leading-relaxed">
-            Set your target number of successful T2 BPCs on the left. For each decryptor, this works out how many invention runs that actually takes given its success chance - the risk is visible directly in <b>Runs Needed</b>, not hidden inside a single averaged number.
+            Set your target number of successful <span id="invention-compare-tier">T2</span> BPCs on the left. For each decryptor, this works out how many invention runs that actually takes given its success chance - the risk is visible directly in <b>Runs Needed</b>, not hidden inside a single averaged number.
           </p>
           <div id="invention-comparison-table" class="overflow-x-auto"></div>
         </div>
@@ -370,12 +383,13 @@
        serially blocking each download on the previous script finishing, while still guaranteeing
        they execute in this exact order once parsing completes - same behavior, faster to get there. -->
   <script src="eve_db.js?v=16.7.0" defer></script>
+  <script src="eve_re_db.js?v=1.0.0" defer></script>
   <script src="js/config.js?v=8.0.48" defer></script>
   <script src="js/esi.js?v=8.0.43" defer></script>
   <script src="js/tree.js?v=8.0.7" defer></script>
   <script src="js/optimizers.js?v=8.0.25" defer></script>
-  <script src="js/invention.js?v=9.20.1" defer></script>
-  <script src="js/invention-queue.js?v=1.4.4" defer></script>
+  <script src="js/invention.js?v=9.21.0" defer></script>
+  <script src="js/invention-queue.js?v=1.4.5" defer></script>
   <script src="js/custom-select.js?v=1.5.0" defer></script>
 </body>
 </html>
