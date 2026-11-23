@@ -716,6 +716,24 @@ svg[viewBox] { stroke: currentColor; }
    most obvious there, but all three shared this same unbounded sizing). left/right still handle
    the narrow-screen case, shrinking it below max-width so it never overflows a small viewport. */
 .lpstore-corp-popover { position: absolute; top: 100%; left: 12px; right: 12px; max-width: 520px; margin-top: 8px; z-index: 30; padding: 12px; }
+/* LP Store "Nearest Station" popover (js/lpstore.js renderLPNearestContent). */
+.lp-nearest-suggest {
+  position: absolute; top: 100%; left: 0; right: 0; margin-top: 4px; z-index: 5;
+  background: var(--bg-0); border: 1px solid var(--glass-border); border-radius: var(--radius-input);
+  max-height: 240px; overflow-y: auto; box-shadow: 0 12px 28px rgba(0,0,0,0.45);
+}
+.lp-nearest-suggest button {
+  display: flex; justify-content: space-between; gap: 10px; width: 100%;
+  padding: 8px 12px; text-align: left; font-size: 13px; color: var(--text); cursor: pointer;
+}
+.lp-nearest-suggest button:hover, .lp-nearest-suggest button.active { background: rgba(255,255,255,0.06); }
+.lp-nearest-list { border: 1px solid var(--glass-border); border-radius: var(--radius-input); max-height: 320px; overflow-y: auto; }
+.lp-nearest-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; }
+.lp-nearest-row + .lp-nearest-row { border-top: 1px solid var(--glass-border); }
+.lp-nearest-row .jumps { font-family: 'IBM Plex Mono', monospace; font-size: 13px; font-weight: 700; min-width: 64px; text-align: right; color: var(--text); flex-shrink: 0; }
+.lp-nearest-row .sec { font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 700; min-width: 28px; flex-shrink: 0; }
+.lp-nearest-row .name { flex: 1; min-width: 0; font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lp-nearest-row .note { display: block; font-size: 11px; color: var(--text-mute); }
 .lpstore-corp-list { max-height: 360px; overflow-y: auto; border-radius: var(--radius-input); border: 1px solid var(--glass-border); }
 .lpstore-corp-faction-group + .lpstore-corp-faction-group { border-top: 1px solid var(--glass-border); }
 .lpstore-corp-faction-header {

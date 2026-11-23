@@ -243,7 +243,14 @@ const SVG_ICON_PATHS = {
   // A plain plus - the Ledger's "top up this prerequisite job's runs" button (renderJobCardHTML/
   // renderJobListRowHTML) pairs this with the missing quantity so "+N" reads as an add action at a
   // glance instead of needing the tooltip to explain it.
-  plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>'
+  plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+  // Balance scale - "about the same either way" (Reprocessing verdict banner).
+  scale: '<line x1="12" y1="3" x2="12" y2="21"/><line x1="7" y1="21" x2="17" y2="21"/><line x1="4" y1="7" x2="20" y2="7"/><path d="M4 7l-3 6a3 3 0 0 0 6 0z"/><path d="M20 7l-3 6a3 3 0 0 0 6 0z"/>',
+  'check-circle': '<circle cx="12" cy="12" r="10"/><polyline points="16 9 10.5 15 8 12.5"/>',
+  'arrow-left': '<line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>',
+  'arrow-right': '<line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>',
+  // Navigation arrow - "find the nearest station" (LP Store).
+  navigation: '<polygon points="3 11 22 2 13 21 11 13 3 11"/>'
 };
 
 function svgIcon(name, opts) {
@@ -1509,7 +1516,7 @@ function describeRigBonus(typeId) {
   if (!parsed) return rigName;
 
   const activeStructure = window.getActiveStructureType ? window.getActiveStructureType() : {};
-  const mismatchNote = isRigSizeFittable(parsed.size) ? '' : `\n⚠ Wrong size for the selected structure (needs a ${activeStructure.rigSize || 'no'}-sized rig) - this bonus is NOT being applied.`;
+  const mismatchNote = isRigSizeFittable(parsed.size) ? '' : `\nWarning: wrong size for the selected structure (needs a ${activeStructure.rigSize || 'no'}-sized rig) - this bonus is NOT being applied.`;
 
   if (parsedMfg) {
     const specLabel = parsed.spec ? `${parsed.spec} ` : '';
@@ -1526,7 +1533,7 @@ function describeRigBonus(typeId) {
     if (parsed.me > 0) lines.push(`ME: -${parsed.me}% material need for ${parsed.scope}`);
     lines.push(`ME: -${parsed.capME}% material need specifically for Capital Construction Components`);
     if (parsed.te > 0) lines.push(`TE: -${parsed.te}% build time for ${parsed.scope}`);
-    const secNote = '\n⚠ Unusual scaling: only 0.1x effective in highsec/null/WH, but 1.9x in lowsec (opposite of every other rig).';
+    const secNote = '\nNote: unusual scaling: only 0.1x effective in highsec/null/WH, but 1.9x in lowsec (opposite of every other rig).';
     const notModeledNote = '\n(Not yet used in any calculation on this app - this special Thukker-line bonus curve isn\'t modeled here yet.)';
     return `${rigName}\n${lines.join('\n')}${secNote}${notModeledNote}${mismatchNote}`;
   }

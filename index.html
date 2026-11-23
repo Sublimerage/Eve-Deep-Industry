@@ -11,9 +11,22 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>Eve Deep Industry — Calculator</title>
+  <!-- Link previews (Discord, Slack, X, search results). og-image.png is built by scripts/make_og_image.py. -->
+  <meta name="description" content="Work out what anything in EVE Online costs to build: the full material tree, ME/TE, structure and rig bonuses, job fees, and profit at live Jita prices.">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Eve Deep Industry">
+  <meta property="og:title" content="Eve Deep Industry — Calculator">
+  <meta property="og:description" content="Work out what anything in EVE Online costs to build: the full material tree, ME/TE, structure and rig bonuses, job fees, and profit at live Jita prices.">
+  <meta property="og:url" content="https://evedeepindustry.com/">
+  <meta property="og:image" content="https://evedeepindustry.com/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Eve Deep Industry - industry calculator for EVE Online">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="theme-color" content="#d3915a">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23d3915a' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='5' r='2.6'/%3E%3Ccircle cx='6' cy='18.5' r='2.6'/%3E%3Ccircle cx='12' cy='18.5' r='2.6'/%3E%3Ccircle cx='18' cy='18.5' r='2.6'/%3E%3Cpath d='M12 7.6v2.6M12 10.2L6 15.9M12 10.2v5.7M12 10.2l6 5.7'/%3E%3C/svg%3E">
 <link class="cache-bust" rel="stylesheet" href="css/tailwind-build.css?v=1.0.17">
-<link class="cache-bust" rel="stylesheet" href="css/styles.css?v=27.96.0">
+<link class="cache-bust" rel="stylesheet" href="css/styles.css?v=28.0.0">
 <script>(function(){try{var t=localStorage.getItem('eve_color_theme');if(t&&t!=='lime')document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
 <!-- GoatCounter - privacy-friendly page-view analytics, no cookies/consent banner needed -->
 <script data-goatcounter="https://sublimerage.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
@@ -888,8 +901,8 @@
        defer lets the browser fetch all of these in parallel (eve_db.js is the big one) instead of
        serially blocking each download on the previous script finishing, while still guaranteeing
        they execute in this exact order once parsing completes - same behavior, faster to get there. -->
-  <script src="eve_db.js?v=16.7.0" defer></script>
-  <script src="js/config.js?v=15.9.0" defer></script>
+  <script src="eve_db.js?v=16.8.0" defer></script>
+  <script src="js/config.js?v=15.10.0" defer></script>
   <script src="js/esi.js?v=15.8.35" defer></script>
   <script src="js/tree.js?v=15.1.6" defer></script>
   <script src="js/optimizers.js?v=15.4.21" defer></script>

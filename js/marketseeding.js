@@ -404,7 +404,7 @@ function renderMarketSeedingResults() {
 
   const systemsTableEl = document.getElementById('seed-systems-table');
   if (systemsTableEl) {
-    const sortHeader = (key, label) => `<th class="sortable" onclick="setSeedSystemSort('${key}')">${window.esc(label)}${_seedSystemSortKey === key ? (_seedSystemSortDir === 1 ? ' ▲' : ' ▼') : ''}</th>`;
+    const sortHeader = (key, label) => `<th class="sortable" onclick="setSeedSystemSort('${key}')">${window.esc(label)}${_seedSystemSortKey === key ? (' ' + window.svgIcon(_seedSystemSortDir === 1 ? 'chevron-up' : 'chevron-down')) : ''}</th>`;
     systemsTableEl.innerHTML = `
       <table class="lp-table">
         <thead><tr>
@@ -440,7 +440,7 @@ function renderSeedItemPanel() {
   const region = _seedScanResult.regions[system.regionId];
   const gaps = (region && region.gapsBySystem[system.systemId]) || [];
   const sorted = sortRows(gaps, _seedItemSortKey, _seedItemSortDir);
-  const sortHeader = (key, label) => `<th class="sortable" onclick="setSeedItemSort('${key}')">${window.esc(label)}${_seedItemSortKey === key ? (_seedItemSortDir === 1 ? ' ▲' : ' ▼') : ''}</th>`;
+  const sortHeader = (key, label) => `<th class="sortable" onclick="setSeedItemSort('${key}')">${window.esc(label)}${_seedItemSortKey === key ? (' ' + window.svgIcon(_seedItemSortDir === 1 ? 'chevron-up' : 'chevron-down')) : ''}</th>`;
 
   panel.innerHTML = `
     <div class="flex items-center justify-between mb-2">

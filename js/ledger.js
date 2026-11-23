@@ -588,7 +588,7 @@ function renderFocusedJobView(container, jobId, materialStockInfoByJobId) {
       <span class="text-xs font-bold uppercase tracking-wide" style="color:var(--accent);">
         ${window.svgIcon('search')} Focused on "${window.esc(focusedJob.name)}"${prereqCount > 0 ? ` + ${prereqCount} prerequisite${prereqCount > 1 ? 's' : ''}` : ''} - rest of the queue is hidden
       </span>
-      <button onclick="exitJobFocus()" class="lp-chip-btn flex-shrink-0">← Back to Queue</button>
+      <button onclick="exitJobFocus()" class="lp-chip-btn flex-shrink-0">${window.svgIcon('arrow-left')} Back to Queue</button>
     </div>
     <div class="grid grid-cols-1 gap-3">
       ${cardsHTML}

@@ -221,15 +221,15 @@ function renderReprocessingVerdictBanner(reprocessedBest, directBest) {
   const pct = Math.abs(diff) / base * 100;
   let icon, label, color;
   if (pct < 1) {
-    icon = '⚖️'; label = 'Reprocessing and selling directly are worth about the same.'; color = 'var(--text-soft)';
+    icon = window.svgIcon('scale'); label = 'Reprocessing and selling directly are worth about the same.'; color = 'var(--text-soft)';
   } else if (diff > 0) {
-    icon = '✅'; label = `Reprocessing is worth ${Math.round(diff).toLocaleString()} ISK more (+${pct.toFixed(1)}%) than selling directly.`; color = 'var(--green)';
+    icon = window.svgIcon('check-circle'); label = `Reprocessing is worth ${Math.round(diff).toLocaleString()} ISK more (+${pct.toFixed(1)}%) than selling directly.`; color = 'var(--green)';
   } else {
-    icon = '⚠️'; label = `Selling directly is worth ${Math.round(-diff).toLocaleString()} ISK more (+${pct.toFixed(1)}%) than reprocessing.`; color = 'var(--red)';
+    icon = window.svgIcon('warning'); label = `Selling directly is worth ${Math.round(-diff).toLocaleString()} ISK more (+${pct.toFixed(1)}%) than reprocessing.`; color = 'var(--red)';
   }
   el.innerHTML = `
     <div class="lp-card p-3 flex items-center gap-2.5" style="border-color:${color};">
-      <span style="font-size:18px;flex-shrink:0;">${icon}</span>
+      <span style="font-size:18px;flex-shrink:0;color:${color};display:inline-flex;">${icon}</span>
       <span class="text-sm font-semibold" style="color:${color};">${window.esc(label)}</span>
     </div>
   `;

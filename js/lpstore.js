@@ -1899,7 +1899,7 @@ function renderLPStoreState(err) {
 
 function sortIndicator(key) {
   if (_lpSortKey !== key) return '';
-  return _lpSortDir === -1 ? ' ▼' : ' ▲';
+  return ' ' + window.svgIcon(_lpSortDir === -1 ? 'chevron-down' : 'chevron-up');
 }
 
 function renderLPStoreTable() {
@@ -2006,7 +2006,7 @@ function renderLPStoreTable() {
                 Turned in: ${requiredItemsSummary}
               </div>
               <div class="mt-2.5 pt-2.5" style="border-top:1px solid rgba(255,255,255,0.06);">
-                <button onclick="event.stopPropagation(); isolateOffer(${offer.offer_id});" class="btn-glass px-2.5 py-1 text-[10px]">${isBpc ? 'Isolate this BPC →' : 'Isolate this item →'}</button>
+                <button onclick="event.stopPropagation(); isolateOffer(${offer.offer_id});" class="btn-glass px-2.5 py-1 text-[10px]">${isBpc ? 'Isolate this BPC' : 'Isolate this item'} ${window.svgIcon('arrow-right')}</button>
               </div>
             </div>
           </td>
@@ -2197,6 +2197,9 @@ function renderLPStoreCorpActiveLabel(corpIdOrStr) {
     ? `<span class="copy-name" data-copy-name="${window.esc(corp.corpName)}" onclick="copyNameToClipboard(event)" title="Click to copy: ${window.esc(corp.corpName)}">${window.esc(corp.corpName)}</span> — ${window.esc(corp.faction)}`
     : '— none selected —';
   el.style.color = corp ? corp.color : 'var(--text-mute)';
+  // Keep an open Nearest Station popover in step with the newly picked corp.
+  const nearest = document.getElementById('lpstore-nearest-popover');
+  if (nearest && !nearest.classList.contains('hidden') && typeof renderLPNearestContent === 'function') renderLPNearestContent();
 }
 window.renderLPStoreCorpActiveLabel = renderLPStoreCorpActiveLabel;
 
@@ -2218,7 +2221,7 @@ window.pickLPStoreCorp = pickLPStoreCorp;
 // popover was too cramped once results grouped one item under several corps - it's its own
 // dedicated main-content area now (showLPItemSearchArea/exitLPItemSearchArea below), same idea as
 // the isolated build canvas.
-const LP_STORE_POPOVER_IDS = ['lpstore-corp-popover', 'lpstore-lp-owned-popover'];
+const LP_STORE_POPOVER_IDS = ['lpstore-corp-popover', 'lpstore-lp-owned-popover', 'lpstore-nearest-popover'];
 
 function closeAllLPStorePopovers() {
   LP_STORE_POPOVER_IDS.forEach(id => {
@@ -2355,6 +2358,223 @@ function toggleLPOwnedPopover() {
   else closeLPOwnedPopover();
 }
 window.toggleLPOwnedPopover = toggleLPOwnedPopover;
+
+// --- Nearest Station: closest place to redeem the selected corp's LP --------------------------
+// Every station an NPC corporation owns runs that corporation's LP store. ESI can't list a corp's
+// stations, so eve_map_db.js (scripts/generate_station_map_db.py, from the static game data) holds
+// every NPC station by owner plus the stargate map. Jumps are a plain breadth-first search over that
+// map from the chosen system - all local, instant, no ESI calls. The data file is ~125 KB
+// compressed, so it's only fetched the first time this popover opens, not on every page load.
+const LP_NEAREST_FROM_KEY = 'eve_lpstore_nearest_from'; // { id, name }
+const LP_NEAREST_SAFE_KEY = 'eve_lpstore_nearest_safe'; // '1' = avoid low/null-sec
+const LP_MAP_DB_SRC = 'eve_map_db.js?v=1.0.0';
+let _lpMapDbPromise = null;
+let _lpNearestSuggestions = [];
+let _lpNearestSuggestIndex = -1;
+
+function ensureLPMapDb() {
+  if (window.EVE_NPC_STATIONS && window.EVE_SYSTEM_JUMPS) return Promise.resolve();
+  if (_lpMapDbPromise) return _lpMapDbPromise;
+  _lpMapDbPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = LP_MAP_DB_SRC;
+    s.onload = () => resolve();
+    s.onerror = () => { _lpMapDbPromise = null; reject(new Error('Could not load the station map.')); };
+    document.head.appendChild(s);
+  });
+  return _lpMapDbPromise;
+}
+
+// Stored as true security x 1000. In-game display rounds to one decimal, except anything between
+// 0.0 and 0.05 shows as 0.1. High-sec = shows 0.5 or more (true 0.45+).
+function lpSecDisplay(v) {
+  if (v > 0 && v < 50) return 0.1;
+  return Math.round(v / 100) / 10;
+}
+function lpSecColor(v) {
+  const d = lpSecDisplay(v);
+  if (d >= 0.5) return 'var(--green)';
+  if (d > 0) return 'var(--cost, #e0b050)';
+  return 'var(--red)';
+}
+const lpIsHighSec = sysId => ((window.EVE_SYSTEM_SECURITY || {})[sysId] || 0) >= 450;
+
+// Jumps from `fromId` to every reachable system. With `safeOnly`, the route may only pass through
+// (and end in) high-sec - the starting system itself can be anything.
+function lpJumpsFrom(fromId, safeOnly) {
+  const adj = window.EVE_SYSTEM_JUMPS || {};
+  const dist = { [fromId]: 0 };
+  const queue = [String(fromId)];
+  for (let i = 0; i < queue.length; i++) {
+    const cur = queue[i];
+    for (const n of adj[cur] || []) {
+      if (dist[n] !== undefined) continue;
+      if (safeOnly && !lpIsHighSec(n)) continue;
+      dist[n] = dist[cur] + 1;
+      queue.push(String(n));
+    }
+  }
+  return dist;
+}
+
+function getLPNearestFrom() {
+  const saved = window.safeParseJSON(localStorage.getItem(LP_NEAREST_FROM_KEY), null);
+  if (saved && saved.id) return { id: saved.id, name: (window.EVE_SYSTEM_NAMES || {})[saved.id] || saved.name };
+  const sel = window.safeParseJSON(localStorage.getItem('eve_selected_system'), null); // the Calculator's production system
+  if (sel && sel.id) return { id: sel.id, name: (window.EVE_SYSTEM_NAMES || {})[sel.id] || sel.name };
+  return null;
+}
+
+function renderLPNearestContent() {
+  const out = document.getElementById('lpstore-nearest-results');
+  if (!out) return;
+  const corp = LP_STORE_CORPS.find(c => c.corpId === parseInt(_lpActiveCorpId));
+  if (!corp) { out.innerHTML = `<div class="text-sm" style="color:var(--text-soft);">Pick an NPC corporation first, then this shows the closest stations where you can use its LP store.</div>`; return; }
+  if (!window.EVE_NPC_STATIONS) { out.innerHTML = `<div class="text-sm italic" style="color:var(--text-mute);">Loading the station map…</div>`; return; }
+  const stations = window.EVE_NPC_STATIONS[corp.corpId] || [];
+  if (!stations.length) { out.innerHTML = `<div class="text-sm" style="color:var(--text-soft);">${window.esc(corp.corpName)} doesn't own any stations in the game data, so there's nowhere to dock and redeem.</div>`; return; }
+  const from = getLPNearestFrom();
+  if (!from) { out.innerHTML = `<div class="text-sm" style="color:var(--text-soft);">Type the system you're in to see the closest of ${window.esc(corp.corpName)}'s ${stations.length} stations.</div>`; return; }
+
+  const safe = document.getElementById('lpstore-nearest-safe')?.checked;
+  const any = lpJumpsFrom(from.id, false);
+  const safeDist = safe ? lpJumpsFrom(from.id, true) : null;
+  const sec = window.EVE_SYSTEM_SECURITY || {};
+  const rows = stations.map(([stationId, sysId, name]) => {
+    const anyJ = any[sysId];
+    const safeJ = safeDist ? safeDist[sysId] : undefined;
+    const jumps = safe ? safeJ : anyJ;
+    return { stationId, sysId, name, jumps, anyJ, safeJ, sec: sec[sysId] };
+  }).filter(r => r.anyJ !== undefined);
+
+  // With "avoid low/null" on, stations only reachable through low/null still show, after the safe ones.
+  rows.sort((a, b) => {
+    const ka = a.jumps === undefined ? 1e6 + a.anyJ : a.jumps;
+    const kb = b.jumps === undefined ? 1e6 + b.anyJ : b.jumps;
+    return ka - kb || a.name.localeCompare(b.name);
+  });
+  const top = rows.slice(0, 8);
+  if (!top.length) { out.innerHTML = `<div class="text-sm" style="color:var(--text-soft);">None of ${window.esc(corp.corpName)}'s stations can be reached by stargate from ${window.esc(from.name)}.</div>`; return; }
+
+  const jumpsText = j => j === 0 ? 'here' : `${j} jump${j === 1 ? '' : 's'}`;
+  out.innerHTML = `
+    <div class="text-[11px] mb-1.5" style="color:var(--text-mute);">${window.esc(corp.corpName)} · ${stations.length} station${stations.length === 1 ? '' : 's'} · from <b style="color:var(--text-soft);">${window.esc(from.name)}</b></div>
+    <div class="lp-nearest-list">
+      ${top.map(r => {
+        let note = '';
+        if (safe && r.jumps === undefined) note = `No high-sec route. ${jumpsText(r.anyJ)} through low/null.`;
+        else if (safe && r.anyJ < r.jumps) note = `${jumpsText(r.anyJ)} if you go through low/null.`;
+        return `
+          <div class="lp-nearest-row">
+            <span class="sec" style="color:${lpSecColor(r.sec || 0)};" title="System security">${lpSecDisplay(r.sec || 0).toFixed(1)}</span>
+            <span class="name"><span class="copy-name" data-copy-name="${window.esc(r.name)}" onclick="copyNameToClipboard(event)" title="Click to copy: ${window.esc(r.name)}">${window.esc(r.name)}</span>${note ? `<span class="note">${note}</span>` : ''}</span>
+            <span class="jumps" style="${r.jumps === undefined ? 'color:var(--text-mute);' : ''}">${r.jumps === undefined ? '—' : jumpsText(r.jumps)}</span>
+          </div>`;
+      }).join('')}
+    </div>
+    <div class="text-[10px] mt-2 leading-relaxed" style="color:var(--text-mute);">Stargate jumps only, no jump bridges or wormholes. Every station a corporation owns runs its LP store. Click a name to copy it for in-game search.</div>`;
+}
+window.renderLPNearestContent = renderLPNearestContent;
+
+function openLPNearestPopover() {
+  closeAllLPStorePopovers();
+  const popover = document.getElementById('lpstore-nearest-popover');
+  if (!popover) return;
+  popover.classList.remove('hidden');
+  const safeBox = document.getElementById('lpstore-nearest-safe');
+  if (safeBox) safeBox.checked = localStorage.getItem(LP_NEAREST_SAFE_KEY) === '1';
+  renderLPNearestContent(); // shows "Loading…" until the data arrives
+  ensureLPMapDb().then(() => {
+    const input = document.getElementById('lpstore-nearest-from');
+    const from = getLPNearestFrom();
+    if (input && from && !input.value) input.value = from.name;
+    renderLPNearestContent();
+  }).catch(e => {
+    const out = document.getElementById('lpstore-nearest-results');
+    if (out) out.innerHTML = `<div class="text-sm" style="color:var(--red);">${window.esc(e.message)} Check your connection and try again.</div>`;
+  });
+}
+function closeLPNearestPopover() {
+  document.getElementById('lpstore-nearest-popover')?.classList.add('hidden');
+}
+function toggleLPNearestPopover() {
+  const popover = document.getElementById('lpstore-nearest-popover');
+  if (!popover) return;
+  if (popover.classList.contains('hidden')) openLPNearestPopover();
+  else closeLPNearestPopover();
+}
+window.toggleLPNearestPopover = toggleLPNearestPopover;
+
+// System box: suggests systems that have stargates (so wormhole systems, which can't be routed to,
+// never show), prefix matches first.
+function onLPNearestFromInput(value) {
+  const box = document.getElementById('lpstore-nearest-suggest');
+  if (!box) return;
+  const q = String(value || '').trim().toLowerCase();
+  const systems = window.EVE_SYSTEM_NAMES || window.EVE_SYSTEMS || {};
+  const jumps = window.EVE_SYSTEM_JUMPS || {};
+  if (!q || !window.EVE_SYSTEM_JUMPS) { box.classList.add('hidden'); _lpNearestSuggestions = []; return; }
+  const starts = [], contains = [];
+  for (const id in jumps) {
+    const name = systems[id];
+    if (!name) continue;
+    const n = name.toLowerCase();
+    if (n.startsWith(q)) starts.push({ id, name });
+    else if (contains.length < 8 && n.includes(q)) contains.push({ id, name });
+  }
+  starts.sort((a, b) => a.name.length - b.name.length || a.name.localeCompare(b.name));
+  _lpNearestSuggestions = starts.concat(contains).slice(0, 8);
+  _lpNearestSuggestIndex = _lpNearestSuggestions.length ? 0 : -1;
+  renderLPNearestSuggestions();
+}
+window.onLPNearestFromInput = onLPNearestFromInput;
+
+function renderLPNearestSuggestions() {
+  const box = document.getElementById('lpstore-nearest-suggest');
+  if (!box) return;
+  if (!_lpNearestSuggestions.length) { box.innerHTML = `<div class="text-xs italic" style="padding:8px 12px;color:var(--text-mute);">No system by that name</div>`; box.classList.remove('hidden'); return; }
+  const sec = window.EVE_SYSTEM_SECURITY || {};
+  box.innerHTML = _lpNearestSuggestions.map((s, i) => `
+    <button type="button" class="${i === _lpNearestSuggestIndex ? 'active' : ''}" onclick="pickLPNearestFrom('${s.id}')">
+      <span>${window.esc(s.name)}</span><span class="mono text-xs" style="color:${lpSecColor(sec[s.id] || 0)};">${lpSecDisplay(sec[s.id] || 0).toFixed(1)}</span>
+    </button>`).join('');
+  box.classList.remove('hidden');
+}
+
+function onLPNearestFromKey(e) {
+  if (!_lpNearestSuggestions.length) return;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    const n = _lpNearestSuggestions.length;
+    _lpNearestSuggestIndex = (_lpNearestSuggestIndex + (e.key === 'ArrowDown' ? 1 : n - 1)) % n;
+    renderLPNearestSuggestions();
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    const s = _lpNearestSuggestions[Math.max(0, _lpNearestSuggestIndex)];
+    if (s) pickLPNearestFrom(s.id);
+  } else if (e.key === 'Escape') {
+    document.getElementById('lpstore-nearest-suggest')?.classList.add('hidden');
+  }
+}
+window.onLPNearestFromKey = onLPNearestFromKey;
+
+function pickLPNearestFrom(id) {
+  const name = (window.EVE_SYSTEM_NAMES || {})[id] || (window.EVE_SYSTEMS || {})[id];
+  if (!name) return;
+  localStorage.setItem(LP_NEAREST_FROM_KEY, JSON.stringify({ id: Number(id), name }));
+  const input = document.getElementById('lpstore-nearest-from');
+  if (input) input.value = name;
+  document.getElementById('lpstore-nearest-suggest')?.classList.add('hidden');
+  _lpNearestSuggestions = [];
+  renderLPNearestContent();
+}
+window.pickLPNearestFrom = pickLPNearestFrom;
+
+function onLPNearestSafeChange(checked) {
+  localStorage.setItem(LP_NEAREST_SAFE_KEY, checked ? '1' : '0');
+  renderLPNearestContent();
+}
+window.onLPNearestSafeChange = onLPNearestSafeChange;
 
 // --- Find Item: reverse search across every known LP store -----------------------------------
 // The corp popover goes corp -> items; this goes the other way, item -> every corp that sells or
