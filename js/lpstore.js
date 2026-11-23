@@ -2846,6 +2846,17 @@ window.addEventListener('load', async () => {
   // next load.
   _lpSavedCalculatorState = snapshotCalculatorState();
 
+  // app.js's own onload has just loaded the Calculator's build/buy, buy-order and ME/TE choices into
+  // these globals, and every blueprint offer below was being costed with them - so the same offer
+  // ranked differently depending on whatever item you last had open on the Calculator. Start this
+  // page from a clean slate instead (everything bought at market, no overrides), the same as the
+  // phone's LP list and the same state isolating an offer already starts from. Only the in-memory
+  // copies are cleared; the Calculator's saved session is untouched (see the snapshot just above).
+  window.buildSelfOverrides = {};
+  window.customBuyModes = {};
+  window.customMEOverrides = {};
+  window.customTEOverrides = {};
+
   renderLPStoreCorpList('');
   renderLPStoreCorpActiveLabel(null);
   loadSharedTaxSettingsForLPStore();

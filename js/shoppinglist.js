@@ -340,6 +340,42 @@ function slConsolidatedNeeds() {
   }));
   return map;
 }
+// Shares owned stock out ONCE over the whole list, fits first and then standalone items (the order
+// the rows are shown in). Each row's Buy Qty used to subtract the full stock on its own, so two fits
+// needing the same module both "used" the same stack, and the totals and Multibuy under-counted what
+// was really left to buy. Keyed `f<fitId>:<typeId>` for a fit's row and `i<index>` for an item.
+// Same rule as the phone's Jita list (js/mobile-jita.js allocate()).
+function slAllocateStock() {
+  const deduct = slIsDeductingStock();
+  const left = {};
+  const rows = new Map();
+  const claim = (typeId, need) => {
+    if (!deduct) return 0;
+    if (left[typeId] === undefined) left[typeId] = slStockFor(typeId);
+    const have = Math.max(0, Math.min(need, left[typeId]));
+    left[typeId] -= have;
+    return have;
+  };
+  slFits.forEach(f => f.baseItems.forEach(i => {
+    const need = i.qty * f.copies;
+    const have = claim(i.typeId, need);
+    rows.set(`f${f.fitId}:${i.typeId}`, { need, have, net: need - have });
+  }));
+  slItems.forEach((i, idx) => {
+    const have = claim(i.typeId, i.qty);
+    rows.set(`i${idx}`, { need: i.qty, have, net: i.qty - have });
+  });
+  return rows;
+}
+function slStockNoteHTML(typeId, have) {
+  const owned = slStockFor(typeId);
+  if (!slIsDeductingStock()) return `<div class="tm" style="text-align:right;">own: ${owned.toLocaleString()}</div>`;
+  const title = have < owned
+    ? `${have.toLocaleString()} of your ${owned.toLocaleString()} go to this row - the rest covers other rows`
+    : `You own ${owned.toLocaleString()}`;
+  return `<div class="tm" style="text-align:right;" title="${title}">own: ${have.toLocaleString()}${have < owned ? ` / ${owned.toLocaleString()}` : ''}</div>`;
+}
+
 function slTogglePullChecked(typeId) {
   if (slPullChecked[typeId]) delete slPullChecked[typeId]; else slPullChecked[typeId] = true;
   saveSlPullChecked();
@@ -448,10 +484,9 @@ function slSpreadBadgeHTML(typeId) {
     ? `<span class="ship-badge" style="color:var(--cost);" title="Spread wide enough that a Buy Order is worth waiting for">BUY ORDER</span>`
     : `<span class="ship-badge" style="color:var(--green);" title="Spread too narrow to bother with a Buy Order - buy instantly">INSTANT</span>`;
 }
-function slStandaloneItemRowHTML(it, idx) {
-  const stockQty = slStockFor(it.typeId);
-  const deduct = slIsDeductingStock();
-  const netQty = deduct ? Math.max(0, it.qty - stockQty) : it.qty;
+function slStandaloneItemRowHTML(it, idx, alloc) {
+  const share = (alloc && alloc.get(`i${idx}`)) || { have: 0, net: it.qty };
+  const netQty = share.net;
   const hasStockData = !!(window.userStockMap && Object.keys(window.userStockMap).length);
   const unitPrice = slPrice(it.typeId);
   const totalPrice = unitPrice * netQty;
@@ -466,17 +501,16 @@ function slStandaloneItemRowHTML(it, idx) {
           <button onclick="slItemQtyStep(${idx}, 1)" type="button">+</button>
         </div>
       </td>
-      ${hasStockData ? `<td class="tv"><div style="color:${netQty > 0 ? 'var(--jsl-red)' : 'var(--green)'};">${netQty.toLocaleString()}</div><div class="tm" style="text-align:right;">own: ${stockQty.toLocaleString()}</div></td>` : ''}
+      ${hasStockData ? `<td class="tv"><div style="color:${netQty > 0 ? 'var(--jsl-red)' : 'var(--green)'};">${netQty.toLocaleString()}</div>${slStockNoteHTML(it.typeId, share.have)}</td>` : ''}
       <td class="tp">${unitPrice > 0 ? window.formatISKCompact(totalPrice) : '—'}</td>
       <td style="text-align:right; white-space:nowrap;">${slFavoriteRowBtnHTML(it.typeId, it.name)}<button onclick="slRemoveItem(${idx})" class="lp-chip-btn" title="Remove"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></td>
     </tr>
   `;
 }
-function slFitItemRowHTML(it, fit, isShip) {
+function slFitItemRowHTML(it, fit, isShip, alloc) {
   const tq = it.qty * fit.copies;
-  const stockQty = slStockFor(it.typeId);
-  const deduct = slIsDeductingStock();
-  const netQty = deduct ? Math.max(0, tq - stockQty) : tq;
+  const share = (alloc && alloc.get(`f${fit.fitId}:${it.typeId}`)) || { have: 0, net: tq };
+  const netQty = share.net;
   const hasStockData = !!(window.userStockMap && Object.keys(window.userStockMap).length);
   const unitPrice = slPrice(it.typeId);
   const totalPrice = unitPrice * netQty;
@@ -485,7 +519,7 @@ function slFitItemRowHTML(it, fit, isShip) {
       <td><img src="${window.getItemIconUrl(it.typeId, it.name, 64)}" style="width:36px;height:36px;border-radius:5px;" onerror="this.style.opacity=.15" loading="lazy"></td>
       <td><div class="tn" title="${window.esc(it.name)}">${window.esc(it.name)}${isShip ? '<span class="ship-badge">SHIP</span>' : ''}${slSpreadBadgeHTML(it.typeId)}</div><div class="tm">${it.qty}&times;/fit &middot; ${slFmtVol(it.volume)} m&sup3;/unit &middot; ${unitPrice > 0 ? window.formatISKCompact(unitPrice) : 'N/A'}/unit</div></td>
       <td style="text-align:center; font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--jsl-bright);">${tq.toLocaleString()}</td>
-      ${hasStockData ? `<td class="tv"><div style="color:${netQty > 0 ? 'var(--jsl-red)' : 'var(--green)'};">${netQty.toLocaleString()}</div><div class="tm" style="text-align:right;">own: ${stockQty.toLocaleString()}</div></td>` : ''}
+      ${hasStockData ? `<td class="tv"><div style="color:${netQty > 0 ? 'var(--jsl-red)' : 'var(--green)'};">${netQty.toLocaleString()}</div>${slStockNoteHTML(it.typeId, share.have)}</td>` : ''}
       <td class="tp">${unitPrice > 0 ? window.formatISKCompact(totalPrice) : '—'}</td>
       <td style="text-align:right; white-space:nowrap;">${slFavoriteRowBtnHTML(it.typeId, it.name)}<button onclick="slRemoveFitItem(${fit.fitId}, ${it.typeId})" class="lp-chip-btn" title="Remove"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></td>
     </tr>
@@ -527,6 +561,7 @@ function slRenderList() {
     <th style="text-align:right;width:100px;" title="${isOptimized ? 'Each item priced by its own Market Spread recommendation - see the badge next to its name' : (slPriceMode === 'buy' ? 'Buy' : 'Sell') + ' price × quantity'}">${totalHeaderLabel}</th><th style="width:82px;"></th>
   `;
   let html = '';
+  const alloc = slAllocateStock();
   slFits.forEach(fit => {
     const fv = fit.baseItems.reduce((s, i) => s + i.volume * i.qty, 0) * fit.copies;
     const fp = fit.baseItems.reduce((s, i) => s + slPrice(i.typeId) * i.qty, 0) * fit.copies;
@@ -555,7 +590,7 @@ function slRenderList() {
         <div class="fb-body">
           <table class="jtable">
             <thead><tr>${headCols}</tr></thead>
-            <tbody>${orderedItems.map(it => slFitItemRowHTML(it, fit, it.typeId === fit.shipTypeId)).join('')}</tbody>
+            <tbody>${orderedItems.map(it => slFitItemRowHTML(it, fit, it.typeId === fit.shipTypeId, alloc)).join('')}</tbody>
           </table>
         </div>
       </div>
@@ -567,7 +602,7 @@ function slRenderList() {
       <div class="sl-table-wrap">
         <table class="jtable">
           <thead><tr>${headCols}</tr></thead>
-          <tbody>${slItems.map((it, idx) => slStandaloneItemRowHTML(it, idx)).join('')}</tbody>
+          <tbody>${slItems.map((it, idx) => slStandaloneItemRowHTML(it, idx, alloc)).join('')}</tbody>
         </table>
       </div>
     `;
@@ -638,14 +673,14 @@ function slUpdateTotals() {
   // not that you don't have to HAUL them - they still take up cargo space on the trip, so cutting
   // them from Total Volume (and the hauler-capacity warning bar it drives) would be wrong.
   let vol = 0, price = 0, qty = 0;
-  const deduct = slIsDeductingStock();
+  const alloc = slAllocateStock();
   slFits.forEach(f => f.baseItems.forEach(i => {
     const tq = i.qty * f.copies;
-    const netQty = deduct ? Math.max(0, tq - slStockFor(i.typeId)) : tq;
+    const netQty = alloc.get(`f${f.fitId}:${i.typeId}`).net;
     vol += i.volume * tq; price += slPrice(i.typeId) * netQty; qty += netQty;
   }));
-  slItems.forEach(i => {
-    const netQty = deduct ? Math.max(0, i.qty - slStockFor(i.typeId)) : i.qty;
+  slItems.forEach((i, idx) => {
+    const netQty = alloc.get(`i${idx}`).net;
     vol += i.volume * i.qty; price += slPrice(i.typeId) * netQty; qty += netQty;
   });
   const typeCount = slFits.reduce((s, f) => s + f.baseItems.length, 0) + slItems.length;
@@ -713,14 +748,14 @@ function slApplySpreadOptimizer() {
 // i.qty straight from state without ever consulting slStockFor/slIsDeductingStock at all.
 function slCopyMultibuy() {
   const deduct = slIsDeductingStock();
+  const alloc = slAllocateStock();
   const combined = {}; // typeId -> {name, qty}
-  const add = (typeId, name, qty) => {
-    const netQty = deduct ? Math.max(0, qty - slStockFor(typeId)) : qty;
+  const add = (typeId, name, netQty) => {
     if (!combined[typeId]) combined[typeId] = { name, qty: 0 };
     combined[typeId].qty += netQty;
   };
-  slFits.forEach(f => f.baseItems.forEach(i => add(i.typeId, i.name, i.qty * f.copies)));
-  slItems.forEach(i => add(i.typeId, i.name, i.qty));
+  slFits.forEach(f => f.baseItems.forEach(i => add(i.typeId, i.name, alloc.get(`f${f.fitId}:${i.typeId}`).net)));
+  slItems.forEach((i, idx) => add(i.typeId, i.name, alloc.get(`i${idx}`).net));
   const lines = Object.values(combined).filter(e => e.qty > 0).map(({ name, qty }) => qty > 1 ? `${name} x${qty}` : name);
   if (!lines.length) { window.showToast(deduct ? 'Nothing left to buy - stock already covers everything.' : 'Nothing to copy.', 'info'); return; }
   navigator.clipboard.writeText(lines.join('\n'))

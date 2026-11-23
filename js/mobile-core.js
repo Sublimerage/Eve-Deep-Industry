@@ -187,8 +187,8 @@ window.MB = (() => {
   MB.savePrefs = () => LS.set('eve_mobile_prefs', prefs);
 
   /* =====================  Taxes and fees (shared with desktop)  ===================== */
-  // eve_tax_settings holds strings in percent. The desktop reads them with `parseFloat(x) || default`,
-  // which turns a real 0 back into the default; the phone keeps 0 as 0.
+  // eve_tax_settings holds strings in percent. A real 0 stays 0 (the desktop does the same now, via
+  // parseFeePercent in config.js); only a blank or unreadable value falls back to the default.
   const FEE_DEFAULTS = { facilityTax: 1.0, sccSurcharge: 4.0, salesTax: 3.6, brokerFee: 1.0, contractTax: 0.5, contractBroker: 1.65 };
   function readFees() {
     const s = LS.get('eve_tax_settings', {});

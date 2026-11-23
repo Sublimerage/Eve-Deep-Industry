@@ -2311,8 +2311,8 @@ function recalculate() {
   const structureType = window.getActiveStructureType ? window.getActiveStructureType() : { costBonus: 5.0, meBonus: 1.0 };
   const structureRoleBonus = structureType.costBonus / 100;
 
-  const contractTaxPercent = parseFloat(document.getElementById('contract-tax')?.value) || 0.5;
-  const contractBrokerPercent = parseFloat(document.getElementById('contract-broker')?.value) || 1.65;
+  const contractTaxPercent = window.parseFeePercent(document.getElementById('contract-tax')?.value, 0.5);
+  const contractBrokerPercent = window.parseFeePercent(document.getElementById('contract-broker')?.value, 1.65);
   const contractTaxRate = contractTaxPercent / 100;
   const contractBrokerRate = contractBrokerPercent / 100;
 
@@ -3821,7 +3821,9 @@ function addCurrentJobToLedger(e) {
     facilityKey: localStorage.getItem('eve_active_facility_key') || 'sotiyo',
     rig1: localStorage.getItem('eve_rig_slot_1') || '',
     rig2: localStorage.getItem('eve_rig_slot_2') || '',
-    rig3: localStorage.getItem('eve_rig_slot_3') || ''
+    rig3: localStorage.getItem('eve_rig_slot_3') || '',
+    // The structure's job tax, so the Ledger charges the same tax if it ever rebuilds this job.
+    facilityTax: document.getElementById('facility-tax')?.value
   };
   // Same idea as productionSnapshot, but for the OTHER thing that's live global state here and
   // nowhere near persisted on the Ledger page: which sub-assemblies are toggled to build vs. buy,
@@ -3862,7 +3864,7 @@ function addCurrentJobToLedger(e) {
   // mode hierarchy (buildJobClusters) can't tell apart two different queued jobs that happen to share
   // a product name (e.g. one 7-run job split by hand into several same-named smaller ones) and ends
   // up attaching the same single sub-build under EVERY same-named root instead of just its actual one.
-  const rootJobId = Date.now() + Math.floor(Math.random() * 1000);
+  const rootJobId = window.newLedgerJobId([queue]);
 
   // Every build-toggled sub-assembly becomes its own queued job, inserted before the final job since
   // it's a prerequisite for it. These deliberately have no netProfit field - the final job's profit
@@ -3878,7 +3880,8 @@ function addCurrentJobToLedger(e) {
   // see resolveStockAwareSubBuilds' own comment for why a plain tree walk (the old collectSubBuildNodes
   // + node.runsNeeded/qtyNeeded here) couldn't do that on its own.
   const subBuildJobs = stockAwareResult.subBuilds.map(sb => ({
-    id: Date.now() + Math.floor(Math.random() * 1000) + sb.node.instanceId,
+    // Used to be time + random + node id, which two sub-builds in the same click could share.
+    id: window.newLedgerJobId([queue]),
     typeId: sb.node.typeId,
     productTypeId: sb.node.productTypeId,
     name: sb.node.productName || sb.node.name.replace(/ Blueprint$/i, '').replace(/ Reaction Formula$/i, '').replace(/ Formula$/i, '').trim(),

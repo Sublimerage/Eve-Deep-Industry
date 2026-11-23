@@ -163,12 +163,18 @@
       window.collectAllTypeIds(root, ids);
       await window.fetchMarketPrices([...ids]);
       window.calculateNodeEIV(root);
-      return { root, calculatedCost: window.calculateTreeNodeCost(root), materials: window.extractJobMaterialsForNode(root), totalBuildSeconds: window.calculateTotalBuildSeconds(root) };
+      return { root, calculatedCost: window.calculateTreeNodeCost(root), jobFees: window.computeRebuiltJobFees(root, snapshot), materials: window.extractJobMaterialsForNode(root), totalBuildSeconds: window.calculateTotalBuildSeconds(root) };
     } finally {
       keys.forEach((k, i) => { if (prevLS[i] === null) LS.remove(k); else LS.set(k, prevLS[i]); });
       window.activeSystemSecurity = prev.sec; window.activeMfgSCI = prev.mfg; window.activeReactSCI = prev.react; window.activeInventionSCI = prev.inv;
       window.buildSelfOverrides = prev.b; window.customBuyModes = prev.m; window.customMEOverrides = prev.me; window.customTEOverrides = prev.te;
     }
+  }
+  // Same as the desktop's applyRebuiltJobCost: a main job costs materials + install fees and its
+  // profit is the taxed sale minus that; a prerequisite keeps materials only, as when it was added.
+  function applyCost(job, r, snapshot) {
+    job.calculatedCost = r.calculatedCost + (job.isSubBuild ? 0 : (r.jobFees || 0));
+    if (job.netProfit !== undefined) job.netProfit = window.netJobSaleValue(job, window.getSavedFeeFractions(snapshot)) - job.calculatedCost;
   }
   async function cascadeToChildren(parent, oldMaterials, jobs) {
     const kids = jobs.filter(j => j.isSubBuild && !j.isStarted && !j.autoImported && j.productTypeId &&
@@ -183,10 +189,11 @@
       if (runs === child.runsNeeded) continue;
       const oldChild = Array.isArray(child.materials) ? child.materials : [];
       try {
-        const r = await rebuild(child.typeId, child.name + ' Blueprint', runs, child.productTypeId, child.productionSnapshot || parent.productionSnapshot || liveSnapshot(), child.buildConfigSnapshot || parent.buildConfigSnapshot);
+        const childSnap = child.productionSnapshot || parent.productionSnapshot || liveSnapshot();
+        const r = await rebuild(child.typeId, child.name + ' Blueprint', runs, child.productTypeId, childSnap, child.buildConfigSnapshot || parent.buildConfigSnapshot);
         child.runsNeeded = runs;
         child.qtyNeeded = r.root.qtyNeeded;
-        child.calculatedCost = r.calculatedCost;
+        applyCost(child, r, childSnap);
         child.materials = r.materials;
         child.totalBuildSeconds = r.totalBuildSeconds;
         await cascadeToChildren(child, oldChild, jobs);
@@ -212,9 +219,10 @@
       const runs = jobCount * runsPerJob;
       if (runs === job.runsNeeded && jobCount === (job.jobCount || 1)) return;
       const old = Array.isArray(job.materials) ? job.materials : [];
-      const r = await rebuild(job.typeId, job.name + ' Blueprint', runs, job.productTypeId, job.productionSnapshot || liveSnapshot(), job.buildConfigSnapshot, jobCount);
-      Object.assign(job, { runsNeeded: runs, jobCount, runsPerJob, qtyNeeded: r.root.qtyNeeded, calculatedCost: r.calculatedCost, materials: r.materials, totalBuildSeconds: r.totalBuildSeconds });
-      if (job.netProfit !== undefined) job.netProfit = (job.unitSellPrice || 0) * job.qtyNeeded - job.calculatedCost;
+      const snap = job.productionSnapshot || liveSnapshot();
+      const r = await rebuild(job.typeId, job.name + ' Blueprint', runs, job.productTypeId, snap, job.buildConfigSnapshot, jobCount);
+      Object.assign(job, { runsNeeded: runs, jobCount, runsPerJob, qtyNeeded: r.root.qtyNeeded, materials: r.materials, totalBuildSeconds: r.totalBuildSeconds });
+      applyCost(job, r, snap);
       await cascadeToChildren(job, old, jobs);
       saveJobs(jobs);
       L.edit.delete(id);
@@ -228,9 +236,9 @@
       const preset = MB.presets()[presetName];
       if (!job || job.autoImported || !preset) return;
       const r = await rebuild(job.typeId, job.name + ' Blueprint', job.runsNeeded, job.productTypeId, preset, job.buildConfigSnapshot, job.jobCount || 1);
-      Object.assign(job, { calculatedCost: r.calculatedCost, qtyNeeded: r.root.qtyNeeded, materials: r.materials, totalBuildSeconds: r.totalBuildSeconds });
-      if (job.netProfit !== undefined) job.netProfit = (job.unitSellPrice || 0) * job.qtyNeeded - job.calculatedCost;
-      job.productionSnapshot = { systemId: preset.systemId || null, systemName: preset.systemName || null, facilityKey: preset.facilityKey || 'sotiyo', rig1: preset.rig1 || '', rig2: preset.rig2 || '', rig3: preset.rig3 || '' };
+      Object.assign(job, { qtyNeeded: r.root.qtyNeeded, materials: r.materials, totalBuildSeconds: r.totalBuildSeconds });
+      applyCost(job, r, preset);
+      job.productionSnapshot = { systemId: preset.systemId || null, systemName: preset.systemName || null, facilityKey: preset.facilityKey || 'sotiyo', rig1: preset.rig1 || '', rig2: preset.rig2 || '', rig3: preset.rig3 || '', ...(preset.facilityTax !== undefined ? { facilityTax: preset.facilityTax } : {}) };
       saveJobs(jobs);
       toast(`${displayName(job)} now planned at “${presetName}”`);
     });
@@ -246,9 +254,10 @@
       const jobCount = job.jobCount || 1;
       const runs = (job.runsNeeded || 0) + add;
       const old = Array.isArray(job.materials) ? job.materials : [];
-      const r = await rebuild(job.typeId, job.name + ' Blueprint', runs, job.productTypeId, job.productionSnapshot || liveSnapshot(), job.buildConfigSnapshot, jobCount);
-      Object.assign(job, { runsNeeded: runs, runsPerJob: Math.ceil(runs / jobCount), qtyNeeded: r.root.qtyNeeded, calculatedCost: r.calculatedCost, materials: r.materials, totalBuildSeconds: r.totalBuildSeconds });
-      if (job.netProfit !== undefined) job.netProfit = (job.unitSellPrice || 0) * job.qtyNeeded - job.calculatedCost;
+      const snap = job.productionSnapshot || liveSnapshot();
+      const r = await rebuild(job.typeId, job.name + ' Blueprint', runs, job.productTypeId, snap, job.buildConfigSnapshot, jobCount);
+      Object.assign(job, { runsNeeded: runs, runsPerJob: Math.ceil(runs / jobCount), qtyNeeded: r.root.qtyNeeded, materials: r.materials, totalBuildSeconds: r.totalBuildSeconds });
+      applyCost(job, r, snap);
       await cascadeToChildren(job, old, jobs);
       saveJobs(jobs);
       toast(`${displayName(job)} now covers the missing ${qty(missing)}: ${runs} runs`);
@@ -498,7 +507,7 @@
       return {
         id: newId(), typeId: bpId, productTypeId: pt, name, runsNeeded: runs, qtyNeeded: root.qtyNeeded, calculatedCost: total,
         totalBuildSeconds: Math.max(0, (new Date(rj.end_date).getTime() - new Date(rj.start_date).getTime()) / 1000),
-        netProfit: sell * root.qtyNeeded - total, sellStrategy: 'market-sell', unitSellPrice: sell, materials: window.extractJobMaterialsForNode(root),
+        netProfit: window.netJobSaleValue({ unitSellPrice: sell, qtyNeeded: root.qtyNeeded, sellStrategy: 'market-sell' }, window.getSavedFeeFractions()) - total, sellStrategy: 'market-sell', unitSellPrice: sell, materials: window.extractJobMaterialsForNode(root),
         isStarted: true, assetsExpiryAtStart: window.getEsiAssetsExpiry ? window.getEsiAssetsExpiry() : null, startedAt: new Date(rj.start_date).getTime(),
         eveJobId: rj.job_id, autoImported: true, meLevel: info.me, teLevel: info.te, scope,
         ownerCharId: rj.installer_id !== undefined ? String(rj.installer_id) : rec.charId || null, corpId: scope === 'corp' ? rec.corpId : undefined,

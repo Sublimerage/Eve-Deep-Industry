@@ -1217,6 +1217,9 @@ async function rebuildTreeForSnapshot(blueprintTypeId, name, runs, productTypeId
     return {
       root: root,
       calculatedCost: typeof window.calculateTreeNodeCost === 'function' ? window.calculateTreeNodeCost(root) : 0,
+      // Install fees for the whole tree, worked out now while this job's station and cost index are
+      // still the active ones (they're put back in the finally below). See applyRebuiltJobCost.
+      jobFees: typeof window.computeRebuiltJobFees === 'function' ? window.computeRebuiltJobFees(root, snapshot) : 0,
       materials: typeof window.extractJobMaterialsForNode === 'function' ? window.extractJobMaterialsForNode(root) : [],
       totalBuildSeconds: typeof window.calculateTotalBuildSeconds === 'function' ? window.calculateTotalBuildSeconds(root) : 0
     };
@@ -1236,6 +1239,23 @@ async function rebuildTreeForSnapshot(blueprintTypeId, name, runs, productTypeId
   }
 }
 
+// Puts a rebuilt tree's numbers back on a job the same way the Calculator first priced it. A main
+// job's cost is materials + install fees for the whole tree, and its profit is the sale after sales
+// tax/broker (or contract fees) minus that cost. A prerequisite job keeps materials only and no
+// profit of its own - the Calculator adds those that way too, since the main job already counts
+// their fees and savings. This used to drop the fees and taxes, so profit read too high after any
+// runs, station or top-up change.
+function applyRebuiltJobCost(job, result, snapshot) {
+  const fees = typeof window.getSavedFeeFractions === 'function' ? window.getSavedFeeFractions(snapshot) : null;
+  job.calculatedCost = result.calculatedCost + (job.isSubBuild ? 0 : (result.jobFees || 0));
+  if (job.netProfit !== undefined) {
+    const sale = fees && typeof window.netJobSaleValue === 'function'
+      ? window.netJobSaleValue(job, fees)
+      : (job.unitSellPrice || 0) * (job.qtyNeeded || 0);
+    job.netProfit = sale - job.calculatedCost;
+  }
+}
+
 async function changeJobProductionPreset(jobId, presetName) {
   if (!presetName) return;
   const job = activeJobs.find(j => j && j.id === jobId);
@@ -1246,19 +1266,18 @@ async function changeJobProductionPreset(jobId, presetName) {
   if (typeof window.showToast === 'function') window.showToast(`Recomputing "${window.esc(job.name)}" for "${window.esc(presetName)}"...`, 'info');
   try {
     const result = await rebuildTreeForSnapshot(job.typeId, job.name + ' Blueprint', job.runsNeeded, job.productTypeId, preset, job.buildConfigSnapshot, job.jobCount || 1);
-    job.calculatedCost = result.calculatedCost;
     job.qtyNeeded = result.root.qtyNeeded;
     job.materials = result.materials;
     job.totalBuildSeconds = result.totalBuildSeconds;
     // Keep the job's own sell price/strategy as-is - only the bonus-driven numbers (cost/time/
     // materials) should move when the preset changes, not what you'd sell the output for.
-    if (job.netProfit !== undefined) {
-      job.netProfit = (job.unitSellPrice || 0) * job.qtyNeeded - job.calculatedCost;
-    }
+    applyRebuiltJobCost(job, result, preset);
     job.productionSnapshot = {
       systemId: preset.systemId || null, systemName: preset.systemName || null,
       facilityKey: preset.facilityKey || 'sotiyo',
-      rig1: preset.rig1 || '', rig2: preset.rig2 || '', rig3: preset.rig3 || ''
+      rig1: preset.rig1 || '', rig2: preset.rig2 || '', rig3: preset.rig3 || '',
+      // The preset's own job tax, so later rebuilds of this job keep charging it.
+      ...(preset.facilityTax !== undefined ? { facilityTax: preset.facilityTax } : {})
     };
     localStorage.setItem('eve_ledger_jobs', JSON.stringify(activeJobs));
     renderJournalPage();
@@ -1307,13 +1326,10 @@ async function commitJobsRunsEdit(jobId) {
     job.jobCount = jobCount;
     job.runsPerJob = runsPerJob;
     job.qtyNeeded = result.root.qtyNeeded;
-    job.calculatedCost = result.calculatedCost;
     job.materials = result.materials;
     job.totalBuildSeconds = result.totalBuildSeconds;
     // Keep the job's own sell price/strategy as-is - only what scales with quantity should move.
-    if (job.netProfit !== undefined) {
-      job.netProfit = (job.unitSellPrice || 0) * job.qtyNeeded - job.calculatedCost;
-    }
+    applyRebuiltJobCost(job, result, snapshot);
     await cascadeRunChangeToChildren(job, oldMaterials);
     localStorage.setItem('eve_ledger_jobs', JSON.stringify(activeJobs));
     renderJournalPage();
@@ -1355,12 +1371,9 @@ async function topUpPrerequisiteJob(jobId) {
     job.runsNeeded = newRunsNeeded;
     job.runsPerJob = newRunsPerJob;
     job.qtyNeeded = result.root.qtyNeeded;
-    job.calculatedCost = result.calculatedCost;
     job.materials = result.materials;
     job.totalBuildSeconds = result.totalBuildSeconds;
-    if (job.netProfit !== undefined) {
-      job.netProfit = (job.unitSellPrice || 0) * job.qtyNeeded - job.calculatedCost;
-    }
+    applyRebuiltJobCost(job, result, snapshot);
     await cascadeRunChangeToChildren(job, oldMaterials);
     localStorage.setItem('eve_ledger_jobs', JSON.stringify(activeJobs));
     renderJournalPage();
@@ -1422,7 +1435,7 @@ async function cascadeRunChangeToChildren(parentJob, oldMaterials) {
       const result = await rebuildTreeForSnapshot(child.typeId, child.name + ' Blueprint', childRuns, child.productTypeId, childSnapshot, childBuildConfig);
       child.runsNeeded = childRuns;
       child.qtyNeeded = result.root.qtyNeeded;
-      child.calculatedCost = result.calculatedCost;
+      applyRebuiltJobCost(child, result, childSnapshot);
       child.materials = result.materials;
       child.totalBuildSeconds = result.totalBuildSeconds;
       await cascadeRunChangeToChildren(child, oldChildMaterials); // propagate further, if this child has prereqs of its own
@@ -1473,7 +1486,7 @@ async function addMaterialAsPrerequisiteJob(jobId, typeId, missingQty) {
   try {
     const result = await rebuildTreeForSnapshot(blueprintTypeId, mat.name + ' Blueprint', runs, typeId, snapshot, buildConfig);
     const newJob = {
-      id: Date.now() + Math.floor(Math.random() * 1000),
+      id: window.newLedgerJobId([activeJobs, buildHistory]),
       typeId: blueprintTypeId,
       productTypeId: typeId,
       name: result.root.productName || mat.name,
@@ -2664,7 +2677,7 @@ function startJobRuns(jobId) {
 
   const activeFragment = {
     ...job,
-    id: Date.now() + Math.floor(Math.random() * 1000),
+    id: window.newLedgerJobId([activeJobs, buildHistory]),
     runsNeeded: startRuns,
     qtyNeeded: Math.round((job.qtyNeeded || 0) * ratio),
     calculatedCost: (job.calculatedCost || 0) * ratio,
@@ -2680,7 +2693,7 @@ function startJobRuns(jobId) {
 
   const remainingFragment = {
     ...job,
-    id: Date.now() + Math.floor(Math.random() * 1000) + 1,
+    id: window.newLedgerJobId([activeJobs, buildHistory]),
     runsNeeded: remainingRuns,
     qtyNeeded: Math.round((job.qtyNeeded || 0) * remainingRatio),
     calculatedCost: (job.calculatedCost || 0) * remainingRatio,
@@ -3077,7 +3090,7 @@ async function syncWithEveIndustryJobs(silent) {
 
       const activeFragment = {
         ...candidate,
-        id: Date.now() + Math.floor(Math.random() * 1000),
+        id: window.newLedgerJobId([activeJobs, buildHistory]),
         runsNeeded: startRuns,
         jobCount: startedJobCount,
         runsPerJob: perJobRuns,
@@ -3095,7 +3108,7 @@ async function syncWithEveIndustryJobs(silent) {
       };
       const remainingFragment = {
         ...candidate,
-        id: Date.now() + Math.floor(Math.random() * 1000) + 1,
+        id: window.newLedgerJobId([activeJobs, buildHistory]),
         runsNeeded: remainingRuns,
         jobCount: remainingJobCount,
         runsPerJob: perJobRuns,
@@ -3202,8 +3215,12 @@ async function buildAutoImportedJob(realJob, blueprintMeTeMap) {
     const totalCost = materialCost + (realJob.cost || 0);
 
     const outputPrices = window.priceCache[productTypeId] || { sell: 0, buy: 0 };
-    const grossSell = outputPrices.sell * root.qtyNeeded;
-    const netProfit = grossSell - totalCost;
+    // Sold on the market at Jita sell, so sales tax + broker fee come off first, same as the
+    // Calculator's own profit (this used to subtract cost from the gross sale, overstating profit).
+    const netSell = typeof window.netJobSaleValue === 'function'
+      ? window.netJobSaleValue({ unitSellPrice: outputPrices.sell, qtyNeeded: root.qtyNeeded, sellStrategy: 'market-sell' }, window.getSavedFeeFractions())
+      : outputPrices.sell * root.qtyNeeded;
+    const netProfit = netSell - totalCost;
 
     const totalBuildSeconds = Math.max(0, (new Date(realJob.end_date).getTime() - new Date(realJob.start_date).getTime()) / 1000);
     const materials = typeof window.extractJobMaterialsForNode === 'function' ? window.extractJobMaterialsForNode(root) : [];
@@ -3221,7 +3238,7 @@ async function buildAutoImportedJob(realJob, blueprintMeTeMap) {
     const scope = realJob._source === 'corp' ? 'corp' : 'personal';
 
     return {
-      id: Date.now() + Math.floor(Math.random() * 1000) + realJob.job_id,
+      id: window.newLedgerJobId([activeJobs, buildHistory]),
       typeId: blueprintTypeId,
       productTypeId: productTypeId,
       name: productName,
@@ -3316,7 +3333,7 @@ function requeueCompletedJob(recordId) {
   const record = buildHistory[recordIndex];
 
   const job = {
-    id: Date.now() + Math.floor(Math.random() * 1000), 
+    id: window.newLedgerJobId([activeJobs, buildHistory]),
     typeId: record.typeId,
     productTypeId: record.productTypeId,
     name: record.name,
@@ -3469,8 +3486,8 @@ function renderBuildHistoryLedger() {
   // doesn't have and would silently fall back to its own hardcoded defaults every time. Falls back
   // to those same defaults (3.6%/1.0%) only when nothing's been configured anywhere yet.
   const sharedTaxSettings = window.safeParseJSON(localStorage.getItem('eve_tax_settings'), {});
-  const salesTaxPct = parseFloat(sharedTaxSettings.salesTax) || 3.6;
-  const brokerFeePct = parseFloat(sharedTaxSettings.brokerFee) || 1.0;
+  const salesTaxPct = window.parseFeePercent(sharedTaxSettings.salesTax, 3.6);
+  const brokerFeePct = window.parseFeePercent(sharedTaxSettings.brokerFee, 1.0);
   const netSellFraction = 1 - (salesTaxPct + brokerFeePct) / 100;
 
   container.innerHTML = buildHistory.map(record => {

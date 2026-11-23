@@ -614,7 +614,8 @@
       const productionSnapshot = {
         systemId: sel.id || null, systemName: sel.name || null,
         facilityKey: LS.raw('eve_active_facility_key') || 'sotiyo',
-        rig1: LS.raw('eve_rig_slot_1') || '', rig2: LS.raw('eve_rig_slot_2') || '', rig3: LS.raw('eve_rig_slot_3') || ''
+        rig1: LS.raw('eve_rig_slot_1') || '', rig2: LS.raw('eve_rig_slot_2') || '', rig3: LS.raw('eve_rig_slot_3') || '',
+        facilityTax: String(MB.readFees().facilityTax)
       };
       const snapME = { ...C.meOv }, snapTE = { ...C.teOv };
       (function backfill(n) {

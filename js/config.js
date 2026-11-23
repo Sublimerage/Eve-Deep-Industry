@@ -1067,14 +1067,82 @@ window.getActiveStructureType = getActiveStructureType;
 // verbatim across app.js, optimizers.js, and invention.js (18+ near-identical occurrences) - precisely
 // the kind of duplication that already caused two real profit-formula bugs in this app (one page
 // computing a fee correctly, a sibling silently missing it). One reader, one place to fix from now on.
+// Reads one fee percentage. Only a blank or non-numeric value falls back to the default - a real 0
+// (a 0% tax structure, or 0% broker fee) stays 0. The old `parseFloat(x) || default` form silently
+// turned every 0 into the default, overstating costs for anyone with a 0% setting.
+function parseFeePercent(value, defaultPct) {
+  const n = parseFloat(value);
+  return Number.isFinite(n) ? Math.max(0, n) : defaultPct;
+}
+window.parseFeePercent = parseFeePercent;
+
 function getActiveFeeInputs() {
   return {
-    facilityTax: (parseFloat(document.getElementById('facility-tax')?.value) || 1.0) / 100,
-    sccSurcharge: (parseFloat(document.getElementById('scc-surcharge')?.value) || 4.0) / 100,
-    salesTax: (parseFloat(document.getElementById('sales-tax')?.value) || 3.6) / 100,
-    brokerFee: (parseFloat(document.getElementById('broker-fee')?.value) || 1.0) / 100
+    facilityTax: parseFeePercent(document.getElementById('facility-tax')?.value, 1.0) / 100,
+    sccSurcharge: parseFeePercent(document.getElementById('scc-surcharge')?.value, 4.0) / 100,
+    salesTax: parseFeePercent(document.getElementById('sales-tax')?.value, 3.6) / 100,
+    brokerFee: parseFeePercent(document.getElementById('broker-fee')?.value, 1.0) / 100
   };
 }
+
+// Same fees as getActiveFeeInputs, but read from the saved 'eve_tax_settings' instead of the page's
+// input fields - for pages that have no fee inputs (the Ledger, the phone). A job's own station
+// snapshot wins for the job tax when it carries one, since that tax belongs to the structure.
+function getSavedFeeFractions(snapshot) {
+  const s = window.safeParseJSON(localStorage.getItem('eve_tax_settings'), {}) || {};
+  const snapTax = snapshot && snapshot.facilityTax;
+  const facility = (snapTax !== undefined && snapTax !== null && snapTax !== '') ? snapTax : s.facilityTax;
+  return {
+    facilityTax: parseFeePercent(facility, 1.0) / 100,
+    sccSurcharge: parseFeePercent(s.sccSurcharge, 4.0) / 100,
+    salesTax: parseFeePercent(s.salesTax, 3.6) / 100,
+    brokerFee: parseFeePercent(s.brokerFee, 1.0) / 100,
+    contractTax: parseFeePercent(s.contractTax, 0.5) / 100,
+    contractBroker: parseFeePercent(s.contractBroker, 1.65) / 100
+  };
+}
+window.getSavedFeeFractions = getSavedFeeFractions;
+
+// Job install fees for a freshly rebuilt tree. Call it while the job's station is the active one
+// (facility key, system cost index), the same moment the tree itself is built.
+function computeRebuiltJobFees(root, snapshot) {
+  if (!root || typeof window.calculateNodeJobFee !== 'function') return 0;
+  const fees = getSavedFeeFractions(snapshot);
+  const costBonus = (getActiveStructureType().costBonus || 0) / 100;
+  const total = window.calculateNodeJobFee(root, fees.facilityTax, fees.sccSurcharge, costBonus);
+  return Number.isFinite(total) ? total : 0;
+}
+window.computeRebuiltJobFees = computeRebuiltJobFees;
+
+// What a queued job's output sells for after taxes, matching the Calculator's own profit formula:
+// market sales lose sales tax + broker fee, a contract loses contract tax + contract broker + 10,000.
+function netJobSaleValue(job, fees) {
+  const gross = (job.unitSellPrice || 0) * (job.qtyNeeded || 0);
+  if (job.sellStrategy === 'custom-contract') {
+    return gross - gross * fees.contractTax - (gross * fees.contractBroker + 10000);
+  }
+  return gross * (1 - fees.salesTax - fees.brokerFee);
+}
+window.netJobSaleValue = netJobSaleValue;
+
+// A Ledger job id that's never already taken. Still "time + random" like before, but checked against
+// the saved queue and history, any in-memory lists passed in (the Ledger page's own activeJobs /
+// buildHistory, which can be ahead of what's saved), and every id handed out this page load - so
+// several jobs made in the same click (a main job plus its sub-builds) can't collide. Same rule as
+// the phone's newId (js/mobile-ledger.js).
+const _issuedLedgerIds = new Set();
+function newLedgerJobId(extraLists) {
+  const taken = new Set(_issuedLedgerIds);
+  const addAll = list => { if (Array.isArray(list)) list.forEach(j => { if (j && j.id !== undefined) taken.add(j.id); }); };
+  addAll(safeParseJSON(localStorage.getItem('eve_ledger_jobs'), []));
+  addAll(safeParseJSON(localStorage.getItem('eve_ledger_history'), []));
+  (extraLists || []).forEach(addAll);
+  let id = Date.now() + Math.floor(Math.random() * 1000);
+  while (taken.has(id)) id++;
+  _issuedLedgerIds.add(id);
+  return id;
+}
+window.newLedgerJobId = newLedgerJobId;
 window.getActiveFeeInputs = getActiveFeeInputs;
 
 
